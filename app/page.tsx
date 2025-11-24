@@ -1,65 +1,98 @@
-import Image from "next/image";
-
-export default function Home() {
+export default function Page() {
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <main className="min-h-screen bg-[#0a0a0a] p-8">
+      {/* Header */}
+      <div className="mb-8">
+        <h1 className="text-4xl font-bold bg-gradient-to-r from-cyan-400 to-blue-500 bg-clip-text text-transparent">
+          MaxSam V4 Command Center
+        </h1>
+      </div>
+
+      {/* Metrics Grid */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+        <div className="bg-cyan-500 rounded-lg p-6">
+          <div className="text-white text-sm font-medium mb-2">Total Leads</div>
+          <div className="text-white text-3xl font-bold">127</div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
+        
+        <div className="bg-green-500 rounded-lg p-6">
+          <div className="text-white text-sm font-medium mb-2">Active Deals</div>
+          <div className="text-white text-3xl font-bold">23</div>
         </div>
-      </main>
-    </div>
+        
+        <div className="bg-purple-500 rounded-lg p-6">
+          <div className="text-white text-sm font-medium mb-2">Conversion Rate</div>
+          <div className="text-white text-3xl font-bold">18.1%</div>
+        </div>
+        
+        <div className="bg-blue-500 rounded-lg p-6">
+          <div className="text-white text-sm font-medium mb-2">Total Revenue</div>
+          <div className="text-white text-3xl font-bold">$847,500</div>
+        </div>
+      </div>
+
+      {/* AI Agents Section */}
+      <div className="mb-8">
+        <h2 className="text-2xl font-bold text-white mb-4">AI Agents</h2>
+        <div className="space-y-4">
+          <div className="bg-zinc-900 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-white font-medium">Sam (Voice AI)</span>
+              <span className="text-cyan-400">94% efficiency</span>
+            </div>
+            <div className="w-full bg-zinc-700 rounded-full h-2">
+              <div className="bg-cyan-500 h-2 rounded-full" style={{ width: '94%' }}></div>
+            </div>
+          </div>
+          
+          <div className="bg-zinc-900 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-white font-medium">Eleanor (Lead Scoring)</span>
+              <span className="text-purple-400">87% efficiency</span>
+            </div>
+            <div className="w-full bg-zinc-700 rounded-full h-2">
+              <div className="bg-purple-500 h-2 rounded-full" style={{ width: '87%' }}></div>
+            </div>
+          </div>
+          
+          <div className="bg-zinc-900 rounded-lg p-4">
+            <div className="flex justify-between items-center mb-2">
+              <span className="text-white font-medium">Alex (Workflow)</span>
+              <span className="text-blue-400">91% efficiency</span>
+            </div>
+            <div className="w-full bg-zinc-700 rounded-full h-2">
+              <div className="bg-blue-500 h-2 rounded-full" style={{ width: '91%' }}></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Recent Activity */}
+      <div>
+        <h2 className="text-2xl font-bold text-white mb-4">Recent Activity</h2>
+        <div className="bg-zinc-900 rounded-lg divide-y divide-zinc-800">
+          <div className="flex justify-between p-4">
+            <span className="text-zinc-300">New lead assigned: 123 Oak Street</span>
+            <span className="text-zinc-500">2 min ago</span>
+          </div>
+          <div className="flex justify-between p-4">
+            <span className="text-zinc-300">Contract generated for 456 Maple Ave</span>
+            <span className="text-zinc-500">5 min ago</span>
+          </div>
+          <div className="flex justify-between p-4">
+            <span className="text-zinc-300">Sam completed outreach call</span>
+            <span className="text-zinc-500">12 min ago</span>
+          </div>
+          <div className="flex justify-between p-4">
+            <span className="text-zinc-300">Eleanor scored new property</span>
+            <span className="text-zinc-500">18 min ago</span>
+          </div>
+          <div className="flex justify-between p-4">
+            <span className="text-zinc-300">Deal closed: $42,500 commission</span>
+            <span className="text-zinc-500">1 hour ago</span>
+          </div>
+        </div>
+      </div>
+    </main>
   );
 }
