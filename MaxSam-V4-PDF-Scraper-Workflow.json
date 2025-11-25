@@ -1,0 +1,316 @@
+{
+  "name": "Dallas County Excess Funds PDF Scraper",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 📄 DALLAS COUNTY EXCESS FUNDS SCRAPER\n\n## How This Works:\n1. Downloads PDF from Dallas County website\n2. Extracts text from PDF\n3. Parses into structured data\n4. Cross-references with existing leads\n5. Saves to Supabase\n6. Sends Telegram alert\n\n## Run: Daily at 5:30 AM (before main pipeline)",
+        "height": 280,
+        "width": 350,
+        "color": 4
+      },
+      "id": "sticky-info",
+      "name": "📋 Scraper Info",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-400, 0]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "30 5 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trigger-schedule",
+      "name": "⏰ Daily 5:30 AM",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 100]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "🖱️ Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [0, 250]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Generate the PDF URL with current date\n// Dallas County updates the PDF periodically\n// Format: ExcessFunds-YYYYMMDD.pdf\n\nconst now = new Date();\nconst year = now.getFullYear();\nconst month = String(now.getMonth() + 1).padStart(2, '0');\nconst day = String(now.getDate()).padStart(2, '0');\n\n// Try multiple possible dates (they don't update daily)\nconst possibleDates = [];\nfor (let i = 0; i < 30; i++) {\n  const d = new Date(now);\n  d.setDate(d.getDate() - i);\n  const y = d.getFullYear();\n  const m = String(d.getMonth() + 1).padStart(2, '0');\n  const day = String(d.getDate()).padStart(2, '0');\n  possibleDates.push(`${y}${m}${day}`);\n}\n\nreturn [{\n  json: {\n    base_url: 'https://www.dallascounty.org/Assets/uploads/docs/district-clerk/excess-funds/',\n    possible_dates: possibleDates,\n    current_attempt: 0\n  }\n}];"
+      },
+      "id": "generate-url",
+      "name": "🔗 Generate PDF URL",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [250, 175]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.base_url }}ExcessFunds-{{ $json.possible_dates[$json.current_attempt] }}.pdf",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "file"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "download-pdf",
+      "name": "📥 Download PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [500, 175],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-success",
+              "leftValue": "={{ $json.statusCode }}",
+              "rightValue": 200,
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-download",
+      "name": "✅ Download Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [750, 175]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Try next date\nconst input = $('🔗 Generate PDF URL').first().json;\nconst nextAttempt = (input.current_attempt || 0) + 1;\n\nif (nextAttempt >= input.possible_dates.length) {\n  throw new Error('Could not find PDF for any recent date');\n}\n\nreturn [{\n  json: {\n    ...input,\n    current_attempt: nextAttempt\n  }\n}];"
+      },
+      "id": "try-next-date",
+      "name": "🔄 Try Next Date",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [750, 400]
+    },
+    {
+      "parameters": {
+        "operation": "pdf",
+        "options": {}
+      },
+      "id": "extract-pdf-text",
+      "name": "📄 Extract PDF Text",
+      "type": "n8n-nodes-base.extractFromFile",
+      "typeVersion": 1,
+      "position": [1000, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse the extracted PDF text into structured data\nconst pdfText = $input.first().json.data;\n\nconst leads = [];\nconst lines = pdfText.split('\\n');\n\n// Regex patterns for Dallas County excess funds format\nconst casePattern = /TX-\\d{2}-\\d{5}/g;\nconst amountPattern = /\\$[\\d,]+\\.?\\d*/g;\nconst datePattern = /\\d{1,2}\\/\\d{1,2}\\/\\d{4}/g;\n\nlet currentCase = null;\nlet currentData = {};\n\nfor (let i = 0; i < lines.length; i++) {\n  const line = lines[i].trim();\n  \n  // Look for case numbers\n  const caseMatch = line.match(casePattern);\n  if (caseMatch) {\n    // Save previous case if exists\n    if (currentCase && currentData.owner_name) {\n      leads.push({\n        source_type: 'excess_funds',\n        county: 'Dallas',\n        excess_funds_case_number: currentCase,\n        owner_name: currentData.owner_name,\n        excess_funds_amount: currentData.amount || 0,\n        excess_funds_filing_date: currentData.filing_date,\n        has_excess_funds: true,\n        is_distressed: false,\n        pipeline_stage: 'new',\n        sam_status: 'pending',\n        scraped_at: new Date().toISOString()\n      });\n    }\n    \n    currentCase = caseMatch[0];\n    currentData = {};\n  }\n  \n  // Look for \"VS\" to find owner name\n  if (line.includes('VS') || line.includes('vs')) {\n    const parts = line.split(/VS\\.?|vs\\.?/i);\n    if (parts[1]) {\n      // Owner name is after VS\n      let ownerName = parts[1].trim()\n        .replace(/ET AL\\.?/gi, '')\n        .replace(/,\\s*$/, '')\n        .trim();\n      currentData.owner_name = ownerName;\n    }\n  }\n  \n  // Look for amounts\n  const amountMatch = line.match(amountPattern);\n  if (amountMatch && currentCase) {\n    const amount = parseFloat(amountMatch[0].replace(/[$,]/g, ''));\n    if (amount > 100) { // Filter out small amounts that might be fees\n      currentData.amount = amount;\n    }\n  }\n  \n  // Look for dates\n  const dateMatch = line.match(datePattern);\n  if (dateMatch && currentCase) {\n    currentData.filing_date = dateMatch[0];\n  }\n}\n\n// Don't forget the last case\nif (currentCase && currentData.owner_name) {\n  leads.push({\n    source_type: 'excess_funds',\n    county: 'Dallas',\n    excess_funds_case_number: currentCase,\n    owner_name: currentData.owner_name,\n    excess_funds_amount: currentData.amount || 0,\n    excess_funds_filing_date: currentData.filing_date,\n    has_excess_funds: true,\n    is_distressed: false,\n    pipeline_stage: 'new',\n    sam_status: 'pending',\n    scraped_at: new Date().toISOString()\n  });\n}\n\nconsole.log(`Parsed ${leads.length} excess funds cases from PDF`);\n\nreturn leads.map(lead => ({ json: lead }));"
+      },
+      "id": "parse-pdf-data",
+      "name": "🧮 Parse PDF Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-data",
+              "leftValue": "={{ $json.owner_name }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            },
+            {
+              "id": "has-amount",
+              "leftValue": "={{ $json.excess_funds_amount }}",
+              "rightValue": 1000,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-valid",
+      "name": "💎 Filter Valid Leads (>$1k)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [1500, 100]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 500,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"Parse this owner name from a court case and extract the person's first and last name. Return JSON only:\\n\\nOwner string: {{ $json.owner_name }}\\n\\nReturn: {\\\"first_name\\\": \\\"...\\\", \\\"last_name\\\": \\\"...\\\", \\\"clean_name\\\": \\\"Last, First\\\"}\"\n  }]\n}",
+        "options": {}
+      },
+      "id": "ai-parse-name",
+      "name": "🤖 AI Parse Name",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1750, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// Merge AI-parsed name with lead data\nconst lead = $('💎 Filter Valid Leads (>$1k)').first().json;\nconst aiResponse = $input.first().json;\n\nlet parsedName = {};\ntry {\n  const text = aiResponse.content?.[0]?.text || '{}';\n  const jsonMatch = text.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    parsedName = JSON.parse(jsonMatch[0]);\n  }\n} catch (e) {\n  // Use original name if parsing fails\n  parsedName = {\n    first_name: '',\n    last_name: lead.owner_name,\n    clean_name: lead.owner_name\n  };\n}\n\n// Calculate expiry date (2 years from filing)\nlet expiryDate = null;\nif (lead.excess_funds_filing_date) {\n  const parts = lead.excess_funds_filing_date.split('/');\n  if (parts.length === 3) {\n    const filingDate = new Date(parts[2], parts[0] - 1, parts[1]);\n    expiryDate = new Date(filingDate);\n    expiryDate.setFullYear(expiryDate.getFullYear() + 2);\n  }\n}\n\nconst daysUntilExpiry = expiryDate \n  ? Math.ceil((expiryDate - new Date()) / (1000 * 60 * 60 * 24))\n  : null;\n\nreturn [{\n  json: {\n    ...lead,\n    owner_first_name: parsedName.first_name,\n    owner_last_name: parsedName.last_name,\n    owner_name: parsedName.clean_name || lead.owner_name,\n    excess_funds_expiry_date: expiryDate?.toISOString()?.split('T')[0],\n    days_until_expiry: daysUntilExpiry,\n    expiry_priority: daysUntilExpiry <= 60 ? 'CRITICAL' : \n                     daysUntilExpiry <= 120 ? 'HIGH' : 'MEDIUM'\n  }\n}];"
+      },
+      "id": "merge-parsed-data",
+      "name": "🔀 Merge Parsed Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2000, 100]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "tableId": "maxsam_leads",
+        "conflictColumns": ["excess_funds_case_number"],
+        "columnList": {
+          "mappingMode": "autoMapInputData"
+        }
+      },
+      "id": "save-to-supabase",
+      "name": "💾 Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-maxsam",
+          "name": "Supabase MaxSam"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate results for summary\nconst leads = $input.all().map(item => item.json);\n\nconst summary = {\n  total_scraped: leads.length,\n  total_amount: leads.reduce((sum, l) => sum + (l.excess_funds_amount || 0), 0),\n  critical_expiring: leads.filter(l => l.expiry_priority === 'CRITICAL').length,\n  high_expiring: leads.filter(l => l.expiry_priority === 'HIGH').length,\n  potential_fees: leads.reduce((sum, l) => sum + (l.excess_funds_amount || 0) * 0.25, 0),\n  scraped_at: new Date().toISOString()\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate-results",
+      "name": "📊 Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2500, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "8487686924",
+        "text": "=📄 **EXCESS FUNDS PDF SCRAPED** 📄\n\n⏰ {{ $now.format('yyyy-MM-dd HH:mm') }}\n\n📊 **RESULTS:**\n• Total Cases Scraped: {{ $json.total_scraped }}\n• Total Excess Funds: ${{ $json.total_amount.toLocaleString() }}\n• 🚨 Critical (<60 days): {{ $json.critical_expiring }}\n• ⚠️ High (<120 days): {{ $json.high_expiring }}\n\n💰 **Potential Fees (25%):**\n${{ $json.potential_fees.toLocaleString() }}\n\n✅ Data saved to Supabase!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-summary",
+      "name": "📱 Telegram Summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2750, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-sam",
+          "name": "Telegram Sam Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "⏰ Daily 5:30 AM": {
+      "main": [[{"node": "🔗 Generate PDF URL", "type": "main", "index": 0}]]
+    },
+    "🖱️ Manual Trigger": {
+      "main": [[{"node": "🔗 Generate PDF URL", "type": "main", "index": 0}]]
+    },
+    "🔗 Generate PDF URL": {
+      "main": [[{"node": "📥 Download PDF", "type": "main", "index": 0}]]
+    },
+    "📥 Download PDF": {
+      "main": [[{"node": "✅ Download Success?", "type": "main", "index": 0}]]
+    },
+    "✅ Download Success?": {
+      "main": [
+        [{"node": "📄 Extract PDF Text", "type": "main", "index": 0}],
+        [{"node": "🔄 Try Next Date", "type": "main", "index": 0}]
+      ]
+    },
+    "🔄 Try Next Date": {
+      "main": [[{"node": "📥 Download PDF", "type": "main", "index": 0}]]
+    },
+    "📄 Extract PDF Text": {
+      "main": [[{"node": "🧮 Parse PDF Data", "type": "main", "index": 0}]]
+    },
+    "🧮 Parse PDF Data": {
+      "main": [[{"node": "💎 Filter Valid Leads (>$1k)", "type": "main", "index": 0}]]
+    },
+    "💎 Filter Valid Leads (>$1k)": {
+      "main": [[{"node": "🤖 AI Parse Name", "type": "main", "index": 0}]]
+    },
+    "🤖 AI Parse Name": {
+      "main": [[{"node": "🔀 Merge Parsed Data", "type": "main", "index": 0}]]
+    },
+    "🔀 Merge Parsed Data": {
+      "main": [[{"node": "💾 Save to Supabase", "type": "main", "index": 0}]]
+    },
+    "💾 Save to Supabase": {
+      "main": [[{"node": "📊 Aggregate Results", "type": "main", "index": 0}]]
+    },
+    "📊 Aggregate Results": {
+      "main": [[{"node": "📱 Telegram Summary", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}

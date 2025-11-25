@@ -1,0 +1,862 @@
+{
+  "name": "MaxSam V4 - MASTER PIPELINE",
+  "nodes": [
+    {
+      "parameters": {
+        "content": "# 🚀 MAXSAM V4 MASTER PIPELINE\n\n## THE ULTIMATE WHOLESALE REAL ESTATE AUTOMATION\n\n**WHAT THIS DOES:**\n- 📥 Fetches Excess Funds + Foreclosure lists daily\n- 🔥 Cross-references for DUAL OPPORTUNITIES (35% fee)\n- ⏰ Prioritizes leads expiring in <60 days\n- 🤖 Eleanor AI scores every lead\n- 📞 Sam outreach via Twilio\n- 💾 Saves everything to Supabase\n- 📊 Updates Dashboard in real-time\n- 📱 Telegram alerts for hot deals\n\n**TRIGGERS:**\n- ⏰ Daily 6AM automatic\n- 🖱️ Manual trigger\n- 📄 CSV upload webhook\n- 🌐 API endpoint\n\n**CREATED:** For Logan/MaxSam\n**VERSION:** 4.0 Production",
+        "height": 520,
+        "width": 450,
+        "color": 6
+      },
+      "id": "sticky-main",
+      "name": "📋 MASTER PIPELINE INFO",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-1200, -200]
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trigger-daily",
+      "name": "⏰ Daily 6AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [-700, 0]
+    },
+    {
+      "parameters": {},
+      "id": "trigger-manual",
+      "name": "🖱️ Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [-700, 150]
+    },
+    {
+      "parameters": {
+        "path": "maxsam/csv-upload",
+        "httpMethod": "POST",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": true
+        }
+      },
+      "id": "trigger-csv-webhook",
+      "name": "📄 CSV Upload Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-700, 300],
+      "webhookId": "maxsam-csv-upload"
+    },
+    {
+      "parameters": {
+        "path": "maxsam/api/leads",
+        "httpMethod": "GET",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "trigger-api-leads",
+      "name": "🌐 API - Get Leads",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [-700, 450],
+      "webhookId": "maxsam-api-leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PIPELINE CONFIGURATION\n// ============================================\n\nconst config = {\n  run_id: `run_${Date.now()}`,\n  run_timestamp: new Date().toISOString(),\n  \n  // Counties to process (add more as you scale)\n  counties: ['Dallas'],\n  \n  // Scoring thresholds\n  min_score_threshold: 50,\n  min_excess_funds: 5000,\n  \n  // Priority settings\n  critical_days_threshold: 60,  // <60 days = CRITICAL\n  high_days_threshold: 120,     // <120 days = HIGH\n  \n  // API endpoints (update with real URLs)\n  excess_funds_api: 'https://api.example.com/excess-funds',\n  foreclosure_api: 'https://api.example.com/foreclosures',\n  \n  // Supabase config\n  supabase_url: $env.SUPABASE_URL || 'https://your-project.supabase.co',\n  supabase_key: $env.SUPABASE_KEY || 'your-anon-key',\n  \n  // Twilio config\n  twilio_enabled: true,\n  twilio_from_number: '+18449632549',\n  \n  // Telegram config\n  telegram_enabled: true,\n  telegram_chat_id: '8487686924',\n  \n  // Rate limiting\n  batch_size: 10,\n  delay_between_batches_ms: 2000,\n  \n  // Feature flags\n  enable_ai_scoring: true,\n  enable_skip_trace: true,\n  enable_zillow_lookup: true,\n  enable_sms_outreach: false,  // Set TRUE after Twilio verified\n  enable_voice_outreach: false,\n  \n  // Trigger source\n  trigger_source: $input.first()?.json?.trigger || 'scheduled'\n};\n\nreturn [{ json: config }];"
+      },
+      "id": "config-pipeline",
+      "name": "⚙️ Pipeline Configuration",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-450, 150]
+    },
+    {
+      "parameters": {
+        "content": "## 📥 DATA INGESTION PHASE\n\n**Sources:**\n1. Dallas County Excess Funds API\n2. Foreclosure/Distressed API\n3. Manual CSV uploads\n4. Zillow property data\n\n**Output:**\n- Normalized lead records\n- Source tracking\n- Deduplication",
+        "height": 200,
+        "width": 300,
+        "color": 4
+      },
+      "id": "sticky-ingestion",
+      "name": "📥 Ingestion Phase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-200, -150]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.excess_funds_api }}",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "county",
+              "value": "Dallas"
+            },
+            {
+              "name": "status",
+              "value": "unclaimed"
+            },
+            {
+              "name": "min_amount",
+              "value": "={{ $json.min_excess_funds }}"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-excess-funds",
+      "name": "💰 Fetch Excess Funds",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 0],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.foreclosure_api }}",
+        "authentication": "none",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "county",
+              "value": "Dallas"
+            },
+            {
+              "name": "status",
+              "value": "active"
+            }
+          ]
+        },
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "fetch-foreclosures",
+      "name": "🏠 Fetch Foreclosures",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [-200, 150],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// MOCK DATA GENERATOR (Replace with real API data)\n// ============================================\n// This generates test data when APIs aren't connected yet\n// DELETE THIS NODE once you have real API endpoints\n\nconst config = $input.first().json;\nconst mockLeads = [];\n\n// Generate Excess Funds leads\nconst excessFundsNames = [\n  { first: 'Sarah', last: 'Martinez', amount: 45000, daysLeft: 45 },\n  { first: 'Robert', last: 'Johnson', amount: 28500, daysLeft: 90 },\n  { first: 'Jennifer', last: 'Williams', amount: 62000, daysLeft: 30 },\n  { first: 'Michael', last: 'Brown', amount: 18500, daysLeft: 150 },\n  { first: 'Lisa', last: 'Davis', amount: 55000, daysLeft: 55 },\n  { first: 'James', last: 'Wilson', amount: 32000, daysLeft: 40 },\n  { first: 'Patricia', last: 'Taylor', amount: 41000, daysLeft: 75 },\n  { first: 'David', last: 'Anderson', amount: 29000, daysLeft: 100 }\n];\n\n// Generate Foreclosure leads\nconst foreclosureAddresses = [\n  { address: '1234 Oak Street', type: 'foreclosure', value: 285000 },\n  { address: '5678 Elm Avenue', type: 'pre-foreclosure', value: 195000 },\n  { address: '9012 Pine Road', type: 'tax_lien', value: 165000 },\n  { address: '3456 Maple Drive', type: 'foreclosure', value: 225000 },\n  { address: '7890 Cedar Lane', type: 'pre-foreclosure', value: 175000 }\n];\n\n// Create excess funds leads\nexcessFundsNames.forEach((person, i) => {\n  const expiryDate = new Date();\n  expiryDate.setDate(expiryDate.getDate() + person.daysLeft);\n  \n  mockLeads.push({\n    source_type: 'excess_funds',\n    county: 'Dallas',\n    property_address: `${1000 + i * 111} ${['Main', 'First', 'Second', 'Third', 'Fourth'][i % 5]} Street, Dallas, TX 75201`,\n    property_city: 'Dallas',\n    property_zip: '75201',\n    owner_name: `${person.last}, ${person.first}`,\n    owner_first_name: person.first,\n    owner_last_name: person.last,\n    owner_phone: `214-555-${String(1000 + i).padStart(4, '0')}`,\n    has_excess_funds: true,\n    excess_funds_amount: person.amount,\n    excess_funds_expiry_date: expiryDate.toISOString().split('T')[0],\n    days_until_expiry: person.daysLeft,\n    is_distressed: i < 3, // First 3 are DUAL OPPORTUNITIES\n    distress_type: i < 3 ? 'foreclosure' : null,\n    estimated_value: 150000 + (i * 25000),\n    run_id: config.run_id\n  });\n});\n\n// Create foreclosure-only leads\nforeclosureAddresses.forEach((prop, i) => {\n  mockLeads.push({\n    source_type: 'foreclosure',\n    county: 'Dallas',\n    property_address: `${prop.address}, Dallas, TX 75201`,\n    property_city: 'Dallas',\n    property_zip: '75201',\n    owner_name: `Owner${i + 10}, Test`,\n    owner_first_name: 'Test',\n    owner_last_name: `Owner${i + 10}`,\n    owner_phone: `214-555-${String(2000 + i).padStart(4, '0')}`,\n    has_excess_funds: false,\n    excess_funds_amount: null,\n    is_distressed: true,\n    distress_type: prop.type,\n    estimated_value: prop.value,\n    arv_estimate: prop.value * 1.15,\n    max_offer: prop.value * 0.7,\n    wholesale_fee_potential: prop.value * 0.1,\n    run_id: config.run_id\n  });\n});\n\nreturn mockLeads.map(lead => ({ json: lead }));"
+      },
+      "id": "mock-data-generator",
+      "name": "🧪 Mock Data (Delete When APIs Ready)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [-200, 300]
+    },
+    {
+      "parameters": {
+        "content": "## 🔥 CROSS-REFERENCE PHASE\n\n**THE GOLDEN INTERSECTION:**\n\nExcess Funds List ∩ Foreclosure List\n= DUAL OPPORTUNITY (35% fee!)\n\n**Priority Calculation:**\n- CRITICAL: <60 days to expiry\n- HIGH: <120 days\n- MEDIUM: <180 days\n- LOW: 180+ days",
+        "height": 200,
+        "width": 300,
+        "color": 7
+      },
+      "id": "sticky-crossref",
+      "name": "🔥 Cross-Reference Phase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [150, -150]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// CROSS-REFERENCE & DUAL OPPORTUNITY DETECTION\n// ============================================\n\nconst leads = $input.all().map(item => item.json);\nconst enrichedLeads = [];\n\n// Group by owner name to find cross-property opportunities\nconst ownerMap = new Map();\n\nleads.forEach(lead => {\n  const ownerKey = lead.owner_name?.toLowerCase().trim();\n  if (!ownerKey) return;\n  \n  if (!ownerMap.has(ownerKey)) {\n    ownerMap.set(ownerKey, []);\n  }\n  ownerMap.get(ownerKey).push(lead);\n});\n\n// Process each lead\nleads.forEach(lead => {\n  const ownerKey = lead.owner_name?.toLowerCase().trim();\n  const ownerLeads = ownerMap.get(ownerKey) || [];\n  \n  // Check if this owner has BOTH excess funds AND distressed property\n  const hasExcessFunds = lead.has_excess_funds || ownerLeads.some(l => l.has_excess_funds);\n  const hasDistressed = lead.is_distressed || ownerLeads.some(l => l.is_distressed);\n  const isDualOpportunity = hasExcessFunds && hasDistressed;\n  \n  // Calculate days until expiry\n  let daysUntilExpiry = null;\n  let expiryPriority = null;\n  \n  if (lead.excess_funds_expiry_date) {\n    const expiry = new Date(lead.excess_funds_expiry_date);\n    const today = new Date();\n    daysUntilExpiry = Math.ceil((expiry - today) / (1000 * 60 * 60 * 24));\n    \n    if (daysUntilExpiry <= 60) expiryPriority = 'CRITICAL';\n    else if (daysUntilExpiry <= 120) expiryPriority = 'HIGH';\n    else if (daysUntilExpiry <= 180) expiryPriority = 'MEDIUM';\n    else expiryPriority = 'LOW';\n  }\n  \n  // Calculate fee potential\n  const excessFundsFee = lead.has_excess_funds ? (lead.excess_funds_amount || 0) * 0.25 : 0;\n  const wholesaleFee = lead.wholesale_fee_potential || (lead.is_distressed ? (lead.estimated_value || 0) * 0.10 : 0);\n  const totalFeePotential = excessFundsFee + wholesaleFee;\n  \n  // Determine opportunity tier\n  let opportunityTier = 'STANDARD';\n  if (isDualOpportunity && daysUntilExpiry && daysUntilExpiry <= 60) {\n    opportunityTier = 'PLATINUM'; // 🔥🔥🔥 HOTTEST\n  } else if (isDualOpportunity) {\n    opportunityTier = 'GOLD';\n  } else if (hasExcessFunds && daysUntilExpiry && daysUntilExpiry <= 60) {\n    opportunityTier = 'SILVER_URGENT';\n  } else if (hasExcessFunds) {\n    opportunityTier = 'SILVER';\n  } else if (hasDistressed) {\n    opportunityTier = 'BRONZE';\n  }\n  \n  enrichedLeads.push({\n    ...lead,\n    is_dual_opportunity: isDualOpportunity,\n    days_until_expiry: daysUntilExpiry,\n    expiry_priority: expiryPriority,\n    opportunity_tier: opportunityTier,\n    excess_funds_fee_potential: excessFundsFee,\n    wholesale_fee_potential: wholesaleFee,\n    total_fee_potential: totalFeePotential,\n    cross_referenced_at: new Date().toISOString(),\n    needs_immediate_action: (isDualOpportunity && daysUntilExpiry <= 60) || opportunityTier === 'PLATINUM'\n  });\n});\n\n// Sort by priority: Dual + Expiring first, then by fee potential\nenrichedLeads.sort((a, b) => {\n  // Platinum first\n  if (a.opportunity_tier === 'PLATINUM' && b.opportunity_tier !== 'PLATINUM') return -1;\n  if (b.opportunity_tier === 'PLATINUM' && a.opportunity_tier !== 'PLATINUM') return 1;\n  \n  // Then by days until expiry (null = last)\n  if (a.days_until_expiry && b.days_until_expiry) {\n    return a.days_until_expiry - b.days_until_expiry;\n  }\n  if (a.days_until_expiry && !b.days_until_expiry) return -1;\n  if (!a.days_until_expiry && b.days_until_expiry) return 1;\n  \n  // Then by fee potential\n  return (b.total_fee_potential || 0) - (a.total_fee_potential || 0);\n});\n\nconsole.log(`Cross-referenced ${enrichedLeads.length} leads`);\nconsole.log(`Found ${enrichedLeads.filter(l => l.is_dual_opportunity).length} dual opportunities`);\nconsole.log(`Found ${enrichedLeads.filter(l => l.expiry_priority === 'CRITICAL').length} critical (expiring <60 days)`);\n\nreturn enrichedLeads.map(lead => ({ json: lead }));"
+      },
+      "id": "cross-reference",
+      "name": "🔥 Cross-Reference & Detect Dual Opportunities",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [150, 100]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "filter-quality",
+              "leftValue": "={{ $json.total_fee_potential }}",
+              "rightValue": 1000,
+              "operator": {
+                "type": "number",
+                "operation": "gte"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "filter-quality-leads",
+      "name": "💎 Filter Quality Leads (>$1k potential)",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2,
+      "position": [150, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "batch-for-scoring",
+      "name": "📦 Batch for AI Scoring",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [400, 100]
+    },
+    {
+      "parameters": {
+        "content": "## 🤖 ELEANOR AI SCORING\n\n**Eleanor analyzes:**\n- Motivation level\n- Deal quality\n- ARV & repair estimates\n- Max offer calculation\n- Opening line generation\n- Objection handlers\n- Pain points\n\n**Grades:** S, A, B, C, D, F\n**Scores:** 0-100",
+        "height": 220,
+        "width": 300,
+        "color": 5
+      },
+      "id": "sticky-eleanor",
+      "name": "🤖 Eleanor AI Phase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [450, -150]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"model\": \"claude-sonnet-4-20250514\",\n  \"max_tokens\": 2048,\n  \"messages\": [{\n    \"role\": \"user\",\n    \"content\": \"You are Eleanor, an elite wholesale real estate AI analyst. Analyze this property and owner:\\n\\n**PROPERTY:**\\n- Address: {{ $json.property_address }}\\n- County: {{ $json.county }}\\n- Estimated Value: ${{ $json.estimated_value || 'Unknown' }}\\n- Property Type: {{ $json.property_type || 'Single Family' }}\\n\\n**OWNER:**\\n- Name: {{ $json.owner_name }}\\n- Phone: {{ $json.owner_phone || 'Unknown' }}\\n\\n**OPPORTUNITY TYPE:**\\n- Has Excess Funds: {{ $json.has_excess_funds }}\\n- Excess Funds Amount: ${{ $json.excess_funds_amount || 0 }}\\n- Days Until Expiry: {{ $json.days_until_expiry || 'N/A' }}\\n- Is Distressed: {{ $json.is_distressed }}\\n- Distress Type: {{ $json.distress_type || 'None' }}\\n- Is DUAL OPPORTUNITY: {{ $json.is_dual_opportunity }}\\n- Opportunity Tier: {{ $json.opportunity_tier }}\\n\\n**FINANCIALS:**\\n- Total Fee Potential: ${{ $json.total_fee_potential }}\\n- Excess Funds Fee (25%): ${{ $json.excess_funds_fee_potential || 0 }}\\n- Wholesale Fee (10%): ${{ $json.wholesale_fee_potential || 0 }}\\n\\nProvide analysis as JSON ONLY (no markdown, no explanation):\\n{\\n  \\\"score\\\": <0-100>,\\n  \\\"grade\\\": \\\"<S/A/B/C/D/F>\\\",\\n  \\\"motivation_level\\\": \\\"<EXTREME/HIGH/MEDIUM/LOW>\\\",\\n  \\\"deal_quality\\\": \\\"<UNICORN/PREMIUM/SOLID/MARGINAL/PASS>\\\",\\n  \\\"contact_priority\\\": \\\"<IMMEDIATE/TODAY/THIS_WEEK/NURTURE>\\\",\\n  \\\"arv_estimate\\\": <number>,\\n  \\\"repair_estimate\\\": <number>,\\n  \\\"max_offer\\\": <number>,\\n  \\\"opening_line\\\": \\\"<personalized opening for Sam to use>\\\",\\n  \\\"pain_points\\\": [\\\"<list>\\\", \\\"<of>\\\", \\\"<pain points>\\\"],\\n  \\\"objection_handlers\\\": [\\\"<list>\\\", \\\"<of>\\\", \\\"<responses>\\\"],\\n  \\\"notes\\\": \\\"<brief analysis>\\\"\\n}\"\n  }]\n}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "id": "eleanor-ai-scoring",
+      "name": "🤖 Eleanor AI Scoring",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [650, 100],
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "anthropic-api",
+          "name": "Anthropic API"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// PARSE ELEANOR'S AI RESPONSE\n// ============================================\n\nconst lead = $('📦 Batch for AI Scoring').first().json;\nconst aiResponse = $input.first().json;\n\nlet eleanorAnalysis = {};\n\ntry {\n  // Extract text from Claude response\n  let responseText = '';\n  if (aiResponse.content && aiResponse.content[0]) {\n    responseText = aiResponse.content[0].text;\n  } else if (aiResponse.choices && aiResponse.choices[0]) {\n    responseText = aiResponse.choices[0].message.content;\n  } else if (typeof aiResponse === 'string') {\n    responseText = aiResponse;\n  }\n  \n  // Clean and parse JSON\n  responseText = responseText.replace(/```json/g, '').replace(/```/g, '').trim();\n  \n  // Find JSON object in response\n  const jsonMatch = responseText.match(/\\{[\\s\\S]*\\}/);\n  if (jsonMatch) {\n    eleanorAnalysis = JSON.parse(jsonMatch[0]);\n  }\n} catch (error) {\n  console.log('Eleanor parsing error:', error.message);\n  \n  // Fallback scoring based on opportunity tier\n  const tierScores = {\n    'PLATINUM': { score: 95, grade: 'S', motivation: 'EXTREME', quality: 'UNICORN', priority: 'IMMEDIATE' },\n    'GOLD': { score: 85, grade: 'A', motivation: 'HIGH', quality: 'PREMIUM', priority: 'TODAY' },\n    'SILVER_URGENT': { score: 80, grade: 'A', motivation: 'HIGH', quality: 'SOLID', priority: 'IMMEDIATE' },\n    'SILVER': { score: 70, grade: 'B', motivation: 'MEDIUM', quality: 'SOLID', priority: 'THIS_WEEK' },\n    'BRONZE': { score: 60, grade: 'B', motivation: 'MEDIUM', quality: 'SOLID', priority: 'THIS_WEEK' },\n    'STANDARD': { score: 50, grade: 'C', motivation: 'LOW', quality: 'MARGINAL', priority: 'NURTURE' }\n  };\n  \n  const tierDefaults = tierScores[lead.opportunity_tier] || tierScores['STANDARD'];\n  \n  eleanorAnalysis = {\n    score: tierDefaults.score,\n    grade: tierDefaults.grade,\n    motivation_level: tierDefaults.motivation,\n    deal_quality: tierDefaults.quality,\n    contact_priority: tierDefaults.priority,\n    arv_estimate: (lead.estimated_value || 200000) * 1.15,\n    repair_estimate: (lead.estimated_value || 200000) * 0.1,\n    max_offer: (lead.estimated_value || 200000) * 0.7,\n    opening_line: lead.has_excess_funds \n      ? `Hi ${lead.owner_first_name || 'there'}, I found records showing you may have $${(lead.excess_funds_amount || 0).toLocaleString()} in unclaimed funds. I can help you recover this money.`\n      : `Hi ${lead.owner_first_name || 'there'}, I'm an investor looking to buy properties in ${lead.county} County. Would you consider a cash offer for your property?`,\n    pain_points: ['Financial pressure', 'Time constraints', 'Property burden'],\n    objection_handlers: ['I understand your concern...', 'Many sellers feel the same way initially...'],\n    notes: 'Auto-scored due to AI response parsing issue'\n  };\n}\n\n// Merge Eleanor's analysis with lead data\nconst enrichedLead = {\n  ...lead,\n  eleanor_score: eleanorAnalysis.score,\n  eleanor_grade: eleanorAnalysis.grade,\n  eleanor_motivation_level: eleanorAnalysis.motivation_level,\n  eleanor_deal_quality: eleanorAnalysis.deal_quality,\n  eleanor_contact_priority: eleanorAnalysis.contact_priority,\n  eleanor_opening_line: eleanorAnalysis.opening_line,\n  eleanor_pain_points: eleanorAnalysis.pain_points,\n  eleanor_objection_handlers: eleanorAnalysis.objection_handlers,\n  eleanor_notes: eleanorAnalysis.notes,\n  arv_estimate: eleanorAnalysis.arv_estimate || lead.arv_estimate,\n  repair_estimate: eleanorAnalysis.repair_estimate || lead.repair_estimate,\n  max_offer: eleanorAnalysis.max_offer || lead.max_offer,\n  eleanor_scored_at: new Date().toISOString(),\n  ai_scored: true\n};\n\nreturn [{ json: enrichedLead }];"
+      },
+      "id": "parse-eleanor",
+      "name": "🧮 Parse Eleanor Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Rate limit delay between batches\nawait new Promise(resolve => setTimeout(resolve, 1500));\nreturn $input.all();"
+      },
+      "id": "rate-limit-delay",
+      "name": "⏱️ Rate Limit Delay",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 300]
+    },
+    {
+      "parameters": {
+        "content": "## 💾 DATA STORAGE PHASE\n\n**Destinations:**\n1. Supabase (primary database)\n2. Google Sheets (backup/reporting)\n\n**Operations:**\n- Upsert (update or insert)\n- Deduplication by address+owner\n- Timestamp tracking",
+        "height": 180,
+        "width": 300,
+        "color": 3
+      },
+      "id": "sticky-storage",
+      "name": "💾 Storage Phase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1100, -150]
+    },
+    {
+      "parameters": {
+        "operation": "upsert",
+        "tableId": "maxsam_leads",
+        "conflictColumns": "property_address,owner_name",
+        "columnList": {
+          "mappingMode": "autoMapInputData",
+          "matchingColumns": ["property_address", "owner_name"]
+        }
+      },
+      "id": "save-to-supabase",
+      "name": "💾 Save to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1150, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-maxsam",
+          "name": "Supabase MaxSam"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "list",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {}
+        },
+        "options": {}
+      },
+      "id": "save-to-sheets",
+      "name": "📊 Backup to Google Sheets",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.2,
+      "position": [1150, 300],
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "google-sheets",
+          "name": "Google Sheets"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-hot-lead",
+              "leftValue": "={{ $json.eleanor_contact_priority }}",
+              "rightValue": "IMMEDIATE",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "or"
+        },
+        "options": {}
+      },
+      "id": "check-immediate-alert",
+      "name": "🚨 Is Immediate Priority?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1400, 100]
+    },
+    {
+      "parameters": {
+        "content": "## 📱 NOTIFICATION PHASE\n\n**Alerts:**\n- Telegram: Hot deals & daily summary\n- (Future) SMS to your phone\n- (Future) Email digest\n\n**Triggers:**\n- IMMEDIATE priority leads\n- PLATINUM tier opportunities\n- Daily completion summary",
+        "height": 180,
+        "width": 300,
+        "color": 2
+      },
+      "id": "sticky-notifications",
+      "name": "📱 Notifications Phase",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1450, -150]
+    },
+    {
+      "parameters": {
+        "chatId": "8487686924",
+        "text": "=🔥🔥 **HOT LEAD ALERT** 🔥🔥\n\n**{{ $json.opportunity_tier }} OPPORTUNITY**\n\n📍 **Address:** {{ $json.property_address }}\n👤 **Owner:** {{ $json.owner_name }}\n📞 **Phone:** {{ $json.owner_phone || 'Need skip trace' }}\n\n💰 **MONEY:**\n{{ $json.has_excess_funds ? '• Excess Funds: $' + ($json.excess_funds_amount || 0).toLocaleString() : '' }}\n{{ $json.days_until_expiry ? '• ⚠️ EXPIRES IN: ' + $json.days_until_expiry + ' DAYS' : '' }}\n{{ $json.is_distressed ? '• Distress Type: ' + $json.distress_type : '' }}\n• Total Fee Potential: ${{ ($json.total_fee_potential || 0).toLocaleString() }}\n\n🤖 **ELEANOR SAYS:**\n• Score: {{ $json.eleanor_score }}/100 ({{ $json.eleanor_grade }})\n• Quality: {{ $json.eleanor_deal_quality }}\n• Priority: {{ $json.eleanor_contact_priority }}\n\n🎤 **OPENING LINE:**\n\"{{ $json.eleanor_opening_line }}\"\n\n⚡ **ACTION:** CALL NOW!",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-hot-alert",
+      "name": "📱 Telegram Hot Lead Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1650, 0],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-sam",
+          "name": "Telegram Sam Bot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// AGGREGATE PIPELINE RESULTS\n// ============================================\n\nconst allLeads = $input.all().map(item => item.json);\n\nconst summary = {\n  run_timestamp: new Date().toISOString(),\n  total_processed: allLeads.length,\n  \n  // Opportunity breakdown\n  dual_opportunities: allLeads.filter(l => l.is_dual_opportunity).length,\n  excess_funds_only: allLeads.filter(l => l.has_excess_funds && !l.is_distressed).length,\n  distressed_only: allLeads.filter(l => l.is_distressed && !l.has_excess_funds).length,\n  \n  // Priority breakdown\n  platinum_tier: allLeads.filter(l => l.opportunity_tier === 'PLATINUM').length,\n  gold_tier: allLeads.filter(l => l.opportunity_tier === 'GOLD').length,\n  silver_tier: allLeads.filter(l => l.opportunity_tier?.startsWith('SILVER')).length,\n  \n  // Urgency\n  expiring_critical: allLeads.filter(l => l.expiry_priority === 'CRITICAL').length,\n  expiring_high: allLeads.filter(l => l.expiry_priority === 'HIGH').length,\n  \n  // Financials\n  total_excess_funds: allLeads.reduce((sum, l) => sum + (l.excess_funds_amount || 0), 0),\n  total_fee_potential: allLeads.reduce((sum, l) => sum + (l.total_fee_potential || 0), 0),\n  potential_recovery_fees: allLeads.filter(l => l.has_excess_funds).reduce((sum, l) => sum + (l.excess_funds_fee_potential || 0), 0),\n  potential_wholesale_fees: allLeads.filter(l => l.is_distressed).reduce((sum, l) => sum + (l.wholesale_fee_potential || 0), 0),\n  \n  // Scoring\n  avg_eleanor_score: allLeads.length > 0 ? Math.round(allLeads.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / allLeads.length) : 0,\n  immediate_priority: allLeads.filter(l => l.eleanor_contact_priority === 'IMMEDIATE').length,\n  today_priority: allLeads.filter(l => l.eleanor_contact_priority === 'TODAY').length,\n  \n  // Grade distribution\n  grade_s: allLeads.filter(l => l.eleanor_grade === 'S').length,\n  grade_a: allLeads.filter(l => l.eleanor_grade === 'A').length,\n  grade_b: allLeads.filter(l => l.eleanor_grade === 'B').length,\n  \n  // Top opportunities\n  top_leads: allLeads\n    .sort((a, b) => (b.total_fee_potential || 0) - (a.total_fee_potential || 0))\n    .slice(0, 3)\n    .map(l => ({\n      address: l.property_address,\n      owner: l.owner_name,\n      tier: l.opportunity_tier,\n      fee_potential: l.total_fee_potential,\n      days_left: l.days_until_expiry\n    }))\n};\n\nreturn [{ json: summary }];"
+      },
+      "id": "aggregate-results",
+      "name": "📊 Aggregate Results",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 250]
+    },
+    {
+      "parameters": {
+        "chatId": "8487686924",
+        "text": "=✅ **MAXSAM V4 PIPELINE COMPLETE** ✅\n\n📊 **RUN SUMMARY**\n{{ $now.format('yyyy-MM-dd HH:mm') }}\n\n**LEADS PROCESSED:** {{ $json.total_processed }}\n\n🔥 **OPPORTUNITIES:**\n• 💎 Dual (35% fee): {{ $json.dual_opportunities }}\n• 💰 Excess Funds Only: {{ $json.excess_funds_only }}\n• 🏠 Distressed Only: {{ $json.distressed_only }}\n\n⭐ **TIERS:**\n• 🔥 PLATINUM: {{ $json.platinum_tier }}\n• 🥇 GOLD: {{ $json.gold_tier }}\n• 🥈 SILVER: {{ $json.silver_tier }}\n\n⏰ **URGENCY:**\n• 🚨 Critical (<60 days): {{ $json.expiring_critical }}\n• ⚠️ High (<120 days): {{ $json.expiring_high }}\n\n💵 **MONEY:**\n• Total Excess Funds: ${{ $json.total_excess_funds.toLocaleString() }}\n• Potential Fees: ${{ $json.total_fee_potential.toLocaleString() }}\n\n📞 **ACTION ITEMS:**\n• IMMEDIATE calls: {{ $json.immediate_priority }}\n• TODAY calls: {{ $json.today_priority }}\n\n🤖 **SCORING:**\n• Avg Score: {{ $json.avg_eleanor_score }}/100\n• S-Grade: {{ $json.grade_s }}\n• A-Grade: {{ $json.grade_a }}\n\n✨ Pipeline Status: **COMPLETE**",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-summary",
+      "name": "📱 Telegram Summary Report",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1900, 250],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-sam",
+          "name": "Telegram Sam Bot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "tableId": "maxsam_workflow_logs",
+        "columnList": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "workflow_name": "MaxSam V4 Master Pipeline",
+            "status": "completed",
+            "leads_processed": "={{ $json.total_processed }}",
+            "dual_opportunities_found": "={{ $json.dual_opportunities }}",
+            "summary": "={{ JSON.stringify($json) }}"
+          }
+        }
+      },
+      "id": "log-workflow-run",
+      "name": "📝 Log Workflow Run",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1900, 450],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-maxsam",
+          "name": "Supabase MaxSam"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "content": "## 📞 SAM OUTREACH PHASE\n\n**When Twilio Verified:**\n1. Queue leads by priority\n2. Send personalized SMS\n3. Track responses\n4. Update lead status\n5. Schedule callbacks\n\n**Status:** Waiting for Twilio verification",
+        "height": 180,
+        "width": 300,
+        "color": 1
+      },
+      "id": "sticky-sam",
+      "name": "📞 Sam Outreach (Pending)",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [1450, 350]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// SAM SMS OUTREACH (Enable after Twilio verified)\n// ============================================\n\nconst lead = $input.first().json;\nconst config = $('⚙️ Pipeline Configuration').first().json;\n\n// Check if SMS is enabled\nif (!config.enable_sms_outreach) {\n  return [{ \n    json: { \n      ...lead, \n      sam_status: 'pending',\n      sam_note: 'SMS disabled - awaiting Twilio verification'\n    } \n  }];\n}\n\n// Prepare SMS message\nconst message = lead.eleanor_opening_line || \n  `Hi ${lead.owner_first_name || 'there'}, this is Sam from MaxSam Real Estate. I have some important information about your property. Can we talk briefly? Reply STOP to opt out.`;\n\nreturn [{ \n  json: {\n    ...lead,\n    sms_to_send: message,\n    sms_to_number: lead.owner_phone,\n    sms_from_number: config.twilio_from_number,\n    sam_status: 'queued'\n  }\n}];"
+      },
+      "id": "sam-prepare-sms",
+      "name": "📱 Sam - Prepare SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1650, 450],
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## ⚠️ ERROR HANDLING\n\n**Captures:**\n- API failures\n- Parsing errors\n- Rate limit issues\n\n**Actions:**\n- Log to Supabase\n- Telegram alert\n- Continue processing",
+        "height": 150,
+        "width": 250,
+        "color": 1
+      },
+      "id": "sticky-errors",
+      "name": "⚠️ Error Handling",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [150, 450]
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================\n// ERROR HANDLER\n// ============================================\n\nconst error = $input.first().json.error || $input.first().json;\n\nconst errorLog = {\n  timestamp: new Date().toISOString(),\n  workflow: 'MaxSam V4 Master Pipeline',\n  error_type: error.name || 'Unknown',\n  error_message: error.message || JSON.stringify(error).substring(0, 500),\n  node: error.node || 'Unknown',\n  stack: error.stack?.substring(0, 1000) || null\n};\n\nconsole.error('Pipeline Error:', errorLog);\n\nreturn [{ json: errorLog }];"
+      },
+      "id": "error-handler",
+      "name": "⚠️ Error Handler",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [400, 500]
+    },
+    {
+      "parameters": {
+        "chatId": "8487686924",
+        "text": "=⚠️ **PIPELINE ERROR** ⚠️\n\n**Time:** {{ $json.timestamp }}\n**Type:** {{ $json.error_type }}\n**Message:** {{ $json.error_message }}\n**Node:** {{ $json.node }}\n\nCheck n8n for details.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "id": "telegram-error-alert",
+      "name": "📱 Telegram Error Alert",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [650, 500],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-sam",
+          "name": "Telegram Sam Bot"
+        }
+      },
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'CSV processed', leads: $json.total_processed }) }}",
+        "options": {}
+      },
+      "id": "respond-csv-webhook",
+      "name": "📤 Respond to CSV Upload",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [2100, 150]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-api-leads",
+      "name": "📤 Respond to API Request",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [-450, 450]
+    }
+  ],
+  "connections": {
+    "⏰ Daily 6AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Pipeline Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🖱️ Manual Trigger": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Pipeline Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📄 CSV Upload Webhook": {
+      "main": [
+        [
+          {
+            "node": "⚙️ Pipeline Configuration",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🌐 API - Get Leads": {
+      "main": [
+        [
+          {
+            "node": "📤 Respond to API Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚙️ Pipeline Configuration": {
+      "main": [
+        [
+          {
+            "node": "💰 Fetch Excess Funds",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🏠 Fetch Foreclosures",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "🧪 Mock Data (Delete When APIs Ready)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💰 Fetch Excess Funds": {
+      "main": [
+        [
+          {
+            "node": "🔥 Cross-Reference & Detect Dual Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🏠 Fetch Foreclosures": {
+      "main": [
+        [
+          {
+            "node": "🔥 Cross-Reference & Detect Dual Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧪 Mock Data (Delete When APIs Ready)": {
+      "main": [
+        [
+          {
+            "node": "🔥 Cross-Reference & Detect Dual Opportunities",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🔥 Cross-Reference & Detect Dual Opportunities": {
+      "main": [
+        [
+          {
+            "node": "💎 Filter Quality Leads (>$1k potential)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💎 Filter Quality Leads (>$1k potential)": {
+      "main": [
+        [
+          {
+            "node": "📦 Batch for AI Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📦 Batch for AI Scoring": {
+      "main": [
+        [
+          {
+            "node": "🤖 Eleanor AI Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "📊 Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🤖 Eleanor AI Scoring": {
+      "main": [
+        [
+          {
+            "node": "🧮 Parse Eleanor Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🧮 Parse Eleanor Response": {
+      "main": [
+        [
+          {
+            "node": "💾 Save to Supabase",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "📊 Backup to Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⏱️ Rate Limit Delay": {
+      "main": [
+        [
+          {
+            "node": "📦 Batch for AI Scoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "💾 Save to Supabase": {
+      "main": [
+        [
+          {
+            "node": "🚨 Is Immediate Priority?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📊 Backup to Google Sheets": {
+      "main": [
+        [
+          {
+            "node": "⏱️ Rate Limit Delay",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "🚨 Is Immediate Priority?": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram Hot Lead Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "📊 Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "📱 Telegram Summary Report": {
+      "main": [
+        [
+          {
+            "node": "📝 Log Workflow Run",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "⚠️ Error Handler": {
+      "main": [
+        [
+          {
+            "node": "📱 Telegram Error Alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "MaxSam V4",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "Production",
+      "createdAt": "2024-01-01T00:00:00.000Z",
+      "updatedAt": "2024-01-01T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 4,
+  "versionId": "v4.0.0",
+  "meta": {
+    "instanceId": "maxsam-v4-production"
+  }
+}
