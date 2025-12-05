@@ -206,16 +206,15 @@ export default function Page() {
         <nav className="flex-1 p-4">
           <ul className="space-y-2">
             {[
-              { id: 'dashboard', label: 'Dashboard', icon: '◆' },
-              { id: 'sellers', label: 'Sellers', icon: '◇' },
-              { id: 'buyers', label: 'Buyers', icon: '◇' },
-              { id: 'contracts', label: 'Contracts', icon: '◉' },
-              { id: 'analytics', label: 'Analytics', icon: '◈' },
+              { id: 'dashboard', label: 'Dashboard', icon: '◆', href: '/' },
+              { id: 'sellers', label: 'Sellers', icon: '◇', href: '/sellers' },
+              { id: 'morning-brief', label: 'Morning Brief', icon: '☀', href: '/morning-brief' },
+              { id: 'settings', label: 'Settings', icon: '⚙', href: '/settings' },
             ].map((item) => (
               <li key={item.id}>
-              {item.id === 'sellers' ? (
-                <Link 
-                  href="/sellers"
+              {item.href && item.id !== 'dashboard' ? (
+                <Link
+                  href={item.href}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
                     activeTab === item.id
                       ? 'bg-cyan-500/20 text-cyan-400'

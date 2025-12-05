@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Excess Funds Recovery Agreement</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 1in;
+      color: #000;
+    }
+    h1 {
+      text-align: center;
+      font-size: 16pt;
+      margin-bottom: 24pt;
+      text-transform: uppercase;
+    }
+    h2 {
+      font-size: 12pt;
+      margin-top: 18pt;
+      margin-bottom: 6pt;
+    }
+    .parties {
+      margin: 24pt 0;
+    }
+    .section {
+      margin: 12pt 0;
+    }
+    .signature-block {
+      margin-top: 48pt;
+      page-break-inside: avoid;
+    }
+    .signature-line {
+      margin-top: 36pt;
+      display: flex;
+      justify-content: space-between;
+    }
+    .signature-column {
+      width: 45%;
+    }
+    .signature-field {
+      border-bottom: 1px solid #000;
+      height: 30pt;
+      margin-bottom: 6pt;
+    }
+    .highlight {
+      background-color: #ffffcc;
+      padding: 2pt 4pt;
+    }
+    .notice-box {
+      border: 2px solid #000;
+      padding: 12pt;
+      margin: 18pt 0;
+      background-color: #f9f9f9;
+    }
+    ul {
+      margin: 6pt 0 6pt 24pt;
+    }
+    .footer {
+      margin-top: 36pt;
+      font-size: 10pt;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Excess Funds Recovery Agreement</h1>
+
+  <div class="parties">
+    <p><strong>This Agreement</strong> is entered into as of <span class="highlight">{{CONTRACT_DATE}}</span> by and between:</p>
+
+    <p><strong>OWNER/CLAIMANT ("Owner"):</strong><br>
+    Name: <span class="highlight">{{OWNER_NAME}}</span><br>
+    Property Address: <span class="highlight">{{PROPERTY_ADDRESS}}, {{CITY}}, {{STATE}} {{ZIP_CODE}}</span></p>
+
+    <p><strong>RECOVERY AGENT ("Agent"):</strong><br>
+    Name: <span class="highlight">{{LEGAL_ENTITY_NAME}}</span><br>
+    Address: <span class="highlight">{{BUSINESS_ADDRESS}}</span><br>
+    Title: <span class="highlight">{{SIGNER_TITLE}}</span></p>
+  </div>
+
+  <div class="section">
+    <h2>RECITALS</h2>
+    <p>WHEREAS, Owner is entitled to receive excess funds from a foreclosure or tax sale proceeding;</p>
+    <p>WHEREAS, the relevant case number is: <span class="highlight">{{CASE_NUMBER}}</span>;</p>
+    <p>WHEREAS, the estimated excess funds amount is: <span class="highlight">{{EXCESS_AMOUNT}}</span>;</p>
+    <p>WHEREAS, Owner desires to engage Agent to assist in the recovery of said excess funds;</p>
+    <p>NOW, THEREFORE, in consideration of the mutual covenants herein, the parties agree as follows:</p>
+  </div>
+
+  <div class="section">
+    <h2>1. SCOPE OF SERVICES</h2>
+    <p>Agent agrees to:</p>
+    <ul>
+      <li>Research and verify Owner's claim to excess funds</li>
+      <li>Prepare and file all necessary claim documents with the appropriate county or court</li>
+      <li>Communicate with county officials and court clerks on Owner's behalf</li>
+      <li>Track the claim through to final disbursement</li>
+      <li>Provide Owner with updates on claim status</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>2. COMPENSATION</h2>
+    <p>Owner agrees to pay Agent a contingency fee of <strong>Twenty-Five Percent (25%)</strong> of the total excess funds recovered, calculated as follows:</p>
+    <p>Estimated Excess Funds: <span class="highlight">{{EXCESS_AMOUNT}}</span><br>
+    Estimated Fee (25%): <span class="highlight">{{EXCESS_FEE_AMOUNT}}</span></p>
+    <p><strong>NO RECOVERY, NO FEE:</strong> Owner owes Agent nothing if no funds are recovered. There are no upfront costs or expenses charged to Owner.</p>
+  </div>
+
+  <div class="section">
+    <h2>3. PAYMENT TERMS</h2>
+    <p>Upon successful recovery of excess funds:</p>
+    <ul>
+      <li>Agent will invoice Owner for the 25% fee</li>
+      <li>Payment is due within fifteen (15) days of Owner receiving funds</li>
+      <li>Owner authorizes Agent to receive funds directly if permitted by the disbursing authority</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>4. OWNER RESPONSIBILITIES</h2>
+    <p>Owner agrees to:</p>
+    <ul>
+      <li>Provide accurate information regarding the property and claim</li>
+      <li>Timely execute any documents required for the claim</li>
+      <li>Not engage another party to pursue the same claim during this Agreement</li>
+      <li>Notify Agent of any changes in contact information</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>5. TERM AND TERMINATION</h2>
+    <p>This Agreement shall remain in effect until the claim is resolved or for a period of two (2) years from the date hereof, whichever occurs first. Either party may terminate with thirty (30) days written notice; however, if funds are subsequently recovered as a result of Agent's efforts, the fee shall still be owed.</p>
+  </div>
+
+  <div class="notice-box">
+    <h2 style="margin-top: 0;">NOTICE OF RIGHT TO CANCEL</h2>
+    <p>You, the Owner, may cancel this Agreement within THREE (3) BUSINESS DAYS from the date you sign this Agreement. To cancel, send written notice to:</p>
+    <p>{{LEGAL_ENTITY_NAME}}<br>{{BUSINESS_ADDRESS}}</p>
+    <p>If you cancel within this period, you owe nothing.</p>
+  </div>
+
+  <div class="section">
+    <h2>6. GOVERNING LAW</h2>
+    <p>This Agreement shall be governed by the laws of the State of Texas. Any disputes shall be resolved in the courts of Dallas County, Texas.</p>
+  </div>
+
+  <div class="section">
+    <h2>7. ENTIRE AGREEMENT</h2>
+    <p>This Agreement constitutes the entire understanding between the parties and supersedes all prior agreements. Any modifications must be in writing and signed by both parties.</p>
+  </div>
+
+  <div class="signature-block">
+    <p><strong>IN WITNESS WHEREOF</strong>, the parties have executed this Agreement as of the date first written above.</p>
+
+    <div class="signature-line">
+      <div class="signature-column">
+        <p><strong>OWNER/CLAIMANT:</strong></p>
+        <div class="signature-field">/sn1/</div>
+        <p>{{OWNER_NAME}}</p>
+        <p>Date: /ds1/</p>
+      </div>
+      <div class="signature-column">
+        <p><strong>RECOVERY AGENT:</strong></p>
+        <div class="signature-field">/sn2/</div>
+        <p>{{LEGAL_ENTITY_NAME}}</p>
+        <p>{{SIGNER_TITLE}}</p>
+        <p>Date: /ds2/</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Excess Funds Recovery Agreement | Case: {{CASE_NUMBER}} | Generated: {{CONTRACT_DATE}}</p>
+  </div>
+</body>
+</html>

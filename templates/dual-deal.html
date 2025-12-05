@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Combined Excess Funds Recovery and Property Purchase Agreement</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 11pt;
+      line-height: 1.5;
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 0.75in;
+      color: #000;
+    }
+    h1 {
+      text-align: center;
+      font-size: 14pt;
+      margin-bottom: 18pt;
+      text-transform: uppercase;
+    }
+    h2 {
+      font-size: 11pt;
+      margin-top: 14pt;
+      margin-bottom: 4pt;
+      border-bottom: 1px solid #333;
+      padding-bottom: 2pt;
+    }
+    .parties {
+      margin: 18pt 0;
+    }
+    .section {
+      margin: 10pt 0;
+    }
+    .property-box {
+      border: 1px solid #000;
+      padding: 10pt;
+      margin: 10pt 0;
+      background-color: #f9f9f9;
+    }
+    .highlight {
+      background-color: #ffffcc;
+      padding: 1pt 3pt;
+    }
+    .notice-box {
+      border: 2px solid #000;
+      padding: 10pt;
+      margin: 14pt 0;
+      background-color: #fff9e6;
+    }
+    .signature-block {
+      margin-top: 36pt;
+      page-break-inside: avoid;
+    }
+    .signature-line {
+      margin-top: 18pt;
+    }
+    .signature-column {
+      margin-bottom: 24pt;
+    }
+    .signature-field {
+      border-bottom: 1px solid #000;
+      height: 24pt;
+      margin-bottom: 4pt;
+      width: 280pt;
+    }
+    ul {
+      margin: 4pt 0 4pt 18pt;
+    }
+    li {
+      margin-bottom: 2pt;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 10pt 0;
+    }
+    td {
+      padding: 4pt;
+      border: 1px solid #ccc;
+    }
+    .footer {
+      margin-top: 24pt;
+      font-size: 9pt;
+      color: #666;
+      text-align: center;
+    }
+    .total-box {
+      background-color: #e6ffe6;
+      border: 2px solid #006600;
+      padding: 10pt;
+      margin: 14pt 0;
+      text-align: center;
+    }
+    .page-break {
+      page-break-before: always;
+    }
+  </style>
+</head>
+<body>
+  <h1>Combined Real Estate Services Agreement</h1>
+  <p style="text-align: center; font-style: italic;">Excess Funds Recovery and Property Purchase Assignment</p>
+
+  <div class="parties">
+    <p><strong>This Agreement</strong> is entered into as of <span class="highlight">{{CONTRACT_DATE}}</span> by and between:</p>
+
+    <p><strong>OWNER/SELLER ("Owner"):</strong><br>
+    Name: <span class="highlight">{{OWNER_NAME}}</span></p>
+
+    <p><strong>SERVICE PROVIDER/BUYER ("Agent"):</strong><br>
+    Name: <span class="highlight">{{LEGAL_ENTITY_NAME}}</span> and/or Assigns<br>
+    Address: <span class="highlight">{{BUSINESS_ADDRESS}}</span></p>
+  </div>
+
+  <div class="property-box">
+    <strong>SUBJECT PROPERTY</strong><br>
+    Address: <span class="highlight">{{PROPERTY_ADDRESS}}, {{CITY}}, {{STATE}} {{ZIP_CODE}}</span><br>
+    Case Number: <span class="highlight">{{CASE_NUMBER}}</span>
+  </div>
+
+  <!-- PART 1: EXCESS FUNDS RECOVERY -->
+  <h2>PART ONE: EXCESS FUNDS RECOVERY AUTHORIZATION</h2>
+
+  <div class="section">
+    <p><strong>1.1 Authorization.</strong> Owner hereby authorizes Agent to pursue recovery of excess funds from the foreclosure/tax sale proceeding related to the above property.</p>
+
+    <p><strong>1.2 Excess Funds Amount.</strong> The estimated excess funds are: <span class="highlight">{{EXCESS_AMOUNT}}</span></p>
+
+    <p><strong>1.3 Recovery Fee.</strong> Agent shall receive <strong>Twenty-Five Percent (25%)</strong> of all funds recovered.</p>
+
+    <p><strong>1.4 Services.</strong> Agent agrees to:</p>
+    <ul>
+      <li>Research and verify Owner's claim</li>
+      <li>Prepare and file all necessary claim documents</li>
+      <li>Communicate with county officials on Owner's behalf</li>
+      <li>Track the claim through final disbursement</li>
+    </ul>
+
+    <p><strong>1.5 No Upfront Cost.</strong> Owner owes nothing unless funds are successfully recovered.</p>
+  </div>
+
+  <!-- PART 2: PROPERTY PURCHASE -->
+  <h2>PART TWO: PROPERTY PURCHASE AND ASSIGNMENT</h2>
+
+  <div class="section">
+    <p><strong>2.1 Purchase Price and Terms.</strong></p>
+    <table>
+      <tr>
+        <td><strong>Purchase Price:</strong></td>
+        <td><span class="highlight">{{PURCHASE_PRICE}}</span></td>
+      </tr>
+      <tr>
+        <td><strong>Earnest Money:</strong></td>
+        <td><span class="highlight">{{EARNEST_MONEY}}</span></td>
+      </tr>
+      <tr>
+        <td><strong>Closing Date:</strong></td>
+        <td>On or before <span class="highlight">{{CLOSING_DATE}}</span></td>
+      </tr>
+    </table>
+
+    <p><strong>2.2 Inspection Period.</strong> Agent has <strong>ten (10) business days</strong> ({{INSPECTION_START}} to {{INSPECTION_END}}) to inspect the property and may terminate for any reason with full refund of Earnest Money.</p>
+
+    <p><strong>2.3 Assignment Rights.</strong> Agent may assign this purchase agreement to a third-party buyer. The Assignment Fee is: <span class="highlight">{{ASSIGNMENT_FEE}}</span></p>
+
+    <p><strong>2.4 Property Condition.</strong> The Property is sold "AS-IS, WHERE-IS" with all faults.</p>
+
+    <p><strong>2.5 Title.</strong> Owner shall convey the Property by General Warranty Deed, free and clear of all liens except those assumed by Agent.</p>
+  </div>
+
+  <!-- PART 3: COMBINED FEE SCHEDULE -->
+  <h2>PART THREE: COMBINED FEE SCHEDULE</h2>
+
+  <div class="section">
+    <table>
+      <tr>
+        <td><strong>Excess Funds Recovery (25% of {{EXCESS_AMOUNT}}):</strong></td>
+        <td><span class="highlight">{{EXCESS_FEE_AMOUNT}}</span></td>
+      </tr>
+      <tr>
+        <td><strong>Wholesale Assignment Fee:</strong></td>
+        <td><span class="highlight">{{ASSIGNMENT_FEE}}</span></td>
+      </tr>
+    </table>
+
+    <div class="total-box">
+      <strong>TOTAL POTENTIAL FEES:</strong> <span class="highlight" style="font-size: 14pt;">{{TOTAL_FEE}}</span>
+    </div>
+
+    <p><em>Note: Excess Funds Fee is contingent on successful recovery. Assignment Fee is earned upon property closing.</em></p>
+  </div>
+
+  <!-- PART 4: GENERAL TERMS -->
+  <h2>PART FOUR: GENERAL TERMS</h2>
+
+  <div class="section">
+    <p><strong>4.1 Term.</strong> This Agreement remains in effect until both transactions are complete or two (2) years from execution, whichever occurs first.</p>
+
+    <p><strong>4.2 Termination.</strong> Either party may terminate with thirty (30) days written notice. Fees remain owed for services already rendered or transactions that close as a result of Agent's efforts.</p>
+
+    <p><strong>4.3 Governing Law.</strong> This Agreement is governed by Texas law. Venue is Dallas County, Texas.</p>
+
+    <p><strong>4.4 Entire Agreement.</strong> This constitutes the entire agreement between the parties. Modifications require written consent of both parties.</p>
+
+    <p><strong>4.5 Severability.</strong> If any provision is found unenforceable, the remaining provisions remain in effect.</p>
+  </div>
+
+  <div class="notice-box">
+    <strong>NOTICE OF RIGHT TO CANCEL</strong><br>
+    Owner may cancel this Agreement within THREE (3) BUSINESS DAYS of signing. To cancel, send written notice to {{LEGAL_ENTITY_NAME}} at {{BUSINESS_ADDRESS}}.
+  </div>
+
+  <!-- SIGNATURES -->
+  <div class="signature-block">
+    <p><strong>IN WITNESS WHEREOF</strong>, the parties have executed this Agreement as of the date first written above, acknowledging they have read, understand, and agree to all terms herein.</p>
+
+    <div class="signature-line">
+      <div class="signature-column">
+        <p><strong>OWNER/SELLER:</strong></p>
+        <div class="signature-field">/sn1/</div>
+        <p>{{OWNER_NAME}}</p>
+        <p>Date: /ds1/</p>
+      </div>
+
+      <div class="signature-column">
+        <p><strong>SERVICE PROVIDER/BUYER:</strong></p>
+        <div class="signature-field">/sn2/</div>
+        <p>{{LEGAL_ENTITY_NAME}}</p>
+        <p>{{SIGNER_TITLE}}</p>
+        <p>Date: /ds2/</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Combined Services Agreement | Case: {{CASE_NUMBER}} | Property: {{PROPERTY_ADDRESS}}</p>
+    <p>Generated: {{CONTRACT_DATE}}</p>
+  </div>
+</body>
+</html>

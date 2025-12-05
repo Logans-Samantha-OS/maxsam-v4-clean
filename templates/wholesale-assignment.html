@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Real Estate Purchase and Assignment Agreement</title>
+  <style>
+    body {
+      font-family: 'Times New Roman', Times, serif;
+      font-size: 12pt;
+      line-height: 1.6;
+      max-width: 8.5in;
+      margin: 0 auto;
+      padding: 1in;
+      color: #000;
+    }
+    h1 {
+      text-align: center;
+      font-size: 16pt;
+      margin-bottom: 24pt;
+      text-transform: uppercase;
+    }
+    h2 {
+      font-size: 12pt;
+      margin-top: 18pt;
+      margin-bottom: 6pt;
+    }
+    .parties {
+      margin: 24pt 0;
+    }
+    .section {
+      margin: 12pt 0;
+    }
+    .property-box {
+      border: 1px solid #000;
+      padding: 12pt;
+      margin: 12pt 0;
+      background-color: #f9f9f9;
+    }
+    .signature-block {
+      margin-top: 48pt;
+      page-break-inside: avoid;
+    }
+    .signature-line {
+      margin-top: 24pt;
+    }
+    .signature-column {
+      margin-bottom: 36pt;
+    }
+    .signature-field {
+      border-bottom: 1px solid #000;
+      height: 30pt;
+      margin-bottom: 6pt;
+      width: 300pt;
+    }
+    .highlight {
+      background-color: #ffffcc;
+      padding: 2pt 4pt;
+    }
+    ul {
+      margin: 6pt 0 6pt 24pt;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin: 12pt 0;
+    }
+    td {
+      padding: 6pt;
+      border: 1px solid #ccc;
+    }
+    .footer {
+      margin-top: 36pt;
+      font-size: 10pt;
+      color: #666;
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>Real Estate Purchase and Assignment Agreement</h1>
+
+  <div class="parties">
+    <p><strong>This Agreement</strong> is entered into as of <span class="highlight">{{CONTRACT_DATE}}</span> by and between:</p>
+
+    <p><strong>SELLER:</strong><br>
+    Name: <span class="highlight">{{SELLER_NAME}}</span></p>
+
+    <p><strong>BUYER/ASSIGNOR:</strong><br>
+    Name: <span class="highlight">{{LEGAL_ENTITY_NAME}}</span> and/or Assigns<br>
+    Address: <span class="highlight">{{BUSINESS_ADDRESS}}</span></p>
+  </div>
+
+  <div class="property-box">
+    <h2 style="margin-top: 0;">PROPERTY DESCRIPTION</h2>
+    <p><strong>Property Address:</strong> <span class="highlight">{{PROPERTY_ADDRESS}}</span></p>
+    <p><strong>City, State, ZIP:</strong> <span class="highlight">{{CITY}}, {{STATE}} {{ZIP_CODE}}</span></p>
+    <p><strong>Legal Description:</strong> As recorded in the deed records of Dallas County, Texas</p>
+  </div>
+
+  <div class="section">
+    <h2>1. PURCHASE PRICE AND TERMS</h2>
+    <table>
+      <tr>
+        <td><strong>Purchase Price:</strong></td>
+        <td><span class="highlight">{{PURCHASE_PRICE}}</span></td>
+      </tr>
+      <tr>
+        <td><strong>Earnest Money Deposit:</strong></td>
+        <td><span class="highlight">{{EARNEST_MONEY}}</span></td>
+      </tr>
+      <tr>
+        <td><strong>Balance Due at Closing:</strong></td>
+        <td>Purchase Price minus Earnest Money</td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="section">
+    <h2>2. ASSIGNMENT RIGHTS</h2>
+    <p>Buyer shall have the right to assign this Agreement to a third party (the "Assignee") without the consent of Seller. Upon assignment:</p>
+    <ul>
+      <li>The Assignment Fee shall be: <span class="highlight">{{ASSIGNMENT_FEE}}</span></li>
+      <li>Assignee shall assume all obligations of Buyer under this Agreement</li>
+      <li>Buyer shall be released from further obligations upon successful assignment</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>3. INSPECTION PERIOD</h2>
+    <p>Buyer shall have an inspection period of <strong>ten (10) business days</strong> from the effective date:</p>
+    <ul>
+      <li>Inspection Period Start: <span class="highlight">{{INSPECTION_START}}</span></li>
+      <li>Inspection Period End: <span class="highlight">{{INSPECTION_END}}</span></li>
+    </ul>
+    <p>During this period, Buyer may terminate this Agreement for any reason and receive a full refund of Earnest Money.</p>
+  </div>
+
+  <div class="section">
+    <h2>4. CLOSING</h2>
+    <p><strong>Closing Date:</strong> On or before <span class="highlight">{{CLOSING_DATE}}</span></p>
+    <p>Closing shall take place at a title company mutually agreed upon by the parties. Seller shall convey the Property by General Warranty Deed, free and clear of all liens and encumbrances except those specifically assumed by Buyer.</p>
+  </div>
+
+  <div class="section">
+    <h2>5. PROPERTY CONDITION</h2>
+    <p>The Property is being sold <strong>"AS-IS, WHERE-IS"</strong> with all faults. Seller makes no warranties or representations regarding the condition of the Property. Buyer is purchasing based on their own inspection and due diligence.</p>
+  </div>
+
+  <div class="section">
+    <h2>6. SELLER'S DISCLOSURES</h2>
+    <p>Seller represents that:</p>
+    <ul>
+      <li>Seller has the authority to sell the Property</li>
+      <li>There are no undisclosed liens or encumbrances</li>
+      <li>Seller will not further encumber the Property before closing</li>
+      <li>All information provided to Buyer is accurate to Seller's knowledge</li>
+    </ul>
+  </div>
+
+  <div class="section">
+    <h2>7. DEFAULT</h2>
+    <p>If Seller defaults, Buyer may: (a) seek specific performance, or (b) terminate and receive refund of Earnest Money plus any costs incurred.</p>
+    <p>If Buyer defaults after the inspection period, Seller may retain the Earnest Money as liquidated damages.</p>
+  </div>
+
+  <div class="section">
+    <h2>8. GOVERNING LAW</h2>
+    <p>This Agreement shall be governed by the laws of the State of Texas. Venue for any dispute shall be Dallas County, Texas.</p>
+  </div>
+
+  <div class="signature-block">
+    <p><strong>IN WITNESS WHEREOF</strong>, the parties have executed this Agreement as of the date first written above.</p>
+
+    <div class="signature-line">
+      <div class="signature-column">
+        <p><strong>SELLER:</strong></p>
+        <div class="signature-field">/sn1/</div>
+        <p>{{SELLER_NAME}}</p>
+        <p>Date: /ds1/</p>
+      </div>
+
+      <div class="signature-column">
+        <p><strong>BUYER/ASSIGNOR:</strong></p>
+        <div class="signature-field">/sn2/</div>
+        <p>{{LEGAL_ENTITY_NAME}}</p>
+        <p>{{SIGNER_TITLE}}</p>
+        <p>Date: /ds2/</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    <p>Real Estate Purchase Agreement | {{PROPERTY_ADDRESS}} | Generated: {{CONTRACT_DATE}}</p>
+  </div>
+</body>
+</html>
