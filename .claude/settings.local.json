@@ -11,7 +11,9 @@
       "Bash(git stash:*)",
       "Bash(git fetch:*)",
       "Bash(npx vercel --prod)",
-      "Bash(npx vercel --prod --yes)"
+      "Bash(npx vercel --prod --yes)",
+      "Bash(npm update:*)",
+      "Bash(npm install:*)"
     ],
     "deny": [],
     "ask": []
