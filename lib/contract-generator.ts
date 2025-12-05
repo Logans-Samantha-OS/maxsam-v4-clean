@@ -242,6 +242,7 @@ export async function generateContract(
     });
 
     // Create contract record in database
+    // 100% of fees go to Logan Toups (sole owner)
     const { data: contract, error: contractError } = await supabase
       .from('contracts')
       .insert({
@@ -251,10 +252,9 @@ export async function generateContract(
         seller_email: lead.email,
         property_address: lead.property_address,
         excess_funds_amount: excessAmount,
+        excess_fee: fees.excessFee,
         wholesale_fee: fees.wholesaleFee,
         total_fee: fees.totalFee,
-        owner_fee: fees.ownerAmount,
-        partner_fee: fees.partnerAmount,
         status: 'sent',
         docusign_envelope_id: envelope.envelopeId,
         sent_at: new Date().toISOString()

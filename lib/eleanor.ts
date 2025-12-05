@@ -284,29 +284,32 @@ export function calculateEleanorScore(lead: Lead): ScoringResult {
 
 /**
  * Calculate fees for a deal
+ * 100% of all revenue goes to Logan Toups (sole owner)
+ *
+ * Fee Structure:
+ * - Excess Funds Only: 25% of excess funds amount
+ * - Wholesale Only: 10% of wholesale equity
+ * - Dual Deal: 25% excess + 10% wholesale combined
+ *
  * @param excessAmount - Amount of excess funds
- * @param wholesaleEquity - Equity in the property
- * @param dealType - Type of deal
- * @param ownerSplit - Owner's percentage (default 100%)
- * @param partnerSplit - Partner's percentage (default 0%)
+ * @param wholesaleEquity - Equity in the property (for wholesale)
+ * @param dealType - Type of deal: 'dual', 'excess_only', 'excess_funds', or 'wholesale'
  */
 export function calculateFees(
   excessAmount: number,
   wholesaleEquity: number,
-  dealType: 'dual' | 'excess_only' | 'excess_funds' | 'wholesale',
-  ownerSplit: number = 1.0,
-  partnerSplit: number = 0.0
+  dealType: 'dual' | 'excess_only' | 'excess_funds' | 'wholesale'
 ) {
-  const excessFee = dealType !== 'wholesale' ? excessAmount * 0.25 : 0;
-  const wholesaleFee = (dealType !== 'excess_only' && dealType !== 'excess_funds') ? Math.max(wholesaleEquity * 0.10, 10000) : 0;
+  // 25% of excess funds for excess deals
+  const excessFee = (dealType !== 'wholesale') ? excessAmount * 0.25 : 0;
+  // 10% of wholesale equity for wholesale deals
+  const wholesaleFee = (dealType !== 'excess_only' && dealType !== 'excess_funds') ? wholesaleEquity * 0.10 : 0;
   const totalFee = excessFee + wholesaleFee;
 
   return {
     excessFee,
     wholesaleFee,
-    totalFee,
-    ownerAmount: totalFee * ownerSplit,
-    partnerAmount: totalFee * partnerSplit
+    totalFee
   };
 }
 

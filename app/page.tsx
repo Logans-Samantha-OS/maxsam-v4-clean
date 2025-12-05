@@ -2,9 +2,8 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
-import Link from 'next/link';
+import Sidebar from '@/components/Sidebar';
 
-// Types
 interface Lead {
   id: string;
   property_address: string;
@@ -16,6 +15,7 @@ interface Lead {
   eleanor_score: number;
   deal_grade: string;
   contact_priority: string;
+  deal_type: string;
   status: string;
   call_attempts: number;
   last_call_date: string | null;
@@ -30,20 +30,16 @@ interface PipelineStage {
   color: string;
 }
 
-type ActiveTab = 'dashboard' | 'sellers' | 'buyers' | 'contracts' | 'analytics';
-
-export default function Page() {
-  const [activeTab, setActiveTab] = useState<ActiveTab>('dashboard');
+export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
 
-  // Fetch all data
   useEffect(() => {
     async function fetchData() {
       try {
         setLoading(true);
-        
+
         const { data, error } = await supabase
           .from('maxsam_leads')
           .select('*')
@@ -54,7 +50,7 @@ export default function Page() {
         } else {
           setLeads(data || []);
         }
-        
+
         setLastUpdated(new Date());
         setLoading(false);
       } catch (err) {
@@ -65,7 +61,6 @@ export default function Page() {
 
     fetchData();
 
-    // Real-time subscription
     const channel = supabase
       .channel('leads-changes')
       .on('postgres_changes', { event: '*', schema: 'public', table: 'maxsam_leads' }, () => {
@@ -73,7 +68,6 @@ export default function Page() {
       })
       .subscribe();
 
-    // Refresh every 30 seconds
     const interval = setInterval(fetchData, 30000);
 
     return () => {
@@ -85,57 +79,59 @@ export default function Page() {
   // Computed metrics
   const totalLeads = leads.length;
   const totalPipelineValue = leads.reduce((sum, l) => sum + (Number(l.excess_funds_amount) || 0), 0);
-  const projectedFees = totalPipelineValue * 0.10; // 10% finder fee
-  
+
+  // Calculate projected fees: 25% of excess funds
+  const projectedExcessFees = totalPipelineValue * 0.25;
+
   const leadsToday = leads.filter(l => {
     const today = new Date().toISOString().split('T')[0];
     return l.created_at?.startsWith(today);
   }).length;
 
-  const avgScore = totalLeads > 0 
-    ? leads.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / totalLeads 
+  const avgScore = totalLeads > 0
+    ? leads.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / totalLeads
     : 0;
 
   // Pipeline stages
   const pipeline: PipelineStage[] = [
-    { 
-      name: 'New', 
+    {
+      name: 'New',
       count: leads.filter(l => l.status === 'new' || !l.status).length,
       value: leads.filter(l => l.status === 'new' || !l.status).reduce((s, l) => s + (Number(l.excess_funds_amount) || 0), 0),
       color: 'bg-blue-500'
     },
-    { 
-      name: 'Contacted', 
+    {
+      name: 'Contacted',
       count: leads.filter(l => l.status === 'contacted').length,
       value: leads.filter(l => l.status === 'contacted').reduce((s, l) => s + (Number(l.excess_funds_amount) || 0), 0),
       color: 'bg-cyan-500'
     },
-    { 
-      name: 'Negotiating', 
+    {
+      name: 'Negotiating',
       count: leads.filter(l => l.status === 'negotiating').length,
       value: leads.filter(l => l.status === 'negotiating').reduce((s, l) => s + (Number(l.excess_funds_amount) || 0), 0),
       color: 'bg-yellow-500'
     },
-    { 
-      name: 'Contract', 
+    {
+      name: 'Contract',
       count: leads.filter(l => l.status === 'contract_sent').length,
       value: leads.filter(l => l.status === 'contract_sent').reduce((s, l) => s + (Number(l.excess_funds_amount) || 0), 0),
       color: 'bg-purple-500'
     },
-    { 
-      name: 'Closed', 
+    {
+      name: 'Closed',
       count: leads.filter(l => l.status === 'closed').length,
       value: leads.filter(l => l.status === 'closed').reduce((s, l) => s + (Number(l.excess_funds_amount) || 0), 0),
       color: 'bg-green-500'
     },
   ];
 
-  const closedRevenue = pipeline[4].value * 0.10;
+  // 25% of closed excess funds
+  const closedRevenue = pipeline[4].value * 0.25;
   const hotLeads = leads.filter(l => (l.eleanor_score || 0) >= 70).slice(0, 5);
   const pendingCalls = leads.filter(l => l.status === 'new' || l.status === 'pending_call').length;
   const recentActivity = leads.slice(0, 8);
 
-  // Helpers
   function formatCurrency(amount: number): string {
     if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
     if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
@@ -149,11 +145,11 @@ export default function Page() {
 
   function getGradeBadge(grade: string) {
     const colors: Record<string, string> = {
+      'A+': 'bg-emerald-500/20 text-emerald-400 border-emerald-500/50',
       'A': 'bg-green-500/20 text-green-400 border-green-500/50',
       'B': 'bg-blue-500/20 text-blue-400 border-blue-500/50',
       'C': 'bg-yellow-500/20 text-yellow-400 border-yellow-500/50',
-      'D': 'bg-orange-500/20 text-orange-400 border-orange-500/50',
-      'F': 'bg-red-500/20 text-red-400 border-red-500/50',
+      'D': 'bg-red-500/20 text-red-400 border-red-500/50',
     };
     return colors[grade?.toUpperCase()] || 'bg-zinc-500/20 text-zinc-400 border-zinc-500/50';
   }
@@ -182,7 +178,6 @@ export default function Page() {
     return `${diffDays}d ago`;
   }
 
-  // Loading state
   if (loading) {
     return (
       <div className="min-h-screen bg-[#0a0a0a] flex items-center justify-center">
@@ -196,61 +191,8 @@ export default function Page() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0a] flex">
-      {/* Sidebar */}
-      <aside className="w-64 bg-[#111111] border-r border-zinc-800 flex flex-col">
-        <div className="p-6 border-b border-zinc-800">
-          <h1 className="text-xl font-bold text-cyan-400">MaxSam V4</h1>
-          <p className="text-zinc-500 text-sm">Operations Platform</p>
-        </div>
-        
-        <nav className="flex-1 p-4">
-          <ul className="space-y-2">
-            {[
-              { id: 'dashboard', label: 'Dashboard', icon: '◆', href: '/' },
-              { id: 'sellers', label: 'Sellers', icon: '◇', href: '/sellers' },
-              { id: 'morning-brief', label: 'Morning Brief', icon: '☀', href: '/morning-brief' },
-              { id: 'settings', label: 'Settings', icon: '⚙', href: '/settings' },
-            ].map((item) => (
-              <li key={item.id}>
-              {item.href && item.id !== 'dashboard' ? (
-                <Link
-                  href={item.href}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                    activeTab === item.id
-                      ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                  }`}
-                >
-                  <span className={activeTab === item.id ? 'text-cyan-400' : 'text-zinc-600'}>{item.icon}</span>
-                  {item.label}
-                </Link>
-              ) : (
-                <button
-                  onClick={() => setActiveTab(item.id as ActiveTab)}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-lg transition ${
-                    activeTab === item.id
-                      ? 'bg-cyan-500/20 text-cyan-400'
-                      : 'text-zinc-400 hover:bg-zinc-800 hover:text-white'
-                  }`}
-                >
-                  <span className={activeTab === item.id ? 'text-cyan-400' : 'text-zinc-600'}>{item.icon}</span>
-                  {item.label}
-                </button>
-              )}
-            </li>
-            ))}
-          </ul>
-        </nav>
+      <Sidebar />
 
-        <div className="p-4 border-t border-zinc-800">
-          <div className="flex items-center gap-2 px-4 py-2 bg-green-500/10 rounded-lg">
-            <span className="h-2 w-2 bg-green-500 rounded-full animate-pulse"></span>
-            <span className="text-green-400 text-sm">All Systems Online</span>
-          </div>
-        </div>
-      </aside>
-
-      {/* Main Content */}
       <main className="flex-1 overflow-auto">
         <div className="p-8">
           {/* Header */}
@@ -260,11 +202,11 @@ export default function Page() {
               <p className="text-zinc-500 mt-1">Dallas County Excess Funds • Last updated {getRelativeTime(lastUpdated.toISOString())}</p>
             </div>
             <div className="flex items-center gap-4">
-              <button 
+              <button
                 onClick={() => window.location.reload()}
                 className="px-4 py-2 bg-zinc-800 text-zinc-300 rounded-lg hover:bg-zinc-700 transition text-sm"
               >
-                ↻ Refresh
+                Refresh
               </button>
               <div className="text-right">
                 <div className="text-zinc-500 text-xs">PIPELINE VALUE</div>
@@ -281,7 +223,7 @@ export default function Page() {
                   <div className="text-cyan-400 text-3xl font-bold">{totalLeads}</div>
                   <div className="text-zinc-400 text-sm mt-1">Total Leads</div>
                 </div>
-                <div className="text-cyan-500 text-2xl">▲</div>
+                <div className="text-cyan-500 text-2xl">👥</div>
               </div>
               <div className="mt-3 text-xs text-cyan-400/70">+{leadsToday} today</div>
             </div>
@@ -289,12 +231,12 @@ export default function Page() {
             <div className="bg-gradient-to-br from-green-500/20 to-green-600/10 border border-green-500/30 rounded-xl p-5">
               <div className="flex justify-between items-start">
                 <div>
-                  <div className="text-green-400 text-3xl font-bold">{formatCurrency(projectedFees)}</div>
+                  <div className="text-green-400 text-3xl font-bold">{formatCurrency(projectedExcessFees)}</div>
                   <div className="text-zinc-400 text-sm mt-1">Projected Fees</div>
                 </div>
-                <div className="text-green-500 text-2xl">$</div>
+                <div className="text-green-500 text-2xl">💰</div>
               </div>
-              <div className="mt-3 text-xs text-green-400/70">10% of pipeline</div>
+              <div className="mt-3 text-xs text-green-400/70">25% of excess funds</div>
             </div>
 
             <div className="bg-gradient-to-br from-purple-500/20 to-purple-600/10 border border-purple-500/30 rounded-xl p-5">
@@ -303,7 +245,7 @@ export default function Page() {
                   <div className="text-purple-400 text-3xl font-bold">{avgScore.toFixed(0)}</div>
                   <div className="text-zinc-400 text-sm mt-1">Avg Eleanor Score</div>
                 </div>
-                <div className="text-purple-500 text-2xl">◈</div>
+                <div className="text-purple-500 text-2xl">🧠</div>
               </div>
               <div className="mt-3 text-xs text-purple-400/70">Out of 100</div>
             </div>
@@ -314,7 +256,7 @@ export default function Page() {
                   <div className="text-yellow-400 text-3xl font-bold">{pendingCalls}</div>
                   <div className="text-zinc-400 text-sm mt-1">Pending Calls</div>
                 </div>
-                <div className="text-yellow-500 text-2xl">☎</div>
+                <div className="text-yellow-500 text-2xl">📞</div>
               </div>
               <div className="mt-3 text-xs text-yellow-400/70">Ready for Sam</div>
             </div>
@@ -342,7 +284,7 @@ export default function Page() {
               ))}
             </div>
             <div className="mt-4 pt-4 border-t border-zinc-800 flex justify-between">
-              <span className="text-zinc-500 text-sm">Closed Revenue (10% fee)</span>
+              <span className="text-zinc-500 text-sm">Closed Revenue (25% excess fee)</span>
               <span className="text-green-400 font-bold">{formatCurrency(closedRevenue)}</span>
             </div>
           </div>
@@ -387,8 +329,8 @@ export default function Page() {
                         </div>
                         <div className="flex items-center gap-1">
                           <div className="w-16 bg-zinc-700 rounded-full h-1.5">
-                            <div 
-                              className="bg-gradient-to-r from-cyan-500 to-purple-500 h-1.5 rounded-full" 
+                            <div
+                              className="bg-gradient-to-r from-cyan-500 to-purple-500 h-1.5 rounded-full"
                               style={{ width: `${Math.min(lead.eleanor_score || 0, 100)}%` }}
                             ></div>
                           </div>
@@ -439,21 +381,21 @@ export default function Page() {
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-cyan-400">🎙️</span>
-                  <span className="text-white font-medium">Sam</span>
+                  <span className="text-white font-medium">Sam AI</span>
                 </div>
                 <span className="text-cyan-400 text-sm">{pendingCalls} in queue</span>
               </div>
               <div className="w-full bg-zinc-700 rounded-full h-2 mb-2">
                 <div className="bg-cyan-500 h-2 rounded-full" style={{ width: pendingCalls > 0 ? '30%' : '0%' }}></div>
               </div>
-              <p className="text-zinc-500 text-xs">Twilio A2P verification pending</p>
+              <p className="text-zinc-500 text-xs">Twilio A2P verified</p>
             </div>
 
             <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-5">
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-purple-400">🧠</span>
-                  <span className="text-white font-medium">Eleanor</span>
+                  <span className="text-white font-medium">Eleanor AI</span>
                 </div>
                 <span className="text-purple-400 text-sm">{totalLeads} scored</span>
               </div>
@@ -467,20 +409,20 @@ export default function Page() {
               <div className="flex justify-between items-start mb-3">
                 <div className="flex items-center gap-2">
                   <span className="text-blue-400">⚡</span>
-                  <span className="text-white font-medium">Alex</span>
+                  <span className="text-white font-medium">Alex Pipeline</span>
                 </div>
-                <span className="text-green-400 text-sm">N8N Active</span>
+                <span className="text-green-400 text-sm">Active</span>
               </div>
               <div className="w-full bg-zinc-700 rounded-full h-2 mb-2">
                 <div className="bg-blue-500 h-2 rounded-full" style={{ width: '91%' }}></div>
               </div>
-              <p className="text-zinc-500 text-xs">Master pipeline ready</p>
+              <p className="text-zinc-500 text-xs">N8N orchestration ready</p>
             </div>
           </div>
 
           {/* Footer */}
           <div className="mt-8 text-center text-zinc-600 text-sm">
-            MaxSam V4 • Dallas County Excess Funds • 10% Finder Fee Model
+            MaxSam V4 • Logan Toups • 100% Revenue • 25% Excess / 10% Wholesale
           </div>
         </div>
       </main>
