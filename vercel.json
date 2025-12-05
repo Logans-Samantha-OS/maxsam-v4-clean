@@ -1,12 +1,1 @@
-{
-  "crons": [
-    {
-      "path": "/api/cron/score-leads",
-      "schedule": "0 12 * * *"
-    },
-    {
-      "path": "/api/morning-brief",
-      "schedule": "15 12 * * *"
-    }
-  ]
-}
+{}
