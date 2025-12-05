@@ -1,20 +1,12 @@
 {
   "crons": [
     {
-      "path": "/api/cron/import-leads",
-      "schedule": "30 11 * * *"
-    },
-    {
       "path": "/api/cron/score-leads",
       "schedule": "0 12 * * *"
     },
     {
       "path": "/api/morning-brief",
       "schedule": "15 12 * * *"
-    },
-    {
-      "path": "/api/cron/outreach",
-      "schedule": "0 15 * * *"
     }
   ]
 }
