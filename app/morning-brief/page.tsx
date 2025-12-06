@@ -4,6 +4,8 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import Sidebar from '@/components/Sidebar';
 import GemBadge, { GemBadgeInline, getGradeFromScore } from '@/components/GemBadge';
+import { CSSGem, CSSGemInline } from '@/components/CSSGem';
+import { ExpirationBadge, ExpirationCountdown } from '@/components/ExpirationCountdown';
 
 interface MorningBrief {
   date: string;
@@ -28,6 +30,20 @@ interface MorningBrief {
     deal_type?: string;
     potential_revenue?: number;
     equity?: number;
+    days_until_expiration?: number;
+    is_cross_referenced?: boolean;
+  }>;
+  critical_leads?: Array<{
+    id: string;
+    owner_name: string;
+    property_address: string;
+    excess_funds: number;
+    score: number;
+    grade: string;
+    phone: string;
+    days_until_expiration: number;
+    potential_revenue?: number;
+    is_cross_referenced?: boolean;
   }>;
   follow_ups: Array<{
     id: string;
@@ -109,30 +125,90 @@ export default function MorningBriefPage() {
 
   const totalPipelineValue = Object.values(gemPortfolio).reduce((sum, g) => sum + g.value, 0) || (brief?.summary.total_pipeline || 0) * 0.25;
 
+  // Get critical leads (expiring within 7 days)
+  const criticalLeads = brief?.critical_leads || brief?.hot_leads?.filter(l =>
+    l.days_until_expiration !== undefined && l.days_until_expiration <= 7
+  ) || [];
+
   if (loading) {
     return (
-      <div className="min-h-screen bg-[#050508] flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+      <div className="min-h-screen bg-[#030305] flex items-center justify-center graphene-bg">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-yellow-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-[#050508] flex">
+    <div className="min-h-screen bg-[#030305] flex graphene-bg">
       <Sidebar />
 
       <main className="flex-1 overflow-auto">
         <div className="max-w-6xl mx-auto p-8">
-          {/* Header with gradient */}
+          {/* Header - Pharaoh Style */}
           <div className="text-center mb-10">
-            <div className="inline-block px-4 py-1 bg-gradient-to-r from-orange-500/20 to-yellow-500/20 border border-orange-500/30 rounded-full mb-4">
-              <span className="text-2xl mr-2">🌅</span>
-              <span className="text-orange-400 font-medium">Morning Brief</span>
+            <div className="inline-flex items-center gap-3 px-6 py-2 bg-gradient-to-r from-yellow-500/20 to-orange-500/20 border border-yellow-500/30 rounded-full mb-4">
+              <CSSGem grade="A+" size="sm" />
+              <span className="text-gold font-bold uppercase tracking-wider">Morning Brief</span>
             </div>
-            <p className="text-cyan-400 text-lg mb-2">Good Morning, Logan</p>
-            <h1 className="text-4xl font-bold text-white mb-2">{brief?.date || today}</h1>
+            <p className="text-gold text-lg mb-2">Good Morning, Logan</p>
+            <h1 className="text-4xl font-black text-gold-shine mb-2">{brief?.date || today}</h1>
             <p className="text-zinc-500">Here&apos;s your money-making plan for today</p>
           </div>
+
+          {/* CRITICAL LEADS - EXPIRING SOON - FIRST SECTION */}
+          {criticalLeads.length > 0 && (
+            <div className="mb-8 pharaoh-card-critical rounded-2xl overflow-hidden">
+              <div className="p-6">
+                <div className="flex items-center gap-3 mb-4">
+                  <CSSGem grade="CRITICAL" size="md" />
+                  <div>
+                    <h2 className="text-xl font-black text-gradient-critical uppercase tracking-wider">
+                      CRITICAL - EXPIRING SOON
+                    </h2>
+                    <p className="text-red-400/70 text-sm">{criticalLeads.length} leads need immediate attention</p>
+                  </div>
+                </div>
+
+                <div className="space-y-3">
+                  {criticalLeads.slice(0, 3).map((lead) => (
+                    <div
+                      key={lead.id}
+                      className="flex items-center justify-between p-4 rounded-lg"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(255,0,0,0.15), rgba(255,0,0,0.05))',
+                        border: '1px solid rgba(255,0,0,0.3)'
+                      }}
+                    >
+                      <div className="flex items-center gap-4">
+                        <ExpirationCountdown
+                          daysUntilExpiration={lead.days_until_expiration}
+                          size="sm"
+                        />
+                        <div>
+                          <div className="font-bold text-white">{lead.owner_name}</div>
+                          <div className="text-zinc-400 text-sm">{lead.property_address}</div>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4">
+                        <div className="text-right">
+                          <div className="text-gold font-bold">
+                            {formatCurrency(lead.potential_revenue || calculateProfit(lead.excess_funds, 0, 'excess_only'))}
+                          </div>
+                          <div className="text-zinc-500 text-xs">potential revenue</div>
+                        </div>
+                        <a
+                          href={`tel:${lead.phone}`}
+                          className="btn-pharaoh-critical px-4 py-2 text-sm"
+                        >
+                          Call Now
+                        </a>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* TOP PRIORITY - CALL FIRST */}
           {topLead && (

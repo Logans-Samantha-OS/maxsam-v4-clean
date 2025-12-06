@@ -41,7 +41,7 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     async start(controller) {
       const supabase = getSupabase();
-      const grades = { 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0 };
+      const grades: Record<string, number> = { 'CRITICAL': 0, 'A+': 0, 'A': 0, 'B': 0, 'C': 0, 'D': 0 };
       let totalPotential = 0;
       let hotLeads = 0;
 

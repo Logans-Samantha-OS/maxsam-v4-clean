@@ -1,12 +1,31 @@
 @import "tailwindcss";
 
+/* ===========================================
+   EGYPTIAN PHARAOH EDITION
+   Vantablack + Gold Design System
+   =========================================== */
+
 :root {
-  --background: #050508;
+  /* Vantablack backgrounds */
+  --background: #030305;
+  --background-elevated: #050508;
+  --background-card: #08080c;
+
+  /* Egyptian Gold */
+  --gold-primary: #ffd700;
+  --gold-secondary: #ffaa00;
+  --gold-dark: #cc8800;
+
+  /* Accent colors */
   --foreground: #ededed;
   --cyan: #00f0ff;
   --magenta: #ff00ff;
   --green: #00ff88;
-  --gold: #ffd700;
+  --red-critical: #ff0000;
+  --red-urgent: #ff4444;
+
+  /* Graphene texture */
+  --graphene-pattern: url("data:image/svg+xml,%3Csvg width='60' height='60' viewBox='0 0 60 60' xmlns='http://www.w3.org/2000/svg'%3E%3Cg fill='none' fill-rule='evenodd'%3E%3Cg fill='%23ffd700' fill-opacity='0.02'%3E%3Cpath d='M36 34v-4h-2v4h-4v2h4v4h2v-4h4v-2h-4zm0-30V0h-2v4h-4v2h4v4h2V6h4V4h-4zM6 34v-4H4v4H0v2h4v4h2v-4h4v-2H6zM6 4V0H4v4H0v2h4v4h2V6h4V4H6z'/%3E%3C/g%3E%3C/g%3E%3C/svg%3E");
 }
 
 @theme inline {
@@ -20,9 +39,98 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
+  background-image: var(--graphene-pattern);
 }
 
-/* Custom Animations */
+/* ===========================================
+   PHARAOH CARD COMPONENTS
+   =========================================== */
+
+.pharaoh-card {
+  background: linear-gradient(135deg, rgba(8,8,12,0.95), rgba(5,5,8,0.98));
+  border: 1px solid rgba(255, 215, 0, 0.15);
+  border-radius: 12px;
+  padding: 1.5rem;
+  position: relative;
+  overflow: hidden;
+  box-shadow:
+    0 4px 20px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 215, 0, 0.1);
+}
+
+.pharaoh-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 215, 0, 0.5),
+    transparent
+  );
+}
+
+.pharaoh-card-mini {
+  background: linear-gradient(135deg, rgba(8,8,12,0.9), rgba(5,5,8,0.95));
+  border: 1px solid rgba(255, 215, 0, 0.1);
+  border-radius: 8px;
+  padding: 1rem;
+}
+
+.pharaoh-card-critical {
+  background: linear-gradient(135deg, rgba(255,0,0,0.1), rgba(8,8,12,0.95));
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  animation: critical-pulse 2s infinite;
+}
+
+@keyframes critical-pulse {
+  0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 0, 0, 0.4);
+  }
+}
+
+/* ===========================================
+   GOLD METALLIC TEXT
+   =========================================== */
+
+.text-gold {
+  background: linear-gradient(135deg, #ffd700 0%, #ffaa00 50%, #ffd700 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.text-gold-shine {
+  background: linear-gradient(
+    135deg,
+    #ffd700 0%,
+    #fff8dc 25%,
+    #ffd700 50%,
+    #ffaa00 75%,
+    #ffd700 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: gold-shine 3s linear infinite;
+}
+
+@keyframes gold-shine {
+  to {
+    background-position: 200% center;
+  }
+}
+
+/* ===========================================
+   CUSTOM ANIMATIONS
+   =========================================== */
+
 @keyframes fadeIn {
   from {
     opacity: 0;
@@ -54,6 +162,15 @@ body {
 
 @keyframes glow-pulse {
   0%, 100% {
+    box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(255, 215, 0, 0.6);
+  }
+}
+
+@keyframes glow-pulse-cyan {
+  0%, 100% {
     box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
   }
   50% {
@@ -81,6 +198,18 @@ body {
   }
 }
 
+@keyframes border-flow {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
 /* Animation Classes */
 .animate-fadeIn {
   animation: fadeIn 0.3s ease-out;
@@ -98,6 +227,10 @@ body {
   animation: glow-pulse 2s ease-in-out infinite;
 }
 
+.animate-glow-pulse-cyan {
+  animation: glow-pulse-cyan 2s ease-in-out infinite;
+}
+
 .animate-float {
   animation: float 3s ease-in-out infinite;
 }
@@ -106,12 +239,21 @@ body {
   animation: count-up 0.5s ease-out;
 }
 
-/* Glassmorphism */
+/* ===========================================
+   GLASSMORPHISM
+   =========================================== */
+
 .glass {
   background: rgba(255, 255, 255, 0.03);
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.glass-gold {
+  background: rgba(255, 215, 0, 0.03);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 215, 0, 0.15);
 }
 
 .glass-cyan {
@@ -120,7 +262,20 @@ body {
   border: 1px solid rgba(0, 240, 255, 0.2);
 }
 
-/* Glow Effects */
+.glass-critical {
+  background: rgba(255, 0, 0, 0.05);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 0, 0, 0.3);
+}
+
+/* ===========================================
+   GLOW EFFECTS
+   =========================================== */
+
+.glow-gold {
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+}
+
 .glow-cyan {
   box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
 }
@@ -141,22 +296,42 @@ body {
   box-shadow: 0 0 20px rgba(239, 68, 68, 0.3);
 }
 
+.glow-critical {
+  box-shadow: 0 0 30px rgba(255, 0, 0, 0.5);
+}
+
 /* Hover Glow */
 .hover-glow:hover {
+  box-shadow: 0 0 30px rgba(255, 215, 0, 0.4);
+  transform: translateY(-2px);
+  transition: all 0.3s ease;
+}
+
+.hover-glow-cyan:hover {
   box-shadow: 0 0 30px rgba(0, 240, 255, 0.4);
   transform: translateY(-2px);
   transition: all 0.3s ease;
 }
 
-/* Nanofiber Grid Pattern */
+/* ===========================================
+   NANOFIBER GRID PATTERN
+   =========================================== */
+
 .nanofiber-bg {
   background-image:
-    linear-gradient(rgba(0, 240, 255, 0.02) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(0, 240, 255, 0.02) 1px, transparent 1px);
+    linear-gradient(rgba(255, 215, 0, 0.02) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 215, 0, 0.02) 1px, transparent 1px);
   background-size: 50px 50px;
 }
 
-/* Gradient Text */
+.graphene-bg {
+  background-image: var(--graphene-pattern);
+}
+
+/* ===========================================
+   GRADIENT TEXT
+   =========================================== */
+
 .text-gradient-cyan {
   background: linear-gradient(135deg, #00f0ff, #00ff88);
   -webkit-background-clip: text;
@@ -171,7 +346,18 @@ body {
   background-clip: text;
 }
 
-/* Progress Bar Glow */
+.text-gradient-critical {
+  background: linear-gradient(135deg, #ff0000, #ff4444);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  animation: pulse 1s infinite;
+}
+
+/* ===========================================
+   PROGRESS BAR GLOW
+   =========================================== */
+
 .progress-glow {
   position: relative;
 }
@@ -189,7 +375,10 @@ body {
   z-index: -1;
 }
 
-/* Card 3D Tilt on Hover */
+/* ===========================================
+   CARD 3D TILT ON HOVER
+   =========================================== */
+
 .card-tilt {
   transition: transform 0.3s ease;
   transform-style: preserve-3d;
@@ -199,50 +388,110 @@ body {
   transform: perspective(1000px) rotateX(2deg) rotateY(-2deg) scale(1.02);
 }
 
-/* Scrollbar Styling */
+/* ===========================================
+   PHARAOH BUTTONS
+   =========================================== */
+
+.btn-pharaoh {
+  background: linear-gradient(135deg, rgba(255,215,0,0.2), rgba(255,170,0,0.1));
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  color: #ffd700;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: all 0.3s ease;
+}
+
+.btn-pharaoh:hover {
+  background: linear-gradient(135deg, rgba(255,215,0,0.3), rgba(255,170,0,0.2));
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.3);
+  transform: translateY(-2px);
+}
+
+.btn-pharaoh-critical {
+  background: linear-gradient(135deg, rgba(255,0,0,0.3), rgba(255,68,68,0.2));
+  border: 1px solid rgba(255, 0, 0, 0.4);
+  color: #ff4444;
+}
+
+.btn-pharaoh-critical:hover {
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.4);
+}
+
+.btn-pharaoh-cyan {
+  background: linear-gradient(135deg, rgba(0,240,255,0.2), rgba(0,240,255,0.1));
+  border: 1px solid rgba(0, 240, 255, 0.3);
+  color: #00f0ff;
+}
+
+.btn-pharaoh-cyan:hover {
+  box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+}
+
+/* ===========================================
+   SCROLLBAR STYLING
+   =========================================== */
+
 ::-webkit-scrollbar {
   width: 8px;
   height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
+  background: rgba(0, 0, 0, 0.3);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(0, 240, 255, 0.3);
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.3), rgba(255, 170, 0, 0.2));
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(0, 240, 255, 0.5);
+  background: linear-gradient(180deg, rgba(255, 215, 0, 0.5), rgba(255, 170, 0, 0.4));
 }
 
-/* Selection */
+/* ===========================================
+   SELECTION
+   =========================================== */
+
 ::selection {
-  background: rgba(0, 240, 255, 0.3);
+  background: rgba(255, 215, 0, 0.3);
   color: white;
 }
 
-/* Focus States */
+/* ===========================================
+   FOCUS STATES
+   =========================================== */
+
 input:focus, select:focus, textarea:focus, button:focus {
   outline: none;
-  box-shadow: 0 0 0 2px rgba(0, 240, 255, 0.3);
+  box-shadow: 0 0 0 2px rgba(255, 215, 0, 0.3);
 }
 
-/* Placeholder Styling */
+/* ===========================================
+   PLACEHOLDER STYLING
+   =========================================== */
+
 ::placeholder {
   color: rgba(255, 255, 255, 0.3);
 }
 
-/* Number Input Arrows */
+/* ===========================================
+   NUMBER INPUT ARROWS
+   =========================================== */
+
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   opacity: 0.5;
 }
 
-/* Range Input Styling */
+/* ===========================================
+   RANGE INPUT STYLING
+   =========================================== */
+
 input[type="range"] {
   -webkit-appearance: none;
   background: transparent;
@@ -253,25 +502,31 @@ input[type="range"]::-webkit-slider-thumb {
   height: 16px;
   width: 16px;
   border-radius: 50%;
-  background: #00f0ff;
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
   cursor: pointer;
   margin-top: -6px;
-  box-shadow: 0 0 10px rgba(0, 240, 255, 0.5);
+  box-shadow: 0 0 10px rgba(255, 215, 0, 0.5);
 }
 
 input[type="range"]::-webkit-slider-runnable-track {
   width: 100%;
   height: 4px;
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 215, 0, 0.1);
   border-radius: 2px;
 }
 
-/* Checkbox Styling */
+/* ===========================================
+   CHECKBOX STYLING
+   =========================================== */
+
 input[type="checkbox"] {
-  accent-color: #00f0ff;
+  accent-color: #ffd700;
 }
 
-/* Toggle Switch Base */
+/* ===========================================
+   TOGGLE SWITCH
+   =========================================== */
+
 .toggle-switch {
   position: relative;
   display: inline-block;
@@ -310,14 +565,17 @@ input[type="checkbox"] {
 }
 
 input:checked + .toggle-slider {
-  background-color: #00f0ff;
+  background: linear-gradient(135deg, #ffd700, #ffaa00);
 }
 
 input:checked + .toggle-slider:before {
   transform: translateX(24px);
 }
 
-/* Pulse Animation for Hot Items */
+/* ===========================================
+   PULSE ANIMATION FOR HOT ITEMS
+   =========================================== */
+
 .pulse-hot {
   animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
 }
@@ -331,13 +589,16 @@ input:checked + .toggle-slider:before {
   }
 }
 
-/* Shimmer Loading Effect */
+/* ===========================================
+   SHIMMER LOADING EFFECT
+   =========================================== */
+
 .shimmer {
   background: linear-gradient(
     90deg,
-    rgba(255, 255, 255, 0.03) 0%,
-    rgba(255, 255, 255, 0.08) 50%,
-    rgba(255, 255, 255, 0.03) 100%
+    rgba(255, 215, 0, 0.03) 0%,
+    rgba(255, 215, 0, 0.08) 50%,
+    rgba(255, 215, 0, 0.03) 100%
   );
   background-size: 200% 100%;
   animation: shimmer 1.5s infinite;
@@ -350,4 +611,102 @@ input:checked + .toggle-slider:before {
   100% {
     background-position: 200% 0;
   }
+}
+
+/* ===========================================
+   CRITICAL ALERT BANNER
+   =========================================== */
+
+.critical-banner {
+  background: linear-gradient(90deg,
+    rgba(255, 0, 0, 0.15),
+    rgba(255, 68, 68, 0.1),
+    rgba(255, 0, 0, 0.15)
+  );
+  border: 1px solid rgba(255, 0, 0, 0.3);
+  border-radius: 8px;
+  padding: 1rem;
+  animation: critical-pulse 2s infinite;
+}
+
+/* ===========================================
+   STAT CARDS
+   =========================================== */
+
+.stat-card {
+  background: linear-gradient(135deg, rgba(8,8,12,0.9), rgba(5,5,8,0.95));
+  border: 1px solid rgba(255, 215, 0, 0.1);
+  border-radius: 12px;
+  padding: 1.25rem;
+  transition: all 0.3s ease;
+}
+
+.stat-card:hover {
+  border-color: rgba(255, 215, 0, 0.3);
+  box-shadow: 0 0 20px rgba(255, 215, 0, 0.1);
+}
+
+.stat-card-critical {
+  border-color: rgba(255, 0, 0, 0.3);
+}
+
+.stat-card-critical:hover {
+  border-color: rgba(255, 0, 0, 0.5);
+  box-shadow: 0 0 20px rgba(255, 0, 0, 0.2);
+}
+
+/* ===========================================
+   TABLE STYLING
+   =========================================== */
+
+.pharaoh-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+.pharaoh-table th {
+  background: linear-gradient(180deg, rgba(255,215,0,0.1), rgba(255,215,0,0.05));
+  border-bottom: 1px solid rgba(255, 215, 0, 0.2);
+  color: #ffd700;
+  font-weight: bold;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 0.75rem 1rem;
+  text-align: left;
+}
+
+.pharaoh-table td {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  padding: 0.75rem 1rem;
+}
+
+.pharaoh-table tr:hover td {
+  background: rgba(255, 215, 0, 0.03);
+}
+
+/* ===========================================
+   EXPIRATION URGENCY INDICATORS
+   =========================================== */
+
+.urgency-critical {
+  color: #ff0000;
+  text-shadow: 0 0 10px rgba(255, 0, 0, 0.5);
+}
+
+.urgency-urgent {
+  color: #ff4400;
+  text-shadow: 0 0 8px rgba(255, 68, 0, 0.4);
+}
+
+.urgency-warning {
+  color: #ffaa00;
+}
+
+.urgency-normal {
+  color: #00ff88;
+}
+
+.urgency-safe {
+  color: #00f0ff;
 }
