@@ -1,0 +1,16 @@
+{
+  "name": "openai-sam-mcp",
+  "version": "1.0.0",
+  "description": "Conversational AI (Sam persona)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "openai": "latest",
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "author": "Logan Toups",
+  "license": "MIT"
+}

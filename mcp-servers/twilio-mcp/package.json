@@ -1,0 +1,16 @@
+{
+  "name": "twilio-mcp",
+  "version": "1.0.0",
+  "description": "SMS & voice calls",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "twilio": "latest",
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "author": "Logan Toups",
+  "license": "MIT"
+}
