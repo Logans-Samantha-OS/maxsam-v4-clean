@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 interface GoldenLead {
   id: string;
@@ -16,22 +17,27 @@ interface GoldenLead {
 export default function GoldenLeadsSpotlight() {
   const [goldenLeads, setGoldenLeads] = useState<GoldenLead[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchGoldenLeads() {
       try {
-        // Mock data for now to avoid build errors
-        setGoldenLeads([
-          {
-            id: '1',
-            owner_name: 'John Smith',
-            property_address: '123 Main St',
-            excess_amount: 50000,
-            buyer_match_count: 12,
-            eleanor_score: 95,
-            created_at: '2024-01-15'
-          }
-        ]);
+        const { data, error } = await supabase
+          .from('leads')
+          .select('*')
+          .eq('golden_lead', true)
+          .order('excess_amount', { ascending: false })
+          .limit(5);
+
+        if (error) throw error;
+
+        // For now, set buyer_match_count to 0 since we don't have that table
+        const leadsWithMatches = (data || []).map(lead => ({
+          ...lead,
+          buyer_match_count: 0
+        }));
+
+        setGoldenLeads(leadsWithMatches);
       } catch (error) {
         console.error('Error fetching golden leads:', error);
       } finally {
@@ -41,6 +47,10 @@ export default function GoldenLeadsSpotlight() {
 
     fetchGoldenLeads();
   }, []);
+
+  const handleViewLead = (leadId: string) => {
+    router.push(`/sellers?lead=${leadId}`);
+  };
 
   if (loading) {
     return (
@@ -76,10 +86,11 @@ export default function GoldenLeadsSpotlight() {
       </h3>
       
       <div className="space-y-4">
-        {goldenLeads.slice(0, 5).map((lead, index) => (
+        {goldenLeads.map((lead, index) => (
           <div 
             key={lead.id} 
-            className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/30 hover:border-yellow-500/50 transition-all duration-300"
+            className="flex items-center justify-between p-4 bg-gradient-to-r from-yellow-500/10 to-transparent rounded-lg border border-yellow-500/30 hover:border-yellow-500/50 transition-all duration-300 cursor-pointer"
+            onClick={() => handleViewLead(lead.id)}
           >
             <div className="flex items-center gap-3">
               <div className="text-2xl font-bold text-yellow-500">
@@ -90,7 +101,7 @@ export default function GoldenLeadsSpotlight() {
                   {lead.owner_name}
                 </div>
                 <div className="text-zinc-400 text-sm">
-                  {lead.property_address}
+                  {lead.property_address || 'No Address'}
                 </div>
               </div>
             </div>
@@ -103,7 +114,7 @@ export default function GoldenLeadsSpotlight() {
                 {lead.buyer_match_count} buyers matched
               </div>
               <div className="text-xs text-zinc-500">
-                Score: {lead.eleanor_score}
+                Score: {lead.eleanor_score || 0}
               </div>
             </div>
           </div>

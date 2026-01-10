@@ -359,7 +359,7 @@ export default function Dashboard() {
                 })
                 .slice(0, 5)
                 .map((lead, index) => (
-                  <div key={lead.id} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                  <div key={lead.id} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700 cursor-pointer hover:bg-zinc-700/70 transition-colors" onClick={() => window.open(`/sellers?lead=${lead.id}`, '_blank')}>
                     <div className="flex-1">
                       <div className="font-medium text-white">{lead.owner_name}</div>
                       <div className="text-sm text-zinc-400">{lead.property_address}</div>

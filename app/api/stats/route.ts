@@ -28,11 +28,20 @@ export async function GET(request: NextRequest) {
     
     if (goldenError) throw goldenError;
     
+    // Get expiring leads count
+    const { count: expiringLeads, error: expiringError } = await supabase
+      .from('leads')
+      .select('*', { count: 'exact', head: true })
+      .lt('expiration_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString());
+    
+    if (expiringError) throw expiringError;
+    
     return NextResponse.json({
       totalLeads: totalLeads || 0,
       pipelineValue,
       projectedRevenue,
-      goldenLeads: goldenLeads || 0
+      goldenLeads: goldenLeads || 0,
+      expiringLeads: expiringLeads || 0
     });
     
   } catch (error: any) {

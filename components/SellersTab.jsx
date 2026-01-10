@@ -352,14 +352,13 @@ export default function SellersTab() {
               {/* Action Buttons */}
               <div className="grid grid-cols-3 gap-2 mb-4">
                 <button
-                  href={`tel:${lead.phone}`}
                   className={`px-3 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
                     lead.phone
                       ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
                       : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
                   }`}
                   disabled={!lead.phone}
-                  onClick={() => lead.phone && (window.location.href = `tel:${lead.phone}`)}
+                  onClick={() => lead.phone && window.open(`tel:${lead.phone}`)}
                 >
                   📞 Call
                 </button>

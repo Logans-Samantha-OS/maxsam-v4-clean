@@ -22,12 +22,18 @@ export default function TodaysKPIs() {
   useEffect(() => {
     async function fetchKPIs() {
       try {
-        // Mock data for now to avoid build errors
+        // Get today's activity from activity_log or conversations table
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        // For now, show "Coming Soon" since we don't have the activity_log table
         setKpis({
-          callsMade: 45,
-          smsSent: 128,
-          responses: 23,
-          revenueClosed: 125000
+          callsMade: 0,
+          smsSent: 0,
+          responses: 0,
+          revenueClosed: 0
         });
       } catch (error) {
         console.error('Error fetching KPIs:', error);
@@ -78,38 +84,39 @@ export default function TodaysKPIs() {
     <div className="pharaoh-card">
       <h3 className="text-lg font-bold text-gold mb-4 flex items-center gap-2">
         <span>📊</span> Today's KPIs
+        <span className="ml-2 text-xs text-zinc-400 bg-zinc-800 px-2 py-1 rounded">Coming Soon</span>
       </h3>
       
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
         <div className="text-center p-4 bg-zinc-800/50 rounded-lg">
           <div className="text-2xl font-bold text-cyan-400">{kpis.callsMade}</div>
           <div className="text-zinc-400 text-sm">Calls Made</div>
-          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.callsMade, 40))}`}>
-            {getTrendIcon(getTrend(kpis.callsMade, 40))} vs yesterday
+          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.callsMade, 0))}`}>
+            {getTrendIcon(getTrend(kpis.callsMade, 0))} vs yesterday
           </div>
         </div>
         
         <div className="text-center p-4 bg-zinc-800/50 rounded-lg">
           <div className="text-2xl font-bold text-blue-400">{kpis.smsSent}</div>
           <div className="text-zinc-400 text-sm">SMS Sent</div>
-          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.smsSent, 115))}`}>
-            {getTrendIcon(getTrend(kpis.smsSent, 115))} vs yesterday
+          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.smsSent, 0))}`}>
+            {getTrendIcon(getTrend(kpis.smsSent, 0))} vs yesterday
           </div>
         </div>
         
         <div className="text-center p-4 bg-zinc-800/50 rounded-lg">
           <div className="text-2xl font-bold text-green-400">{kpis.responses}</div>
           <div className="text-zinc-400 text-sm">Responses</div>
-          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.responses, 18))}`}>
-            {getTrendIcon(getTrend(kpis.responses, 18))} vs yesterday
+          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.responses, 0))}`}>
+            {getTrendIcon(getTrend(kpis.responses, 0))} vs yesterday
           </div>
         </div>
         
         <div className="text-center p-4 bg-zinc-800/50 rounded-lg">
           <div className="text-2xl font-bold text-gold">${(kpis.revenueClosed / 1000).toFixed(1)}k</div>
           <div className="text-zinc-400 text-sm">Revenue Closed</div>
-          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.revenueClosed, 98000))}`}>
-            {getTrendIcon(getTrend(kpis.revenueClosed, 98000))} vs yesterday
+          <div className={`text-xs mt-1 ${getTrendColor(getTrend(kpis.revenueClosed, 0))}`}>
+            {getTrendIcon(getTrend(kpis.revenueClosed, 0))} vs yesterday
           </div>
         </div>
       </div>
