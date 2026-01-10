@@ -11,6 +11,8 @@ export default function SellersTab() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [sortBy, setSortBy] = useState('eleanor_score');
   const [sortOrder, setSortOrder] = useState('desc');
+  const [priorityFilter, setPriorityFilter] = useState('all');
+  const [minAmount, setMinAmount] = useState(1);
 
   // Fetch leads
   useEffect(() => {
@@ -65,19 +67,28 @@ export default function SellersTab() {
       result = result.filter(lead => lead.status === statusFilter);
     }
     
+    // Apply priority filter
+    if (priorityFilter !== 'all') {
+      result = result.filter(lead => lead.contact_priority === priorityFilter);
+    }
+    
+    // Apply min amount filter
+    result = result.filter(lead => (lead.excess_funds_amount || 0) >= minAmount);
+    
     // Apply search
     if (searchQuery) {
       const query = searchQuery.toLowerCase();
       result = result.filter(lead => 
         (lead.property_address?.toLowerCase().includes(query)) ||
         (lead.owner_name?.toLowerCase().includes(query)) ||
+        (lead.case_number?.toLowerCase().includes(query)) ||
         (lead.phone_1?.includes(query)) ||
         (lead.phone_2?.includes(query))
       );
     }
     
     setFilteredLeads(result);
-  }, [leads, searchQuery, statusFilter]);
+  }, [leads, searchQuery, statusFilter, priorityFilter, minAmount]);
 
   // Handle status update
   const updateLeadStatus = async (leadId, newStatus) => {
@@ -94,6 +105,67 @@ export default function SellersTab() {
       setLeads(data || []);
     } catch (error) {
       console.error('Error updating lead status:', error);
+    }
+  };
+
+  // Handle SMS sending
+  const sendSMS = async (leadId) => {
+    try {
+      const response = await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          lead_id: leadId,
+          timestamp: new Date().toISOString()
+        }),
+      });
+
+      if (response.ok) {
+        console.log('SMS sent successfully for lead:', leadId);
+        // You might want to show a success message or update the UI
+      } else {
+        console.error('Failed to send SMS');
+      }
+    } catch (error) {
+      console.error('Error sending SMS:', error);
+    }
+  };
+
+  // Handle contract sending
+  const sendContract = async (leadId) => {
+    try {
+      const response = await fetch('/api/contracts/send', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ lead_id: leadId }),
+      });
+      
+      if (!response.ok) throw new Error('Contract sending failed');
+      
+      alert('Contract sent successfully!');
+    } catch (error) {
+      console.error('Error sending contract:', error);
+      alert('Failed to send contract');
+    }
+  };
+
+  // Get badge color based on priority
+  const getPriorityBadge = (priority) => {
+    switch (priority) {
+      case 'critical':
+        return 'bg-red-500/20 text-red-400 border-red-500/30';
+      case 'high':
+        return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+      case 'medium':
+        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
+      case 'low':
+        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
+      default:
+        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
     }
   };
 
@@ -134,29 +206,71 @@ export default function SellersTab() {
   return (
     <div className="space-y-6">
       {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Search by address, name, or phone..."
-            className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+      <div className="pharaoh-card mb-6">
+        <div className="flex items-center gap-3 mb-4">
+          <span className="text-gold font-bold">🔍 Advanced Filters</span>
+          <div className="flex-1 h-px bg-gradient-to-r from-yellow-500/20 to-transparent" />
         </div>
-        <div className="flex gap-2">
-          <select
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="negotiating">Negotiating</option>
-            <option value="contract_sent">Contract Sent</option>
-            <option value="closed">Closed</option>
-          </select>
+        
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div>
+            <label className="block text-zinc-400 text-sm mb-2">Search</label>
+            <input
+              type="text"
+              placeholder="Name, case, address, phone..."
+              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+            />
+          </div>
+          
+          <div>
+            <label className="block text-zinc-400 text-sm mb-2">Status</label>
+            <select
+              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+            >
+              <option value="all">All Statuses</option>
+              <option value="new">New</option>
+              <option value="contacted">Contacted</option>
+              <option value="interested">Interested</option>
+              <option value="signed">Signed</option>
+              <option value="filed">Filed</option>
+              <option value="paid">Paid</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-zinc-400 text-sm mb-2">Priority</label>
+            <select
+              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
+              value={priorityFilter}
+              onChange={(e) => setPriorityFilter(e.target.value)}
+            >
+              <option value="all">All Priorities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+          
+          <div>
+            <label className="block text-zinc-400 text-sm mb-2">Min Amount (${minAmount.toLocaleString()})</label>
+            <input
+              type="range"
+              min="1"
+              max="50000"
+              step="100"
+              className="w-full"
+              value={minAmount}
+              onChange={(e) => setMinAmount(Number(e.target.value))}
+            />
+          </div>
+        </div>
+        
+        <div className="flex gap-2 mt-4">
           <select
             className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
             value={sortBy}
@@ -165,12 +279,13 @@ export default function SellersTab() {
             <option value="eleanor_score">Sort by Score</option>
             <option value="excess_funds_amount">Sort by Amount</option>
             <option value="created_at">Sort by Date</option>
+            <option value="owner_name">Sort by Name</option>
           </select>
           <button
             className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white hover:bg-zinc-700"
             onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
           >
-            {sortOrder === 'asc' ? '↑' : '↓'}
+            {sortOrder === 'asc' ? '↑ Ascending' : '↓ Descending'}
           </button>
         </div>
       </div>
@@ -180,17 +295,25 @@ export default function SellersTab() {
         {filteredLeads.map((lead) => (
           <div key={lead.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden hover:border-cyan-500/50 transition-colors">
             <div className="p-5">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-white truncate">
-                    {lead.property_address || 'No Address'}
-                  </h3>
-                  <p className="text-zinc-400 text-sm">{lead.city || 'Unknown City'}</p>
+                <div className="flex justify-between items-start mb-3">
+                  <div className="flex-1">
+                    <h3 className="text-lg font-semibold text-white truncate">
+                      {lead.property_address || 'No Address'}
+                    </h3>
+                    <p className="text-zinc-400 text-sm">{lead.city || 'Unknown City'}</p>
+                    {lead.case_number && (
+                      <p className="text-zinc-500 text-xs">Case: {lead.case_number}</p>
+                    )}
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(lead.status)}`}>
+                      {lead.status?.replace('_', ' ') || 'Unknown'}
+                    </span>
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadge(lead.contact_priority)}`}>
+                      {lead.contact_priority || 'medium'}
+                    </span>
+                  </div>
                 </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(lead.status)}`}>
-                  {lead.status?.replace('_', ' ') || 'Unknown'}
-                </span>
-              </div>
 
               <div className="space-y-3 mt-4">
                 <div>
@@ -220,18 +343,29 @@ export default function SellersTab() {
                   </div>
                 </div>
 
-                <div className="grid grid-cols-2 gap-2 mt-4">
+                <div className="grid grid-cols-3 gap-2 mt-4">
                   <a 
                     href={`tel:${lead.phone_1 || lead.phone_2}`}
-                    className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-medium text-center transition-colors"
+                    className={`px-3 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
+                      lead.phone_1 || lead.phone_2
+                        ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
+                        : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
+                    }`}
+                    disabled={!lead.phone_1 && !lead.phone_2}
                   >
-                    Call
+                    📞 Call
                   </a>
                   <button 
-                    className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors"
-                    onClick={() => updateLeadStatus(lead.id, 'contacted')}
+                    className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
+                    onClick={() => sendSMS(lead.id)}
                   >
-                    {lead.status === 'new' ? 'Contact' : 'Update'}
+                    💬 SMS
+                  </button>
+                  <button 
+                    className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
+                    onClick={() => sendContract(lead.id)}
+                  >
+                    📄 Contract
                   </button>
                 </div>
 
