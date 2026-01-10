@@ -43,6 +43,14 @@ interface Lead {
   days_until_expiration?: number;
   expiration_date?: string;
   is_cross_referenced?: boolean;
+  golden_lead?: boolean;
+  property_type?: string;
+  arv_calculated?: number;
+  mao_70?: number;
+  mao_75?: number;
+  estimated_repairs?: number;
+  case_number?: string;
+  source_county?: string;
 }
 
 interface PipelineStage {
@@ -254,7 +262,124 @@ export default function Dashboard() {
 
               {/* Live Activity Feed */}
               <LiveActivityFeed />
-          {/* Header - Egyptian Pharaoh Style */}
+          {/* Row 1 - Key Stats */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="pharaoh-card">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gold">{totalLeads}</div>
+                <div className="text-zinc-400 text-sm">Total Leads</div>
+              </div>
+            </div>
+            <div className="pharaoh-card">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-green-400">{formatCurrency(totalPipelineValue)}</div>
+                <div className="text-zinc-400 text-sm">Pipeline Value</div>
+              </div>
+            </div>
+            <div className="pharaoh-card">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-gold">{formatCurrency(projectedRevenue)}</div>
+                <div className="text-zinc-400 text-sm">Projected Revenue</div>
+              </div>
+            </div>
+            <div className="pharaoh-card">
+              <div className="text-center">
+                <div className="text-3xl font-bold text-yellow-500">
+                  {leads.filter(lead => lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address)).length}
+                </div>
+                <div className="text-zinc-400 text-sm">Golden Leads</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 2 - Dual Opportunity Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
+            <div className="pharaoh-card border-2 border-gold/50">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-gold flex items-center gap-2">
+                  💰 EXCESS FUNDS
+                </h3>
+                <div className="text-gold text-sm">View All →</div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Leads</span>
+                  <span className="text-2xl font-bold text-gold">{leads.filter(lead => !lead.property_type || lead.property_type === 'excess_funds').length}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Total</span>
+                  <span className="text-2xl font-bold text-green-400">{formatCurrency(totalPipelineValue)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Your Fees</span>
+                  <span className="text-2xl font-bold text-gold">{formatCurrency(projectedRevenue)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="pharaoh-card border-2 border-cyan-500/50">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-xl font-bold text-cyan-400 flex items-center gap-2">
+                  🏠 WHOLESALE
+                </h3>
+                <div className="text-cyan-400 text-sm">View All →</div>
+              </div>
+              <div className="space-y-2">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Properties</span>
+                  <span className="text-2xl font-bold text-cyan-400">0</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">ARV Total</span>
+                  <span className="text-2xl font-bold text-cyan-400">$0</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Assignment Fees</span>
+                  <span className="text-2xl font-bold text-cyan-400">$0</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Row 3 - Priority Action Queue */}
+          <div className="pharaoh-card mb-6">
+            <h3 className="text-lg font-bold text-red-400 mb-4 flex items-center gap-2">
+              🔴 Priority Action Queue
+            </h3>
+            <div className="space-y-3">
+              {leads
+                .filter(lead => {
+                  // Expiring within 30 days + high amount
+                  const isExpiringUrgent = (lead.days_until_expiration || 999) <= 30 && lead.excess_funds_amount > 10000;
+                  // Has phone + never contacted
+                  const hasPhoneNotContacted = (lead.phone_1 || lead.phone_2) && (!lead.status || lead.status === 'new');
+                  // Golden leads not yet contacted
+                  const isGoldenNotContacted = (lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address)) && (!lead.status || lead.status === 'new');
+                  
+                  return isExpiringUrgent || hasPhoneNotContacted || isGoldenNotContacted;
+                })
+                .slice(0, 5)
+                .map((lead, index) => (
+                  <div key={lead.id} className="flex items-center justify-between p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
+                    <div className="flex-1">
+                      <div className="font-medium text-white">{lead.owner_name}</div>
+                      <div className="text-sm text-zinc-400">{lead.property_address}</div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-bold text-gold">{formatCurrency(lead.excess_funds_amount || 0)}</div>
+                      <div className="text-xs text-zinc-500">
+                        {lead.days_until_expiration <= 30 && '⏰ Expiring Soon'}
+                        {lead.golden_lead && '⭐ Golden Lead'}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+            </div>
+          </div>
+
+          {/* Row 4 - Recent Activity Feed */}
+          <LiveActivityFeed />
+
+          {/* Existing components below */}
           <div className="flex justify-between items-start mb-8">
             <div>
               <h2 className="text-3xl font-black text-gold-shine flex items-center gap-3">
