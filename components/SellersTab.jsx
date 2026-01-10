@@ -9,7 +9,7 @@ export default function SellersTab() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('eleanor_score');
+  const [sortBy, setSortBy] = useState('excess_funds_amount');
   const [sortOrder, setSortOrder] = useState('desc');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [minAmount, setMinAmount] = useState(1);
@@ -89,6 +89,34 @@ export default function SellersTab() {
     
     setFilteredLeads(result);
   }, [leads, searchQuery, statusFilter, priorityFilter, minAmount]);
+
+  // Parse owner name to get first name
+  const getFirstName = (fullName) => {
+    if (!fullName) return 'Unknown';
+    const names = fullName.trim().split(' ');
+    return names[0] || 'Unknown';
+  };
+
+  // Get expiration badge color based on days
+  const getExpirationBadge = (daysUntilExpiration) => {
+    if (!daysUntilExpiration) return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
+    
+    if (daysUntilExpiration <= 30) {
+      return 'bg-red-500/20 text-red-400 border-red-500/30 animate-pulse';
+    } else if (daysUntilExpiration <= 90) {
+      return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
+    } else {
+      return 'bg-green-500/20 text-green-400 border-green-500/30';
+    }
+  };
+
+  // Get display location
+  const getDisplayLocation = (lead) => {
+    if (lead.property_city) {
+      return `${lead.property_city}, ${lead.state || 'TX'}`;
+    }
+    return `${lead.source_county || 'Dallas'}, TX`;
+  };
 
   // Handle status update
   const updateLeadStatus = async (leadId, newStatus) => {
@@ -276,7 +304,7 @@ export default function SellersTab() {
             value={sortBy}
             onChange={(e) => setSortBy(e.target.value)}
           >
-            <option value="eleanor_score">Sort by Score</option>
+            <option value="excess_funds_amount">Sort by Amount (Default)</option>
             <option value="excess_funds_amount">Sort by Amount</option>
             <option value="created_at">Sort by Date</option>
             <option value="owner_name">Sort by Name</option>
@@ -298,9 +326,9 @@ export default function SellersTab() {
                 <div className="flex justify-between items-start mb-3">
                   <div className="flex-1">
                     <h3 className="text-lg font-semibold text-white truncate">
-                      {lead.property_address || 'No Address'}
+                      {lead.case_number || lead.property_address || 'No Address'}
                     </h3>
-                    <p className="text-zinc-400 text-sm">{lead.city || 'Unknown City'}</p>
+                    <p className="text-zinc-400 text-sm">{getDisplayLocation(lead)}</p>
                     {lead.case_number && (
                       <p className="text-zinc-500 text-xs">Case: {lead.case_number}</p>
                     )}
@@ -318,7 +346,7 @@ export default function SellersTab() {
               <div className="space-y-3 mt-4">
                 <div>
                   <p className="text-zinc-500 text-sm">Owner</p>
-                  <p className="text-white">{lead.owner_name || 'Unknown'}</p>
+                  <p className="text-white">{getFirstName(lead.owner_name)}</p>
                 </div>
                 
                 <div>
@@ -329,17 +357,9 @@ export default function SellersTab() {
                 </div>
 
                 <div>
-                  <p className="text-zinc-500 text-sm">Eleanor Score</p>
-                  <div className="flex items-center gap-2">
-                    <div className="w-full bg-zinc-800 rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full ${getScoreBadge(lead.eleanor_score).replace('text-', 'bg-')}`}
-                        style={{ width: `${Math.min(lead.eleanor_score || 0, 100)}%` }}
-                      ></div>
-                    </div>
-                    <span className={`text-xs font-bold ${getScoreBadge(lead.eleanor_score)} px-2 py-0.5 rounded`}>
-                      {lead.eleanor_score || 0}
-                    </span>
+                  <p className="text-zinc-500 text-sm">Days to Expiration</p>
+                  <div className={`px-2 py-1 rounded-full text-xs font-bold ${getExpirationBadge(lead.days_until_expiration)}`}>
+                    {lead.days_until_expiration || 'Unknown'} days
                   </div>
                 </div>
 
