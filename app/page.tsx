@@ -367,7 +367,7 @@ export default function Dashboard() {
                     <div className="text-right">
                       <div className="text-lg font-bold text-gold">{formatCurrency(lead.excess_funds_amount || 0)}</div>
                       <div className="text-xs text-zinc-500">
-                        {lead.days_until_expiration <= 30 && '⏰ Expiring Soon'}
+                        {(lead.days_until_expiration || 999) <= 30 && '⏰ Expiring Soon'}
                         {lead.golden_lead && '⭐ Golden Lead'}
                       </div>
                     </div>
