@@ -16,11 +16,19 @@ interface ToastContextType {
 
 const ToastContext = createContext<ToastContextType | null>(null);
 
-export function useToast() {
+// Safe hook that doesn't throw during SSR
+export function useToast(): ToastContextType {
     const context = useContext(ToastContext);
+
+    // Return no-op functions if context is not available (SSR or outside provider)
     if (!context) {
-        throw new Error('useToast must be used within ToastProvider');
+        return {
+            toasts: [],
+            addToast: () => { },
+            removeToast: () => { }
+        };
     }
+
     return context;
 }
 
@@ -57,7 +65,7 @@ function ToastContainer({ toasts, removeToast }: { toasts: Toast[], removeToast:
             {toasts.map(toast => (
                 <div
                     key={toast.id}
-                    className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 animate-slideIn cursor-pointer backdrop-blur-sm border
+                    className={`px-4 py-3 rounded-lg shadow-lg flex items-center gap-3 cursor-pointer backdrop-blur-sm border
             ${toast.type === 'success' ? 'bg-green-500/90 border-green-400 text-white' : ''}
             ${toast.type === 'error' ? 'bg-red-500/90 border-red-400 text-white' : ''}
             ${toast.type === 'info' ? 'bg-blue-500/90 border-blue-400 text-white' : ''}

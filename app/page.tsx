@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { supabase } from '@/lib/supabase';
 import Sidebar from '@/components/Sidebar';
 import UploadZone from '@/components/dashboard/UploadZone';
@@ -15,6 +15,7 @@ import { useToast } from '@/components/Toast';
 export default function Dashboard() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const { addToast } = useToast();
 
   // Selection State
@@ -28,40 +29,47 @@ export default function Dashboard() {
   const [hasPhone, setHasPhone] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Load leads on mount
-  useEffect(() => {
-    fetchData();
-
-    // Real-time subscription
-    const channel = supabase
-      .channel('leads-realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'maxsam_leads' }, (payload) => {
-        console.log('Real-time update:', payload);
-        fetchData();
-      })
-      .subscribe();
-
-    return () => { supabase.removeChannel(channel); };
-  }, []);
-
-  const fetchData = useCallback(async () => {
+  // Fetch function
+  async function fetchLeads() {
     try {
       setLoading(true);
-      const { data, error } = await supabase
+      setError(null);
+
+      const { data, error: supaError } = await supabase
         .from('maxsam_leads')
         .select('*')
         .neq('status', 'deleted')
         .order('eleanor_score', { ascending: false });
 
-      if (error) throw error;
+      if (supaError) {
+        throw supaError;
+      }
+
       setLeads(data || []);
     } catch (err) {
       console.error('Error fetching leads:', err);
-      addToast('error', 'Failed to load leads');
+      setError(err instanceof Error ? err.message : 'Failed to load leads');
     } finally {
       setLoading(false);
     }
-  }, [addToast]);
+  }
+
+  // Load leads on mount
+  useEffect(() => {
+    fetchLeads();
+
+    // Real-time subscription
+    const channel = supabase
+      .channel('leads-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'maxsam_leads' }, () => {
+        fetchLeads();
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, []);
 
   // Filter & Sort Logic
   const filteredLeads = useMemo(() => {
@@ -130,7 +138,8 @@ export default function Dashboard() {
 
   // Lead Update Handler (for inline edits)
   const handleLeadUpdate = (updatedLead: Lead) => {
-    setLeads(leads.map(l => l.id === updatedLead.id ? updatedLead : l));
+    setLeads(prev => prev.map(l => l.id === updatedLead.id ? updatedLead : l));
+    addToast('success', 'Lead updated');
   };
 
   const handleResetFilters = () => {
@@ -147,7 +156,27 @@ export default function Dashboard() {
       .reduce((sum, l) => sum + (l.excess_funds_amount || 0), 0);
   }, [leads, selectedLeads]);
 
-  if (loading) {
+  // Error state
+  if (error) {
+    return (
+      <div className="min-h-screen bg-[#030305] flex items-center justify-center graphene-bg">
+        <div className="text-center">
+          <div className="text-6xl mb-4">⚠️</div>
+          <h2 className="text-2xl font-bold text-red-400 mb-2">Connection Error</h2>
+          <p className="text-zinc-500 mb-4">{error}</p>
+          <button
+            onClick={() => fetchLeads()}
+            className="px-6 py-2 bg-gold text-black rounded-lg font-bold hover:bg-yellow-500"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Loading state
+  if (loading && leads.length === 0) {
     return (
       <div className="min-h-screen bg-[#030305] flex items-center justify-center graphene-bg">
         <div className="text-center">
@@ -239,7 +268,7 @@ export default function Dashboard() {
         selectedIds={Array.from(selectedLeads)}
         totalValue={totalSelectedValue}
         onClear={() => setSelectedLeads(new Set())}
-        onSuccess={fetchData}
+        onSuccess={fetchLeads}
       />
     </div>
   );
