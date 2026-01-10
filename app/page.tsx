@@ -9,6 +9,16 @@ import { ExpirationBadge } from '@/components/ExpirationCountdown';
 import { CriticalLeadsSection } from '@/components/CriticalLeadsSection';
 import LeadImportStation from '@/components/LeadImportStation';
 import N8NControlCenter from '@/components/N8NControlCenter';
+import TabNavigation from '@/components/TabNavigation';
+import SellersTab from '@/components/SellersTab';
+import BuyersTab from '@/components/BuyersTab';
+import DealsTab from '@/components/DealsTab';
+import AIAnalytics from '@/components/AIAnalytics';
+import LiveActivityFeed from '@/components/LiveActivityFeed';
+import CriticalAlertsPanel from '@/components/CriticalAlertsPanel';
+import GoldenLeadsSpotlight from '@/components/GoldenLeadsSpotlight';
+import QuickActionsBar from '@/components/QuickActionsBar';
+import TodaysKPIs from '@/components/TodaysKPIs';
 
 interface Lead {
   id: string;
@@ -48,6 +58,7 @@ export default function Dashboard() {
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date());
   const [showImportStation, setShowImportStation] = useState(false);
   const [showN8NControls, setShowN8NControls] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
 
   useEffect(() => {
     async function fetchData() {
@@ -160,6 +171,14 @@ export default function Dashboard() {
   const hotLeads = leads.filter(l => (l.eleanor_score || 0) >= 70).slice(0, 6);
   const pendingCalls = leads.filter(l => l.status === 'new' || l.status === 'pending_call').length;
 
+  // Tab counts for navigation
+  const tabCounts = {
+    dashboard: leads.length,
+    sellers: leads.filter(l => l.status !== 'new').length,
+    buyers: 0, // Will be fetched in BuyersTab
+    deals: leads.filter(l => l.status !== 'new' && l.status !== 'contacted').length
+  };
+
   function formatCurrency(amount: number): string {
     if (amount >= 1000000) return `$${(amount / 1000000).toFixed(1)}M`;
     if (amount >= 1000) return `$${(amount / 1000).toFixed(0)}K`;
@@ -212,6 +231,29 @@ export default function Dashboard() {
 
       <main className="flex-1 overflow-auto">
         <div className="p-8">
+          <TabNavigation 
+            activeTab={activeTab} 
+            onTabChange={setActiveTab}
+            counts={tabCounts}
+          />
+
+          {/* Dashboard Tab */}
+          {activeTab === 'dashboard' && (
+            <div className="space-y-6">
+              {/* Quick Actions Bar - TOP PRIORITY */}
+              <QuickActionsBar />
+
+              {/* Today's KPIs */}
+              <TodaysKPIs />
+
+              {/* Critical Alerts Panel */}
+              <CriticalAlertsPanel />
+
+              {/* Golden Leads Spotlight */}
+              <GoldenLeadsSpotlight />
+
+              {/* Live Activity Feed */}
+              <LiveActivityFeed />
           {/* Header - Egyptian Pharaoh Style */}
           <div className="flex justify-between items-start mb-8">
             <div>
@@ -522,6 +564,20 @@ export default function Dashboard() {
             <p className="text-gold-shine font-bold text-lg">MaxSam V4 - Egyptian Pharaoh Edition</p>
             <p className="text-zinc-500 text-sm mt-1">Logan Toups (Sole Owner) • 100% Revenue • 25% Excess / 10% Wholesale</p>
           </div>
+            </div>
+          )}
+
+          {/* Sellers Tab */}
+          {activeTab === 'sellers' && <SellersTab />}
+
+          {/* Buyers Tab */}
+          {activeTab === 'buyers' && <BuyersTab />}
+
+          {/* Deals Tab */}
+          {activeTab === 'deals' && <DealsTab />}
+
+          {/* AI Analytics Tab */}
+          {activeTab === 'ai-analytics' && <AIAnalytics />}
         </div>
       </main>
     </div>
