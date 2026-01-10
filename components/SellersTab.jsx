@@ -1,398 +1,196 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState } from 'react';
+import { useLeads } from '@/lib/hooks/useLeads';
+import LeadCard from '@/components/LeadCard';
 
 export default function SellersTab() {
-  const [leads, setLeads] = useState([]);
-  const [filteredLeads, setFilteredLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('excess_amount');
-  const [sortOrder, setSortOrder] = useState('desc');
-  const [leadType, setLeadType] = useState('excess_funds');
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    priority: 'all',
+    leadType: 'excess_funds',
+    county: 'all',
+    sortBy: 'excess_amount',
+    sortOrder: 'desc'
+  });
 
-  // Fee calculation functions
-  const calculateExcessFee = (excessAmount) => {
-    return excessAmount * 0.25; // 25% fee
-  };
+  const { leads, loading, error } = useLeads(filters);
 
-  const calculateAssignmentFee = (arv, mao) => {
-    return Math.max(arv * 0.10, mao * 0.10); // 10% of max(ARV, MAO)
-  };
-
-  // Fetch leads
-  useEffect(() => {
-    async function fetchLeads() {
-      try {
-        setLoading(true);
-        
-        const { data, error } = await supabase
-          .from('leads')
-          .select('*')
-          .order(sortBy, { ascending: sortOrder === 'asc' });
-
-        if (error) throw error;
-        
-        setLeads(data || []);
-        setFilteredLeads(data || []);
-      } catch (error) {
-        console.error('Error fetching leads:', error);
-      } finally {
-        setLoading(false);
-      }
-    }
-
-    fetchLeads();
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel('leads-changes')
-      .on('postgres_changes', 
-        { 
-          event: '*',
-          schema: 'public',
-          table: 'leads'
-        }, 
-        () => {
-          fetchLeads();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sortBy, sortOrder]);
-
-  // Apply filters and search
-  useEffect(() => {
-    let result = [...leads];
-    
-    // Apply lead type filter
-    if (leadType === 'golden') {
-      result = result.filter(lead => lead.golden_lead);
-    } else if (leadType === 'excess_funds') {
-      result = result.filter(lead => lead.lead_type === 'excess_funds' || lead.lead_type === 'both');
-    } else if (leadType === 'wholesale') {
-      result = result.filter(lead => lead.lead_type === 'wholesale' || lead.lead_type === 'both');
-    }
-    
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      result = result.filter(lead => lead.status === statusFilter);
-    }
-    
-    // Apply search
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(lead => 
-        (lead.property_address?.toLowerCase().includes(query)) ||
-        (lead.owner_name?.toLowerCase().includes(query)) ||
-        (lead.phone?.includes(query)) ||
-        (lead.case_number?.toLowerCase().includes(query))
-      );
-    }
-    
-    setFilteredLeads(result);
-  }, [leads, searchQuery, statusFilter, leadType]);
-
-  // Send SMS
-  const sendSMS = async (leadId) => {
-    try {
-      const response = await fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: leadId,
-          message: 'Hello! I found your excess funds claim and wanted to reach out about helping you recover your money.',
-          template: 'initial_outreach'
-        })
-      });
-
+  const handleStatusChange = (leadId, newStatus) => {
+    // Update lead status via API
+    fetch(`/api/leads/${leadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    }).then(response => {
       if (response.ok) {
-        alert('SMS sent successfully!');
+        // Refetch leads
+        window.location.reload();
+      } else {
+        alert('Failed to update status');
       }
-    } catch (error) {
-      alert('Failed to send SMS');
-    }
+    }).catch(error => {
+      console.error('Status update error:', error);
+      alert('Error updating status');
+    });
   };
 
-  // Send contract
-  const sendContract = async (leadId) => {
-    try {
-      const response = await fetch('/api/contracts/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: leadId,
-          document_type: 'assignment_agreement'
-        })
-      });
-
+  const handleContact = (leadId) => {
+    // Increment contact count
+    fetch(`/api/leads/${leadId}/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).then(response => {
       if (response.ok) {
-        alert('Contract sent successfully!');
+        window.location.reload();
       }
-    } catch (error) {
-      alert('Failed to send contract');
-    }
+    }).catch(error => {
+      console.error('Contact update error:', error);
+    });
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
+      <div className="min-h-screen flex items-center justify-center">
         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gold"></div>
       </div>
     );
   }
 
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="pharaoh-card p-8 max-w-md">
+          <h2 className="text-2xl font-bold text-red-400 mb-4">Error Loading Leads</h2>
+          <p className="text-zinc-400">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-gold hover:bg-yellow-600 text-black rounded-lg font-medium"
+          >
+            Retry
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   return (
-    <div className="space-y-6">
-      {/* Lead Type Toggle */}
-      <div className="pharaoh-card">
-        <div className="flex items-center gap-3 mb-4">
-          <span className="text-gold font-bold">🏠 Lead Type</span>
-          <div className="flex-1 h-px bg-gradient-to-r from-yellow-500/20 to-transparent" />
-          <span className="text-gold font-bold">{filteredLeads.length} Leads</span>
+    <div className="min-h-screen bg-zinc-900">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-black text-gold mb-2">Sellers</h1>
+          <p className="text-zinc-400">Manage your excess funds and wholesale leads</p>
         </div>
-        
-        <div className="flex gap-2">
-          <button
-            onClick={() => setLeadType('excess_funds')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              leadType === 'excess_funds'
-                ? 'bg-gold text-black'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-            }`}
-          >
-            💰 Excess Funds
-          </button>
-          <button
-            onClick={() => setLeadType('wholesale')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              leadType === 'wholesale'
-                ? 'bg-cyan-600 text-white'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-            }`}
-          >
-            🏠 Wholesale
-          </button>
-          <button
-            onClick={() => setLeadType('golden')}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              leadType === 'golden'
-                ? 'bg-yellow-500 text-black'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-            }`}
-          >
-            ⭐ Golden Leads
-          </button>
-        </div>
-      </div>
 
-      {/* Filters */}
-      <div className="pharaoh-card">
-        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-          <div>
-            <label className="block text-zinc-400 text-sm mb-2">Search</label>
-            <input
-              type="text"
-              placeholder="Name, address, case..."
-              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-            />
-          </div>
-          
-          <div>
-            <label className="block text-zinc-400 text-sm mb-2">Status</label>
-            <select
-              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-            >
-              <option value="all">All Status</option>
-              <option value="new">New</option>
-              <option value="contacted">Contacted</option>
-              <option value="contract">Contract</option>
-              <option value="closed">Closed</option>
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-zinc-400 text-sm mb-2">Sort By</label>
-            <select
-              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold"
-              value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
-            >
-              <option value="excess_amount">Excess Amount</option>
-              <option value="owner_name">Owner Name</option>
-              <option value="created_at">Date Added</option>
-            </select>
-          </div>
-          
-          <div>
-            <label className="block text-zinc-400 text-sm mb-2">Order</label>
-            <select
-              className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold"
-              value={sortOrder}
-              onChange={(e) => setSortOrder(e.target.value)}
-            >
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select>
-          </div>
-        </div>
-      </div>
+        {/* Filters */}
+        <div className="pharaoh-card mb-6 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Search</label>
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                placeholder="Search by name, address, case number..."
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Status</label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="all">All Status</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="contract">Contract</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
 
-      {/* Stats Summary */}
-      <div className="grid grid-cols-3 gap-4 mb-4">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-gold">{filteredLeads.length}</div>
-          <div className="text-zinc-400 text-sm">Total Leads</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-green-400">
-            {leadType === 'wholesale' 
-              ? `$${filteredLeads.reduce((sum, lead) => sum + calculateAssignmentFee(lead.arv_calculated || 0, lead.mao_75 || lead.mao_70 || 0), 0).toLocaleString()}`
-              : `$${filteredLeads.reduce((sum, lead) => sum + calculateExcessFee(lead.excess_funds_amount || 0), 0).toLocaleString()}`
-            }
-          </div>
-          <div className="text-zinc-400 text-sm">Potential Fees</div>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-cyan-400">
-            {filteredLeads.filter(lead => lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address)).length}
-          </div>
-          <div className="text-zinc-400 text-sm">Golden Leads</div>
-        </div>
-      </div>
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Lead Type</label>
+              <select
+                value={filters.leadType}
+                onChange={(e) => setFilters(prev => ({ ...prev, leadType: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="all">All Types</option>
+                <option value="excess_funds">Excess Funds</option>
+                <option value="wholesale">Wholesale</option>
+                <option value="golden">Golden Leads</option>
+              </select>
+            </div>
 
-      {/* Leads Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-        {filteredLeads.map((lead) => (
-          <div key={lead.id} className="pharaoh-card hover:border-gold/50 transition-all duration-300 hover:scale-105">
-            <div className="p-6">
-              {/* Header */}
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-bold text-white mb-1">
-                    {lead.property_address || lead.case_number}
-                  </h3>
-                  <p className="text-zinc-400 text-sm">
-                    {lead.property_city || `${lead.source_county}, TX`}
-                  </p>
-                </div>
-                {lead.golden_lead && (
-                  <div className="text-yellow-500 text-2xl">⭐</div>
-                )}
-              </div>
-
-              {/* Lead Type Specific Content */}
-              {leadType === 'wholesale' ? (
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">ARV:</span>
-                    <span className="text-white font-medium">${(lead.arv_calculated || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">MAO 70%:</span>
-                    <span className="text-white font-medium">${(lead.mao_70 || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">MAO 75%:</span>
-                    <span className="text-white font-medium">${(lead.mao_75 || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">Repairs:</span>
-                    <span className="text-white font-medium">${(lead.estimated_repairs || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">Assignment Fee:</span>
-                    <span className="text-gold font-bold">
-                      ${calculateAssignmentFee(lead.arv_calculated || 0, lead.mao_75 || lead.mao_70 || 0).toLocaleString()}
-                    </span>
-                  </div>
-                </div>
-              ) : (
-                <div className="space-y-2 mb-4">
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">Excess Amount:</span>
-                    <span className="text-gold font-bold">${(lead.excess_funds_amount || 0).toLocaleString()}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">Your Fee (25%):</span>
-                    <span className="text-green-400 font-bold">
-                      ${calculateExcessFee(lead.excess_funds_amount || 0).toLocaleString()}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400 text-sm">Expiration:</span>
-                    <span className="text-white font-medium">
-                      {lead.expiration_date ? new Date(lead.expiration_date).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
-                </div>
-              )}
-
-              {/* Owner Info */}
-              <div className="mb-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-400 text-sm">Owner:</span>
-                  <span className="text-white font-medium">{lead.owner_name?.split(' ')[0]}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-400 text-sm">Phone:</span>
-                  <span className="text-white font-medium">{lead.phone || 'No Phone'}</span>
-                </div>
-              </div>
-
-              {/* Action Buttons */}
-              <div className="grid grid-cols-3 gap-2 mb-4">
-                <button
-                  className={`px-3 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
-                    lead.phone
-                      ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                      : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-                  }`}
-                  disabled={!lead.phone}
-                  onClick={() => lead.phone && window.open(`tel:${lead.phone}`)}
-                >
-                  📞 Call
-                </button>
-                <button
-                  className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-                  onClick={() => sendSMS(lead.id)}
-                >
-                  💬 SMS
-                </button>
-                <button
-                  className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
-                  onClick={() => sendContract(lead.id)}
-                >
-                  📄 Contract
-                </button>
-              </div>
-
-              {/* Last Contact */}
-              <div className="pt-3 border-t border-zinc-800 mt-4">
-                <p className="text-zinc-500 text-xs">Last Contact</p>
-                <p className="text-zinc-400 text-sm">
-                  {new Date(lead.last_contacted_at || lead.created_at).toLocaleDateString()}
-                </p>
-              </div>
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Sort By</label>
+              <select
+                value={filters.sortBy}
+                onChange={(e) => setFilters(prev => ({ ...prev, sortBy: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="excess_amount">Excess Amount</option>
+                <option value="eleanor_score">Eleanor Score</option>
+                <option value="created_at">Date Created</option>
+                <option value="expiration_date">Expiration Date</option>
+              </select>
             </div>
           </div>
-        ))}
-      </div>
-
-      {filteredLeads.length === 0 && !loading && (
-        <div className="text-center py-12">
-          <p className="text-zinc-500">No leads found matching your criteria.</p>
         </div>
-      )}
+
+        {/* Stats Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-gold">{leads.length}</div>
+            <div className="text-zinc-400 text-sm">Total Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-green-400">
+              {leads.filter(l => l.status === 'new').length}
+            </div>
+            <div className="text-zinc-400 text-sm">New Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-blue-400">
+              {leads.filter(l => l.golden_lead).length}
+            </div>
+            <div className="text-zinc-400 text-sm">Golden Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-purple-400">
+              ${leads.reduce((sum, l) => sum + (l.excess_amount || 0), 0).toLocaleString()}
+            </div>
+            <div className="text-zinc-400 text-sm">Total Pipeline Value</div>
+          </div>
+        </div>
+
+        {/* Leads Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {leads.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              variant="sellers"
+              onStatusChange={handleStatusChange}
+              onContact={handleContact}
+            />
+          ))}
+        </div>
+
+        {/* Empty State */}
+        {leads.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">🔍</div>
+            <h3 className="text-xl font-bold text-white mb-2">No leads found</h3>
+            <p className="text-zinc-400">Try adjusting your filters or search terms</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
