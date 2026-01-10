@@ -21,6 +21,7 @@ interface Buyer {
   preferred_property_types: string[];
   response_time: string;
   funding_proof: boolean;
+  matching_leads?: number;
 }
 
 export default function BuyersTab() {
@@ -205,82 +206,78 @@ export default function BuyersTab() {
         {filteredBuyers.map((buyer) => (
           <div key={buyer.id} className="pharaoh-card hover:border-emerald-500/50 transition-all duration-300 hover:scale-105">
             <div className="p-6">
-              {/* Header */}
+              {/* Header with Rating */}
               <div className="flex justify-between items-start mb-4">
                 <div className="flex-1">
                   <h3 className="text-xl font-bold text-white mb-1">{buyer.name}</h3>
                   <p className="text-emerald-400 font-medium">{buyer.company}</p>
                 </div>
-                <div className="flex flex-col items-end gap-2">
-                  <span className={`px-3 py-1 rounded-full text-xs font-medium border ${getStatusBadge(buyer)}`}>
-                    {buyer.last_active && new Date(buyer.last_active) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) 
-                      ? 'Active' 
-                      : 'Inactive'
-                    }
+                <div className="flex items-center gap-1">
+                  {getReliabilityStars(buyer.reliability_rating)}
+                  <span className="ml-2 px-2 py-1 bg-emerald-500/20 text-emerald-400 border-emerald-500/30 rounded-full text-xs font-bold">
+                    {buyer.reliability_rating.toFixed(1)}/5
                   </span>
-                  <div className="flex items-center gap-1">
-                    {getReliabilityStars(buyer.reliability_rating)}
-                  </div>
                 </div>
               </div>
 
-              {/* Price Range */}
-              <div className="mb-4 p-3 bg-zinc-800/50 rounded-lg border border-zinc-700">
-                <div className="text-zinc-400 text-sm mb-1">Price Range</div>
-                <div className="text-2xl font-black text-emerald-400">
-                  ${(buyer.price_range_min || 0).toLocaleString()} - ${(buyer.price_range_max || 0).toLocaleString()}
+              {/* Budget and Counties */}
+              <div className="mb-4">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-zinc-400 text-sm">💰</span>
+                  <span className="text-white font-medium">Budget: ${buyer.price_range_min.toLocaleString()} - ${buyer.price_range_max.toLocaleString()}</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-zinc-400 text-sm">📍</span>
+                  <span className="text-white font-medium">Counties: {buyer.preferred_property_types.join(', ')}</span>
                 </div>
               </div>
 
-              {/* Stats */}
-              <div className="grid grid-cols-2 gap-4 mb-4">
-                <div className="text-center p-2 bg-zinc-800/30 rounded-lg">
-                  <div className="text-lg font-bold text-white">{buyer.total_deals || 0}</div>
+              {/* Property Types */}
+              <div className="mb-4">
+                <span className="text-zinc-400 text-sm">🏠</span>
+                <span className="text-white font-medium">Property Types: {buyer.preferred_property_types.join(', ')}</span>
+              </div>
+
+              {/* Stats Row */}
+              <div className="grid grid-cols-3 gap-4 mb-4">
+                <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+                  <div className="text-lg font-bold text-emerald-400">{buyer.matching_leads || 0}</div>
+                  <div className="text-xs text-zinc-400">Matching Leads</div>
+                </div>
+                <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+                  <div className="text-lg font-bold text-gold">{buyer.total_deals || 0}</div>
                   <div className="text-xs text-zinc-400">Total Deals</div>
                 </div>
-                <div className="text-center p-2 bg-zinc-800/30 rounded-lg">
-                  <div className="text-lg font-bold text-gold">${((buyer.total_volume || 0) / 1000000).toFixed(1)}M</div>
+                <div className="text-center p-3 bg-zinc-800/50 rounded-lg">
+                  <div className="text-lg font-bold text-cyan-400">{((buyer.total_volume || 0) / 1000000).toFixed(1)}M</div>
                   <div className="text-xs text-zinc-400">Total Volume</div>
                 </div>
               </div>
 
-              {/* Additional Info */}
-              <div className="space-y-2 mb-4">
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-400 text-sm">Source:</span>
-                  <span className="text-white text-sm font-medium">{buyer.source_marketplace}</span>
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="text-zinc-400 text-sm">Response:</span>
-                  <span className="text-cyan-400 text-sm font-medium">{buyer.response_time || 'N/A'}</span>
-                </div>
-                {buyer.funding_proof && (
-                  <div className="flex items-center gap-2">
-                    <CSSGem grade="A" size="xs" />
-                    <span className="text-emerald-400 text-sm">Funding Verified</span>
-                  </div>
-                )}
-              </div>
-
               {/* Contact Actions */}
-              <div className="grid grid-cols-2 gap-2">
+              <div className="grid grid-cols-3 gap-2">
                 <button
                   onClick={() => handleCall(buyer.phone)}
-                  className="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  className="px-4 py-3 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                 >
                   📞 Call
                 </button>
                 <button
                   onClick={() => handleEmail(buyer.email)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                  className="px-4 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
                 >
-                  ✉️ Email
+                  📧 Email
+                </button>
+                <button
+                  className="px-4 py-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg font-medium transition-colors flex items-center justify-center gap-2"
+                >
+                  🎯 Send Matches
                 </button>
               </div>
 
               {/* Contact Info */}
               <div className="mt-4 pt-4 border-t border-zinc-700">
-                <div className="text-xs text-zinc-500 space-y-1">
+                <div className="grid grid-cols-2 gap-4 text-xs">
                   <div>📱 {buyer.phone}</div>
                   <div>📧 {buyer.email}</div>
                 </div>
