@@ -15,6 +15,7 @@ export interface Lead {
     call_attempts: number;
     last_call_date: string | null;
     created_at: string;
+    updated_at?: string;
     notes: string;
     potential_revenue?: number;
     estimated_equity?: number;
@@ -29,6 +30,9 @@ export interface Lead {
     estimated_repairs?: number;
     case_number?: string;
     source_county?: string;
+    // SMS fields
+    sms_count: number;
+    last_contacted_at: string | null;
 }
 
 export function formatCurrency(amount: number): string {
