@@ -13,6 +13,7 @@ export default function SellersTab() {
   const [sortOrder, setSortOrder] = useState('desc');
   const [priorityFilter, setPriorityFilter] = useState('all');
   const [minAmount, setMinAmount] = useState(1);
+  const [leadType, setLeadType] = useState('excess_funds'); // 'excess_funds', 'wholesale', 'golden'
 
   // Fetch leads
   useEffect(() => {
@@ -62,6 +63,15 @@ export default function SellersTab() {
   useEffect(() => {
     let result = [...leads];
     
+    // Apply lead type filter
+    if (leadType === 'wholesale') {
+      result = result.filter(lead => lead.property_type && lead.property_type !== 'excess_funds');
+    } else if (leadType === 'golden') {
+      result = result.filter(lead => lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address));
+    } else if (leadType === 'excess_funds') {
+      result = result.filter(lead => !lead.property_type || lead.property_type === 'excess_funds');
+    }
+    
     // Apply status filter
     if (statusFilter !== 'all') {
       result = result.filter(lead => lead.status === statusFilter);
@@ -88,7 +98,7 @@ export default function SellersTab() {
     }
     
     setFilteredLeads(result);
-  }, [leads, searchQuery, statusFilter, priorityFilter, minAmount]);
+  }, [leads, searchQuery, statusFilter, priorityFilter, minAmount, leadType]);
 
   // Parse owner name to get first name
   const getFirstName = (fullName) => {
@@ -116,6 +126,14 @@ export default function SellersTab() {
       return `${lead.property_city}, ${lead.state || 'TX'}`;
     }
     return `${lead.source_county || 'Dallas'}, TX`;
+  };
+
+  // Calculate fee potentials
+  const calculateExcessFee = (amount) => amount * 0.25;
+  const calculateAssignmentFee = (arv, mao) => {
+    const mao70 = arv * 0.7;
+    const mao75 = arv * 0.75;
+    return Math.max(mao70, mao75) * 0.1;
   };
 
   // Handle status update
@@ -233,6 +251,68 @@ export default function SellersTab() {
 
   return (
     <div className="space-y-6">
+      {/* Lead Type Toggle */}
+      <div className="pharaoh-card mb-6">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-xl font-bold text-gold">Sellers</h2>
+          <div className="flex gap-2">
+            <button
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                leadType === 'excess_funds' 
+                  ? 'bg-gold text-black shadow-lg shadow-gold/50' 
+                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+              }`}
+              onClick={() => setLeadType('excess_funds')}
+            >
+              💰 Excess Funds
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                leadType === 'wholesale' 
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan/50' 
+                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+              }`}
+              onClick={() => setLeadType('wholesale')}
+            >
+              🏠 Wholesale
+            </button>
+            <button
+              className={`px-4 py-2 rounded-lg font-medium transition-all ${
+                leadType === 'golden' 
+                  ? 'bg-yellow-500 text-black shadow-lg shadow-yellow/50 animate-pulse' 
+                  : 'bg-zinc-700 text-zinc-300 hover:bg-zinc-600'
+              }`}
+              onClick={() => setLeadType('golden')}
+            >
+              ⭐ Golden Leads
+            </button>
+          </div>
+        </div>
+        
+        {/* Stats Summary */}
+        <div className="grid grid-cols-3 gap-4 mb-4">
+          <div className="text-center">
+            <div className="text-2xl font-bold text-gold">{filteredLeads.length}</div>
+            <div className="text-zinc-400 text-sm">Total Leads</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-green-400">
+              ${leadType === 'wholesale' 
+                ? filteredLeads.reduce((sum, lead) => sum + (calculateAssignmentFee(lead.arv_calculated || 0, lead.mao_75 || lead.mao_70 || 0), 0).toLocaleString()
+                : filteredLeads.reduce((sum, lead) => sum + calculateExcessFee(lead.excess_funds_amount || 0), 0).toLocaleString()
+              }
+            </div>
+            <div className="text-zinc-400 text-sm">Potential Fees</div>
+          </div>
+          <div className="text-center">
+            <div className="text-2xl font-bold text-cyan-400">
+              {filteredLeads.filter(lead => lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address)).length}
+            </div>
+            <div className="text-zinc-400 text-sm">Golden Leads</div>
+          </div>
+        </div>
+      </div>
+
       {/* Filters and Search */}
       <div className="pharaoh-card mb-6">
         <div className="flex items-center gap-3 mb-4">
@@ -321,49 +401,123 @@ export default function SellersTab() {
       {/* Leads Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
         {filteredLeads.map((lead) => (
-          <div key={lead.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden hover:border-cyan-500/50 transition-colors">
+          <div key={lead.id} className={`bg-zinc-900/50 border rounded-xl overflow-hidden hover:border-cyan-500/50 transition-all ${
+            lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address) 
+              ? 'border-yellow-500/50 shadow-lg shadow-yellow-500/20' 
+              : leadType === 'wholesale' 
+                ? 'border-cyan-500/50 shadow-lg shadow-cyan-500/20'
+                : 'border-zinc-800'
+          }`}>
             <div className="p-5">
-                <div className="flex justify-between items-start mb-3">
-                  <div className="flex-1">
-                    <h3 className="text-lg font-semibold text-white truncate">
-                      {lead.case_number || lead.property_address || 'No Address'}
-                    </h3>
-                    <p className="text-zinc-400 text-sm">{getDisplayLocation(lead)}</p>
-                    {lead.case_number && (
-                      <p className="text-zinc-500 text-xs">Case: {lead.case_number}</p>
-                    )}
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(lead.status)}`}>
-                      {lead.status?.replace('_', ' ') || 'Unknown'}
-                    </span>
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadge(lead.contact_priority)}`}>
-                      {lead.contact_priority || 'medium'}
-                    </span>
+              {/* Golden Lead Badge */}
+              {(lead.golden_lead || (lead.excess_funds_amount > 25000 && lead.property_address)) && (
+                <div className="flex justify-center mb-3">
+                  <div className="bg-yellow-500 text-black px-3 py-1 rounded-full text-xs font-bold animate-pulse">
+                    ⭐ GOLDEN
                   </div>
                 </div>
+              )}
 
-              <div className="space-y-3 mt-4">
-                <div>
-                  <p className="text-zinc-500 text-sm">Owner</p>
-                  <p className="text-white">{getFirstName(lead.owner_name)}</p>
+              <div className="flex justify-between items-start mb-3">
+                <div className="flex-1">
+                  <h3 className="text-lg font-semibold text-white truncate">
+                    {leadType === 'wholesale' 
+                      ? lead.property_address || 'No Address'
+                      : lead.case_number || lead.property_address || 'No Address'
+                    }
+                  </h3>
+                  <p className="text-zinc-400 text-sm">{getDisplayLocation(lead)}</p>
+                  {lead.case_number && leadType !== 'wholesale' && (
+                    <p className="text-zinc-500 text-xs">Case: {lead.case_number}</p>
+                  )}
                 </div>
-                
-                <div>
-                  <p className="text-zinc-500 text-sm">Excess Funds</p>
-                  <p className="text-2xl font-bold text-green-400">
-                    ${(lead.excess_funds_amount || 0).toLocaleString()}
-                  </p>
+                <div className="flex flex-col gap-1">
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(lead.status)}`}>
+                    {lead.status?.replace('_', ' ') || 'Unknown'}
+                  </span>
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getPriorityBadge(lead.contact_priority)}`}>
+                    {lead.contact_priority || 'medium'}
+                  </span>
                 </div>
+              </div>
 
-                <div>
-                  <p className="text-zinc-500 text-sm">Days to Expiration</p>
-                  <div className={`px-2 py-1 rounded-full text-xs font-bold ${getExpirationBadge(lead.days_until_expiration)}`}>
-                    {lead.days_until_expiration || 'Unknown'} days
+              {/* Different layouts for different lead types */}
+              {leadType === 'wholesale' ? (
+                // Wholesale Layout
+                <div className="space-y-3 mt-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-zinc-500 text-sm">Property</p>
+                      <p className="text-white">{lead.property_address || 'No Address'}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500 text-sm">Owner</p>
+                      <p className="text-white">{getFirstName(lead.owner_name)}</p>
+                    </div>
+                  </div>
+                  
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <p className="text-zinc-500 text-sm">ARV</p>
+                      <p className="text-xl font-bold text-cyan-400">
+                        ${(lead.arv_calculated || 0).toLocaleString()}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500 text-sm">Assignment Fee</p>
+                      <p className="text-xl font-bold text-green-400">
+                        ${calculateAssignmentFee(lead.arv_calculated || 0, lead.mao_75 || lead.mao_70 || 0).toLocaleString()}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <p className="text-zinc-500 text-xs">MAO 70%</p>
+                      <p className="text-sm text-zinc-300">${(lead.arv_calculated || 0) * 0.7}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500 text-xs">MAO 75%</p>
+                      <p className="text-sm text-zinc-300">${(lead.arv_calculated || 0) * 0.75}</p>
+                    </div>
+                    <div>
+                      <p className="text-zinc-500 text-xs">Est. Repairs</p>
+                      <p className="text-sm text-zinc-300">${(lead.estimated_repairs || 0).toLocaleString()}</p>
+                    </div>
                   </div>
                 </div>
+              ) : (
+                // Excess Funds Layout (Default)
+                <div className="space-y-3 mt-4">
+                  <div>
+                    <p className="text-zinc-500 text-sm">Owner</p>
+                    <p className="text-white">{getFirstName(lead.owner_name)}</p>
+                  </div>
+                  
+                  <div>
+                    <p className="text-zinc-500 text-sm">Excess Funds</p>
+                    <p className="text-2xl font-bold text-green-400">
+                      ${(lead.excess_funds_amount || 0).toLocaleString()}
+                    </p>
+                  </div>
 
-                <div className="grid grid-cols-3 gap-2 mt-4">
+                  <div>
+                    <p className="text-zinc-500 text-sm">Your Fee (25%)</p>
+                    <p className="text-xl font-bold text-gold">
+                      ${calculateExcessFee(lead.excess_funds_amount || 0).toLocaleString()}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="text-zinc-500 text-sm">Days to Expiration</p>
+                    <div className={`px-2 py-1 rounded-full text-xs font-bold ${getExpirationBadge(lead.days_until_expiration)}`}>
+                      {lead.days_until_expiration || 'Unknown'} days
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-2 mt-4">
                   <a 
                     href={`tel:${lead.phone_1 || lead.phone_2}`}
                     className={`px-3 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
