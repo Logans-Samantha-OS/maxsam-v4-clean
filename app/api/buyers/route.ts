@@ -1,6 +1,6 @@
 /**
  * Buyer API - Full CRUD operations
- * All buyer data goes to Supabase buyers table
+ * All buyer data goes to Supabase maxsam_buyers table
  */
 
 import { createClient } from '@supabase/supabase-js';
@@ -18,9 +18,10 @@ export async function GET() {
   try {
     const supabase = getSupabase();
     const { data, error } = await supabase
-      .from('buyers')
+      .from('maxsam_buyers')
       .select('*')
-      .order('deals_closed', { ascending: false });
+      .eq('is_active', true)
+      .order('reliability_score', { ascending: false, nullsFirst: false });
 
     if (error) {
       console.error('Supabase GET error:', error);
@@ -35,42 +36,34 @@ export async function GET() {
   }
 }
 
-// POST - Create new buyer
+// POST - Create new buyer (from intake form)
 export async function POST(request: NextRequest) {
   try {
     const supabase = getSupabase();
     const body = await request.json();
 
-    // Map form fields to database columns
+    // Map intake form fields to maxsam_buyers columns
     const buyerData = {
-      name: body.full_name || body.name || 'Unknown',
-      full_name: body.full_name || body.name,
-      company: body.company || body.company_name || null,
-      company_name: body.company || body.company_name || null,
+      name: body.name || 'Unknown',
+      company_name: body.company_name || null,
       email: body.email || null,
       phone: body.phone || null,
-      secondary_phone: body.secondary_phone || null,
+      counties_interested: body.counties_interested || [],
+      min_price: body.min_price || null,
+      max_price: body.max_price || null,
       property_types: body.property_types || [],
-      preferred_zips: body.preferred_zips || null,
-      min_purchase_price: body.min_purchase_price ? parseFloat(body.min_purchase_price) : null,
-      max_purchase_price: body.max_purchase_price ? parseFloat(body.max_purchase_price) : null,
-      min_arv: body.min_arv ? parseFloat(body.min_arv) : null,
-      max_arv: body.max_arv ? parseFloat(body.max_arv) : null,
-      condition_preference: body.condition_preference || 'any',
-      deal_types: body.deal_types || [],
-      closing_speed: body.closing_speed || '30 days',
-      funding_type: body.funding_type || 'cash',
+      is_cash_buyer: body.is_cash_buyer !== false,
+      speed_to_close: body.speed_to_close || '14_days',
+      monthly_capacity: body.monthly_capacity || 5,
       proof_of_funds: body.proof_of_funds || false,
-      deals_closed: body.deals_closed ? parseInt(body.deals_closed) : 0,
-      average_deal_size: body.average_deal_size ? parseFloat(body.average_deal_size) : 0,
-      reliability_rating: body.reliability_rating ? parseInt(body.reliability_rating) : 3,
-      is_active: body.is_active !== false,
-      status: body.status || 'active',
+      reliability_score: 50, // Default for new buyers
+      is_active: true,
       notes: body.notes || null,
+      created_at: new Date().toISOString(),
     };
 
     const { data, error } = await supabase
-      .from('buyers')
+      .from('maxsam_buyers')
       .insert([buyerData])
       .select()
       .single();
@@ -102,37 +95,12 @@ export async function PUT(request: NextRequest) {
       return NextResponse.json({ error: 'Buyer ID is required' }, { status: 400 });
     }
 
-    // Map form fields to database columns
-    const buyerData = {
-      name: updateData.full_name || updateData.name,
-      full_name: updateData.full_name || updateData.name,
-      company: updateData.company || updateData.company_name || null,
-      company_name: updateData.company || updateData.company_name || null,
-      email: updateData.email || null,
-      phone: updateData.phone || null,
-      secondary_phone: updateData.secondary_phone || null,
-      property_types: updateData.property_types || [],
-      preferred_zips: updateData.preferred_zips || null,
-      min_purchase_price: updateData.min_purchase_price ? parseFloat(updateData.min_purchase_price) : null,
-      max_purchase_price: updateData.max_purchase_price ? parseFloat(updateData.max_purchase_price) : null,
-      min_arv: updateData.min_arv ? parseFloat(updateData.min_arv) : null,
-      max_arv: updateData.max_arv ? parseFloat(updateData.max_arv) : null,
-      condition_preference: updateData.condition_preference || 'any',
-      deal_types: updateData.deal_types || [],
-      closing_speed: updateData.closing_speed || '30 days',
-      funding_type: updateData.funding_type || 'cash',
-      proof_of_funds: updateData.proof_of_funds || false,
-      deals_closed: updateData.deals_closed ? parseInt(updateData.deals_closed) : 0,
-      average_deal_size: updateData.average_deal_size ? parseFloat(updateData.average_deal_size) : 0,
-      reliability_rating: updateData.reliability_rating ? parseInt(updateData.reliability_rating) : 3,
-      is_active: updateData.is_active !== false,
-      status: updateData.status || 'active',
-      notes: updateData.notes || null,
-    };
-
     const { data, error } = await supabase
-      .from('buyers')
-      .update(buyerData)
+      .from('maxsam_buyers')
+      .update({
+        ...updateData,
+        updated_at: new Date().toISOString(),
+      })
       .eq('id', id)
       .select()
       .single();
@@ -164,9 +132,10 @@ export async function DELETE(request: NextRequest) {
       return NextResponse.json({ error: 'Buyer ID is required' }, { status: 400 });
     }
 
+    // Soft delete - just deactivate
     const { error } = await supabase
-      .from('buyers')
-      .delete()
+      .from('maxsam_buyers')
+      .update({ is_active: false })
       .eq('id', id);
 
     if (error) {
@@ -177,7 +146,7 @@ export async function DELETE(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ success: true, message: 'Buyer deleted successfully' });
+    return NextResponse.json({ success: true, message: 'Buyer deactivated' });
   } catch (error: unknown) {
     const message = error instanceof Error ? error.message : 'Failed to delete buyer';
     console.error('API DELETE error:', message);

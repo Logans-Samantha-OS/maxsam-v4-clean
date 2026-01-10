@@ -1,0 +1,53 @@
+{
+  "county_name": "REPLACE_WITH_COUNTY",
+  "state": "REPLACE_WITH_STATE",
+  "state_abbrev": "TX",
+  
+  "excess_funds": {
+    "source_url": "https://COUNTY_WEBSITE/excess-funds",
+    "pdf_format": "standard",
+    "update_frequency": "monthly",
+    "claim_deadline_days": 365,
+    "minimum_amount": 5000
+  },
+  
+  "fees": {
+    "excess_funds_percentage": 25,
+    "wholesale_percentage": 10,
+    "minimum_fee": 500
+  },
+  
+  "business": {
+    "company_name": "REPLACE_WITH_COMPANY",
+    "phone": "+1XXXXXXXXXX",
+    "email": "contact@example.com",
+    "timezone": "America/Chicago",
+    "business_hours": {
+      "start": 9,
+      "end": 20
+    },
+    "days_active": ["monday", "tuesday", "wednesday", "thursday", "friday"]
+  },
+  
+  "sms": {
+    "tcpa_compliant": true,
+    "quiet_hours_start": 21,
+    "quiet_hours_end": 8,
+    "max_attempts_per_lead": 5,
+    "days_between_attempts": 3
+  },
+  
+  "scoring": {
+    "minimum_score_for_outreach": 50,
+    "golden_lead_threshold": 75,
+    "hot_zip_codes": [],
+    "priority_property_types": ["single_family", "duplex"]
+  },
+  
+  "integrations": {
+    "n8n_base_url": "https://YOUR_INSTANCE.app.n8n.cloud",
+    "supabase_url": "https://YOUR_PROJECT.supabase.co",
+    "vercel_url": "https://YOUR_APP.vercel.app",
+    "telegram_chat_id": "REPLACE_WITH_CHAT_ID"
+  }
+}
