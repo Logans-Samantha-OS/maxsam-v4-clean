@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import { useRouter } from 'next/navigation';
 
 interface Alert {
   id: string;
@@ -10,26 +11,39 @@ interface Alert {
   description: string;
   severity: 'high' | 'medium' | 'low';
   time: string;
+  lead_id?: string;
 }
 
 export default function CriticalAlertsPanel() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchAlerts() {
       try {
-        // Mock data for now to avoid build errors
-        setAlerts([
-          {
-            id: '1',
-            type: 'expiring',
+        // Get expiring leads
+        const { data: expiringLeads } = await supabase
+          .from('leads')
+          .select('*')
+          .lt('expiration_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString())
+          .eq('status', 'new')
+          .order('expiration_date', { ascending: true })
+          .limit(5);
+
+        const alertsData: Alert[] = [
+          ...expiringLeads?.map(lead => ({
+            id: lead.id,
+            type: 'expiring' as const,
             title: 'Lead Expiring Soon',
-            description: 'John Doe - 123 Main St',
-            severity: 'high',
-            time: '12/31/2024'
-          }
-        ]);
+            description: `${lead.owner_name} - ${lead.property_address || 'No Address'}`,
+            severity: 'high' as const,
+            time: new Date(lead.expiration_date || '').toLocaleDateString(),
+            lead_id: lead.id
+          })) || []
+        ];
+
+        setAlerts(alertsData);
       } catch (error) {
         console.error('Error fetching alerts:', error);
       } finally {
@@ -56,6 +70,15 @@ export default function CriticalAlertsPanel() {
       case 'stale_contract': return 'border-yellow-500/50 bg-yellow-500/10';
       default: return 'border-zinc-500/50 bg-zinc-500/10';
     }
+  };
+
+  const handleViewLead = (leadId: string) => {
+    router.push(`/sellers?lead=${leadId}`);
+  };
+
+  const handleTakeAction = (leadId: string) => {
+    // Open action modal or navigate to lead details
+    router.push(`/sellers?lead=${leadId}&action=contact`);
   };
 
   if (loading) {
@@ -120,11 +143,21 @@ export default function CriticalAlertsPanel() {
                   {alert.description}
                 </p>
                 
-                <div className="flex gap-2 mt-2">
-                  <button className="px-3 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-xs font-medium transition-colors">
+                <p className="text-gold font-bold text-sm mb-2">
+                  Expires: {alert.time}
+                </p>
+                
+                <div className="flex gap-2">
+                  <button 
+                    onClick={() => handleViewLead(alert.lead_id || '')}
+                    className="px-3 py-1 bg-cyan-600 hover:bg-cyan-700 text-white rounded text-xs font-medium transition-colors"
+                  >
                     View Lead
                   </button>
-                  <button className="px-3 py-1 bg-gold hover:bg-yellow-600 text-black rounded text-xs font-bold transition-colors">
+                  <button 
+                    onClick={() => handleTakeAction(alert.lead_id || '')}
+                    className="px-3 py-1 bg-gold hover:bg-yellow-600 text-black rounded text-xs font-bold transition-colors"
+                  >
                     Take Action
                   </button>
                 </div>
