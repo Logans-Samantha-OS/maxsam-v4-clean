@@ -1,257 +1,196 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { supabase } from '@/lib/supabase';
+import { useState } from 'react';
+import { useLeads } from '@/lib/hooks/useLeads';
+import LeadCard from '@/components/LeadCard';
 
 export default function SellersTab() {
-  const [leads, setLeads] = useState([]);
-  const [filteredLeads, setFilteredLeads] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const [sortBy, setSortBy] = useState('eleanor_score');
-  const [sortOrder, setSortOrder] = useState('desc');
+  const [filters, setFilters] = useState({
+    search: '',
+    status: 'all',
+    priority: 'all',
+    leadType: 'excess_funds',
+    county: 'all',
+    sortBy: 'excess_amount',
+    sortOrder: 'desc'
+  });
 
-  // Fetch leads
-  useEffect(() => {
-    async function fetchLeads() {
-      try {
-        setLoading(true);
-        
-        const { data, error } = await supabase
-          .from('maxsam_leads')
-          .select('*')
-          .order(sortBy, { ascending: sortOrder === 'asc' });
+  const { leads, loading, error } = useLeads(filters);
 
-        if (error) throw error;
-        
-        setLeads(data || []);
-        setFilteredLeads(data || []);
-      } catch (error) {
-        console.error('Error fetching leads:', error);
-      } finally {
-        setLoading(false);
+  const handleStatusChange = (leadId, newStatus) => {
+    // Update lead status via API
+    fetch(`/api/leads/${leadId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status: newStatus })
+    }).then(response => {
+      if (response.ok) {
+        // Refetch leads
+        window.location.reload();
+      } else {
+        alert('Failed to update status');
       }
-    }
-
-    fetchLeads();
-
-    // Set up real-time subscription
-    const channel = supabase
-      .channel('leads-changes')
-      .on('postgres_changes', 
-        { 
-          event: '*',
-          schema: 'public',
-          table: 'maxsam_leads'
-        }, 
-        (payload) => {
-          fetchLeads();
-        }
-      )
-      .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
-  }, [sortBy, sortOrder]);
-
-  // Apply filters and search
-  useEffect(() => {
-    let result = [...leads];
-    
-    // Apply status filter
-    if (statusFilter !== 'all') {
-      result = result.filter(lead => lead.status === statusFilter);
-    }
-    
-    // Apply search
-    if (searchQuery) {
-      const query = searchQuery.toLowerCase();
-      result = result.filter(lead => 
-        (lead.property_address?.toLowerCase().includes(query)) ||
-        (lead.owner_name?.toLowerCase().includes(query)) ||
-        (lead.phone_1?.includes(query)) ||
-        (lead.phone_2?.includes(query))
-      );
-    }
-    
-    setFilteredLeads(result);
-  }, [leads, searchQuery, statusFilter]);
-
-  // Handle status update
-  const updateLeadStatus = async (leadId, newStatus) => {
-    try {
-      const { error } = await supabase
-        .from('maxsam_leads')
-        .update({ status: newStatus })
-        .eq('id', leadId);
-      
-      if (error) throw error;
-      
-      // Refresh leads
-      const { data } = await supabase.from('maxsam_leads').select('*');
-      setLeads(data || []);
-    } catch (error) {
-      console.error('Error updating lead status:', error);
-    }
+    }).catch(error => {
+      console.error('Status update error:', error);
+      alert('Error updating status');
+    });
   };
 
-  // Get badge color based on status
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'new':
-        return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'contacted':
-        return 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30';
-      case 'negotiating':
-        return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      case 'contract_sent':
-        return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-      case 'closed':
-        return 'bg-green-500/20 text-green-400 border-green-500/30';
-      default:
-        return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-    }
-  };
-
-  // Get badge color based on Eleanor score
-  const getScoreBadge = (score) => {
-    if (score >= 80) return 'bg-green-500/20 text-green-400';
-    if (score >= 60) return 'bg-blue-500/20 text-blue-400';
-    if (score >= 40) return 'bg-yellow-500/20 text-yellow-400';
-    return 'bg-red-500/20 text-red-400';
+  const handleContact = (leadId) => {
+    // Increment contact count
+    fetch(`/api/leads/${leadId}/contact`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' }
+    }).then(response => {
+      if (response.ok) {
+        window.location.reload();
+      }
+    }).catch(error => {
+      console.error('Contact update error:', error);
+    });
   };
 
   if (loading) {
     return (
-      <div className="flex justify-center items-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-cyan-500"></div>
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-gold"></div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="pharaoh-card p-8 max-w-md">
+          <h2 className="text-2xl font-bold text-red-400 mb-4">Error Loading Leads</h2>
+          <p className="text-zinc-400">{error}</p>
+          <button 
+            onClick={() => window.location.reload()}
+            className="mt-4 px-4 py-2 bg-gold hover:bg-yellow-600 text-black rounded-lg font-medium"
+          >
+            Retry
+          </button>
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-6">
-      {/* Filters and Search */}
-      <div className="flex flex-col md:flex-row gap-4 mb-6">
-        <div className="flex-1">
-          <input
-            type="text"
-            placeholder="Search by address, name, or phone..."
-            className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-          />
+    <div className="min-h-screen bg-zinc-900">
+      <div className="container mx-auto px-4 py-8">
+        {/* Header */}
+        <div className="mb-8">
+          <h1 className="text-3xl font-black text-gold mb-2">Sellers</h1>
+          <p className="text-zinc-400">Manage your excess funds and wholesale leads</p>
         </div>
-        <div className="flex gap-2">
-          <select
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            value={statusFilter}
-            onChange={(e) => setStatusFilter(e.target.value)}
-          >
-            <option value="all">All Statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="negotiating">Negotiating</option>
-            <option value="contract_sent">Contract Sent</option>
-            <option value="closed">Closed</option>
-          </select>
-          <select
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-cyan-500"
-            value={sortBy}
-            onChange={(e) => setSortBy(e.target.value)}
-          >
-            <option value="eleanor_score">Sort by Score</option>
-            <option value="excess_funds_amount">Sort by Amount</option>
-            <option value="created_at">Sort by Date</option>
-          </select>
-          <button
-            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white hover:bg-zinc-700"
-            onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-          >
-            {sortOrder === 'asc' ? '↑' : '↓'}
-          </button>
-        </div>
-      </div>
 
-      {/* Leads Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
-        {filteredLeads.map((lead) => (
-          <div key={lead.id} className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden hover:border-cyan-500/50 transition-colors">
-            <div className="p-5">
-              <div className="flex justify-between items-start mb-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-white truncate">
-                    {lead.property_address || 'No Address'}
-                  </h3>
-                  <p className="text-zinc-400 text-sm">{lead.city || 'Unknown City'}</p>
-                </div>
-                <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusBadge(lead.status)}`}>
-                  {lead.status?.replace('_', ' ') || 'Unknown'}
-                </span>
-              </div>
+        {/* Filters */}
+        <div className="pharaoh-card mb-6 p-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Search</label>
+              <input
+                type="text"
+                value={filters.search}
+                onChange={(e) => setFilters(prev => ({ ...prev, search: e.target.value }))}
+                placeholder="Search by name, address, case number..."
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Status</label>
+              <select
+                value={filters.status}
+                onChange={(e) => setFilters(prev => ({ ...prev, status: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="all">All Status</option>
+                <option value="new">New</option>
+                <option value="contacted">Contacted</option>
+                <option value="contract">Contract</option>
+                <option value="closed">Closed</option>
+              </select>
+            </div>
 
-              <div className="space-y-3 mt-4">
-                <div>
-                  <p className="text-zinc-500 text-sm">Owner</p>
-                  <p className="text-white">{lead.owner_name || 'Unknown'}</p>
-                </div>
-                
-                <div>
-                  <p className="text-zinc-500 text-sm">Excess Funds</p>
-                  <p className="text-2xl font-bold text-green-400">
-                    ${(lead.excess_funds_amount || 0).toLocaleString()}
-                  </p>
-                </div>
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Lead Type</label>
+              <select
+                value={filters.leadType}
+                onChange={(e) => setFilters(prev => ({ ...prev, leadType: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="all">All Types</option>
+                <option value="excess_funds">Excess Funds</option>
+                <option value="wholesale">Wholesale</option>
+                <option value="golden">Golden Leads</option>
+              </select>
+            </div>
 
-                <div>
-                  <p className="text-zinc-500 text-sm">Eleanor Score</p>
-                  <div className="flex items-center gap-2">
-                    <div className="w-full bg-zinc-800 rounded-full h-2">
-                      <div 
-                        className={`h-2 rounded-full ${getScoreBadge(lead.eleanor_score).replace('text-', 'bg-')}`}
-                        style={{ width: `${Math.min(lead.eleanor_score || 0, 100)}%` }}
-                      ></div>
-                    </div>
-                    <span className={`text-xs font-bold ${getScoreBadge(lead.eleanor_score)} px-2 py-0.5 rounded`}>
-                      {lead.eleanor_score || 0}
-                    </span>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-2 gap-2 mt-4">
-                  <a 
-                    href={`tel:${lead.phone_1 || lead.phone_2}`}
-                    className="px-3 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-lg text-sm font-medium text-center transition-colors"
-                  >
-                    Call
-                  </a>
-                  <button 
-                    className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 text-white rounded-lg text-sm font-medium transition-colors"
-                    onClick={() => updateLeadStatus(lead.id, 'contacted')}
-                  >
-                    {lead.status === 'new' ? 'Contact' : 'Update'}
-                  </button>
-                </div>
-
-                <div className="pt-3 border-t border-zinc-800 mt-4">
-                  <p className="text-zinc-500 text-xs">Last Contact</p>
-                  <p className="text-zinc-400 text-sm">
-                    {new Date(lead.last_contacted_at || lead.created_at).toLocaleDateString()}
-                  </p>
-                </div>
-              </div>
+            <div>
+              <label className="block text-zinc-400 text-sm mb-2">Sort By</label>
+              <select
+                value={filters.sortBy}
+                onChange={(e) => setFilters(prev => ({ ...prev, sortBy: e.target.value }))}
+                className="w-full px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white focus:outline-none focus:border-gold"
+              >
+                <option value="excess_amount">Excess Amount</option>
+                <option value="eleanor_score">Eleanor Score</option>
+                <option value="created_at">Date Created</option>
+                <option value="expiration_date">Expiration Date</option>
+              </select>
             </div>
           </div>
-        ))}
-      </div>
-
-      {filteredLeads.length === 0 && !loading && (
-        <div className="text-center py-12">
-          <p className="text-zinc-500">No leads found matching your criteria.</p>
         </div>
-      )}
+
+        {/* Stats Summary */}
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-gold">{leads.length}</div>
+            <div className="text-zinc-400 text-sm">Total Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-green-400">
+              {leads.filter(l => l.status === 'new').length}
+            </div>
+            <div className="text-zinc-400 text-sm">New Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-blue-400">
+              {leads.filter(l => l.golden_lead).length}
+            </div>
+            <div className="text-zinc-400 text-sm">Golden Leads</div>
+          </div>
+          <div className="pharaoh-card p-4 text-center">
+            <div className="text-3xl font-bold text-purple-400">
+              ${leads.reduce((sum, l) => sum + (l.excess_amount || 0), 0).toLocaleString()}
+            </div>
+            <div className="text-zinc-400 text-sm">Total Pipeline Value</div>
+          </div>
+        </div>
+
+        {/* Leads Grid */}
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {leads.map((lead) => (
+            <LeadCard
+              key={lead.id}
+              lead={lead}
+              variant="sellers"
+              onStatusChange={handleStatusChange}
+              onContact={handleContact}
+            />
+          ))}
+        </div>
+
+        {/* Empty State */}
+        {leads.length === 0 && (
+          <div className="text-center py-12">
+            <div className="text-6xl mb-4">🔍</div>
+            <h3 className="text-xl font-bold text-white mb-2">No leads found</h3>
+            <p className="text-zinc-400">Try adjusting your filters or search terms</p>
+          </div>
+        )}
+      </div>
     </div>
   );
 }
