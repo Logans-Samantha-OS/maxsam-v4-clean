@@ -1,0 +1,443 @@
+{
+  "name": "MaxSam - MCP Deployer Gate",
+  "nodes": [
+    {
+      "id": "deploy-trigger",
+      "name": "Deploy Trigger (Manual)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "position": [100, 300],
+      "parameters": {},
+      "typeVersion": 1
+    },
+    {
+      "id": "webhook-trigger",
+      "name": "Deploy Trigger (Webhook)",
+      "type": "n8n-nodes-base.webhook",
+      "position": [100, 500],
+      "webhookId": "maxsam-deploy-gate",
+      "parameters": {
+        "path": "maxsam-deploy-gate",
+        "options": {},
+        "httpMethod": "POST"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "merge-triggers",
+      "name": "Merge Triggers",
+      "type": "n8n-nodes-base.merge",
+      "position": [300, 400],
+      "parameters": {
+        "mode": "combine",
+        "options": {},
+        "combinationMode": "multiplex"
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "set-context",
+      "name": "Set Deploy Context",
+      "type": "n8n-nodes-base.set",
+      "position": [500, 400],
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            {
+              "id": "workflow_key",
+              "name": "workflow_key",
+              "type": "string",
+              "value": "={{ $json.workflow_key || 'maxsam_pipeline' }}"
+            },
+            {
+              "id": "version_tag",
+              "name": "version_tag",
+              "type": "string",
+              "value": "={{ $json.version_tag || 'candidate-latest' }}"
+            },
+            {
+              "id": "deployer",
+              "name": "deployer",
+              "type": "string",
+              "value": "={{ $json.deployer || 'mcp-deployer-automation' }}"
+            },
+            {
+              "id": "target_workflow_id",
+              "name": "target_workflow_id",
+              "type": "string",
+              "value": "={{ $json.target_workflow_id || 'DNWKWtVt15rWamOU' }}"
+            }
+          ]
+        }
+      },
+      "typeVersion": 3.4
+    },
+    {
+      "id": "get-latest-test-run",
+      "name": "Get Latest Test Run",
+      "type": "n8n-nodes-base.postgres",
+      "position": [700, 400],
+      "parameters": {
+        "query": "=SELECT \n  tr.run_id,\n  tr.workflow_key,\n  tr.version_tag,\n  tr.total_tests,\n  tr.passed,\n  tr.failed,\n  tr.blocker_failures,\n  tr.status,\n  tr.can_deploy,\n  tr.finished_at\nFROM test_runs tr\nWHERE tr.workflow_key = '{{ $json.workflow_key }}'\n  AND tr.version_tag = '{{ $json.version_tag }}'\nORDER BY tr.finished_at DESC\nLIMIT 1;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "typeVersion": 2.5
+    },
+    {
+      "id": "check-test-run-exists",
+      "name": "Test Run Exists?",
+      "type": "n8n-nodes-base.if",
+      "position": [900, 400],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-length",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              },
+              "leftValue": "={{ $json.length || ($input.all().length || 0) }}",
+              "rightValue": 0
+            }
+          ]
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "no-test-run",
+      "name": "Block: No Test Run",
+      "type": "n8n-nodes-base.code",
+      "position": [1100, 550],
+      "parameters": {
+        "jsCode": "const ctx = $('Set Deploy Context').first().json;\nreturn [{\n  json: {\n    blocked: true,\n    reason: 'NO_TEST_RUN',\n    message: `No test run found for ${ctx.workflow_key} version ${ctx.version_tag}`,\n    action: 'Run CI tests before attempting deployment',\n    workflow_key: ctx.workflow_key,\n    version_tag: ctx.version_tag\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "extract-test-result",
+      "name": "Extract Test Result",
+      "type": "n8n-nodes-base.code",
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "const ctx = $('Set Deploy Context').first().json;\nconst results = $input.all();\nconst testResult = results[0]?.json || {};\n\nreturn [{\n  json: {\n    ...ctx,\n    run_id: testResult.run_id || 'unknown',\n    total_tests: testResult.total_tests || 0,\n    passed: testResult.passed || 0,\n    failed: testResult.failed || 0,\n    blocker_failures: testResult.blocker_failures || 0,\n    status: testResult.status || 'unknown',\n    can_deploy: testResult.can_deploy || false,\n    finished_at: testResult.finished_at\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "check-status-passed",
+      "name": "Status = Passed?",
+      "type": "n8n-nodes-base.if",
+      "position": [1300, 300],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-status",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "passed"
+            }
+          ]
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "block-status-not-passed",
+      "name": "Block: Status Not Passed",
+      "type": "n8n-nodes-base.code",
+      "position": [1500, 450],
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn [{\n  json: {\n    blocked: true,\n    reason: 'TEST_STATUS_NOT_PASSED',\n    message: `Test run status is '${ctx.status}', not 'passed'`,\n    test_results: {\n      total: ctx.total_tests,\n      passed: ctx.passed,\n      failed: ctx.failed,\n      blockers: ctx.blocker_failures\n    },\n    action: 'Fix failing tests and re-run CI',\n    workflow_key: ctx.workflow_key,\n    version_tag: ctx.version_tag,\n    run_id: ctx.run_id\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "check-no-blockers",
+      "name": "Check No Blockers",
+      "type": "n8n-nodes-base.if",
+      "position": [1500, 200],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-blockers",
+              "operator": {
+                "type": "number",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.blocker_failures }}",
+              "rightValue": 0
+            }
+          ]
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "block-has-blockers",
+      "name": "Block: Has Blockers",
+      "type": "n8n-nodes-base.code",
+      "position": [1700, 350],
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn [{\n  json: {\n    blocked: true,\n    reason: 'BLOCKER_FAILURES',\n    message: `${ctx.blocker_failures} blocker failure(s) detected`,\n    test_results: {\n      total: ctx.total_tests,\n      passed: ctx.passed,\n      failed: ctx.failed,\n      blockers: ctx.blocker_failures\n    },\n    action: 'Fix all blocker failures before deployment',\n    workflow_key: ctx.workflow_key,\n    version_tag: ctx.version_tag,\n    run_id: ctx.run_id\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "check-can-deploy",
+      "name": "can_deploy = TRUE?",
+      "type": "n8n-nodes-base.if",
+      "position": [1700, 100],
+      "parameters": {
+        "options": {},
+        "conditions": {
+          "options": {
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "combinator": "and",
+          "conditions": [
+            {
+              "id": "check-can-deploy",
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              },
+              "leftValue": "={{ $json.can_deploy }}",
+              "rightValue": true
+            }
+          ]
+        }
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "block-cant-deploy",
+      "name": "Block: can_deploy FALSE",
+      "type": "n8n-nodes-base.code",
+      "position": [1900, 250],
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn [{\n  json: {\n    blocked: true,\n    reason: 'CAN_DEPLOY_FALSE',\n    message: 'can_deploy flag is FALSE despite passing checks',\n    test_results: {\n      total: ctx.total_tests,\n      passed: ctx.passed,\n      failed: ctx.failed,\n      blockers: ctx.blocker_failures\n    },\n    action: 'Investigate test run - manual review required',\n    workflow_key: ctx.workflow_key,\n    version_tag: ctx.version_tag,\n    run_id: ctx.run_id\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "all-gates-passed",
+      "name": "All Gates Passed",
+      "type": "n8n-nodes-base.code",
+      "position": [1900, 50],
+      "parameters": {
+        "jsCode": "const ctx = $input.first().json;\nreturn [{\n  json: {\n    ...ctx,\n    gate_result: 'PASSED',\n    message: 'All deployment gates passed - proceeding with deployment',\n    timestamp: new Date().toISOString()\n  }\n}];"
+      },
+      "typeVersion": 2
+    },
+    {
+      "id": "activate-production",
+      "name": "Activate Production Workflow",
+      "type": "n8n-nodes-base.n8n",
+      "position": [2100, 50],
+      "parameters": {
+        "resource": "workflow",
+        "operation": "activate",
+        "workflowId": "={{ $json.target_workflow_id }}"
+      },
+      "typeVersion": 1
+    },
+    {
+      "id": "update-version-status",
+      "name": "Update Version Status",
+      "type": "n8n-nodes-base.postgres",
+      "position": [2300, 50],
+      "parameters": {
+        "query": "=UPDATE workflow_versions\nSET \n  status = 'deployed',\n  deployed_at = NOW(),\n  deployed_by = '{{ $json.deployer }}',\n  n8n_workflow_id = '{{ $json.target_workflow_id }}'\nWHERE workflow_key = '{{ $json.workflow_key }}'\n  AND version_tag = '{{ $json.version_tag }}'\nRETURNING *;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "typeVersion": 2.5
+    },
+    {
+      "id": "archive-previous",
+      "name": "Archive Previous Deploy",
+      "type": "n8n-nodes-base.postgres",
+      "position": [2500, 50],
+      "parameters": {
+        "query": "=UPDATE workflow_versions\nSET status = 'rollback'\nWHERE workflow_key = '{{ $json.workflow_key }}'\n  AND status = 'deployed'\n  AND version_tag != '{{ $json.version_tag }}';",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "typeVersion": 2.5
+    },
+    {
+      "id": "create-deploy-log",
+      "name": "Create Deploy Log",
+      "type": "n8n-nodes-base.postgres",
+      "position": [2700, 50],
+      "parameters": {
+        "query": "=INSERT INTO deploy_logs (\n  workflow_key,\n  version_tag,\n  run_id,\n  deployed,\n  tests_passed,\n  tests_failed,\n  blocker_failures,\n  deployment_type,\n  target_environment,\n  deployed_by,\n  notes\n) VALUES (\n  '{{ $json.workflow_key }}',\n  '{{ $json.version_tag }}',\n  '{{ $json.run_id }}',\n  true,\n  {{ $json.passed }},\n  {{ $json.failed }},\n  {{ $json.blocker_failures }},\n  'full',\n  'production',\n  '{{ $json.deployer }}',\n  'All gates passed - automated deployment by MCP-DEPLOYER'\n) RETURNING id;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "typeVersion": 2.5
+    },
+    {
+      "id": "telegram-success",
+      "name": "Telegram: Deploy Success",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2900, 50],
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $vars.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"chat_id\": \"{{ $vars.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"🚀 <b>DEPLOYMENT SUCCESSFUL</b>\\n\\n📋 Workflow: {{ $json.workflow_key }}\\n🏷️ Version: {{ $json.version_tag }}\\n🧪 Run ID: {{ $json.run_id }}\\n\\n📊 Test Results:\\n• Total: {{ $json.total_tests }}\\n• Passed: {{ $json.passed }} ✓\\n• Failed: {{ $json.failed }}\\n\\n✅ Production workflow activated\\n👤 Deployed by: {{ $json.deployer }}\",\n  \"parse_mode\": \"HTML\"\n}",
+        "sendBody": true,
+        "specifyBody": "json"
+      },
+      "typeVersion": 4.2
+    },
+    {
+      "id": "merge-blocks",
+      "name": "Merge Blocked Paths",
+      "type": "n8n-nodes-base.merge",
+      "position": [2100, 500],
+      "parameters": {
+        "mode": "combine",
+        "options": {},
+        "combinationMode": "multiplex"
+      },
+      "typeVersion": 3
+    },
+    {
+      "id": "log-blocked-deploy",
+      "name": "Log Blocked Deploy",
+      "type": "n8n-nodes-base.postgres",
+      "position": [2300, 500],
+      "parameters": {
+        "query": "=INSERT INTO deploy_logs (\n  workflow_key,\n  version_tag,\n  run_id,\n  deployed,\n  tests_passed,\n  tests_failed,\n  blocker_failures,\n  target_environment,\n  notes\n) VALUES (\n  '{{ $json.workflow_key }}',\n  '{{ $json.version_tag }}',\n  '{{ $json.run_id || ''N/A'' }}',\n  false,\n  {{ $json.test_results?.passed || 0 }},\n  {{ $json.test_results?.failed || 0 }},\n  {{ $json.test_results?.blockers || 0 }},\n  'production',\n  '{{ $json.reason }}: {{ $json.message }}'\n) RETURNING id;",
+        "options": {},
+        "operation": "executeQuery"
+      },
+      "typeVersion": 2.5
+    },
+    {
+      "id": "telegram-blocked",
+      "name": "Telegram: Deploy BLOCKED",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [2500, 500],
+      "parameters": {
+        "url": "=https://api.telegram.org/bot{{ $vars.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "method": "POST",
+        "options": {},
+        "jsonBody": "={\n  \"chat_id\": \"{{ $vars.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"⛔ <b>DEPLOYMENT BLOCKED</b>\\n\\n📋 Workflow: {{ $json.workflow_key }}\\n🏷️ Version: {{ $json.version_tag }}\\n\\n❌ Reason: {{ $json.reason }}\\n📝 {{ $json.message }}\\n\\n🛠️ Action Required:\\n{{ $json.action }}\",\n  \"parse_mode\": \"HTML\"\n}",
+        "sendBody": true,
+        "specifyBody": "json"
+      },
+      "typeVersion": 4.2
+    }
+  ],
+  "connections": {
+    "Deploy Trigger (Manual)": {
+      "main": [[{"node": "Merge Triggers", "type": "main", "index": 0}]]
+    },
+    "Deploy Trigger (Webhook)": {
+      "main": [[{"node": "Merge Triggers", "type": "main", "index": 1}]]
+    },
+    "Merge Triggers": {
+      "main": [[{"node": "Set Deploy Context", "type": "main", "index": 0}]]
+    },
+    "Set Deploy Context": {
+      "main": [[{"node": "Get Latest Test Run", "type": "main", "index": 0}]]
+    },
+    "Get Latest Test Run": {
+      "main": [[{"node": "Test Run Exists?", "type": "main", "index": 0}]]
+    },
+    "Test Run Exists?": {
+      "main": [
+        [{"node": "Extract Test Result", "type": "main", "index": 0}],
+        [{"node": "Block: No Test Run", "type": "main", "index": 0}]
+      ]
+    },
+    "Extract Test Result": {
+      "main": [[{"node": "Status = Passed?", "type": "main", "index": 0}]]
+    },
+    "Status = Passed?": {
+      "main": [
+        [{"node": "Check No Blockers", "type": "main", "index": 0}],
+        [{"node": "Block: Status Not Passed", "type": "main", "index": 0}]
+      ]
+    },
+    "Check No Blockers": {
+      "main": [
+        [{"node": "can_deploy = TRUE?", "type": "main", "index": 0}],
+        [{"node": "Block: Has Blockers", "type": "main", "index": 0}]
+      ]
+    },
+    "can_deploy = TRUE?": {
+      "main": [
+        [{"node": "All Gates Passed", "type": "main", "index": 0}],
+        [{"node": "Block: can_deploy FALSE", "type": "main", "index": 0}]
+      ]
+    },
+    "All Gates Passed": {
+      "main": [[{"node": "Activate Production Workflow", "type": "main", "index": 0}]]
+    },
+    "Activate Production Workflow": {
+      "main": [[{"node": "Update Version Status", "type": "main", "index": 0}]]
+    },
+    "Update Version Status": {
+      "main": [[{"node": "Archive Previous Deploy", "type": "main", "index": 0}]]
+    },
+    "Archive Previous Deploy": {
+      "main": [[{"node": "Create Deploy Log", "type": "main", "index": 0}]]
+    },
+    "Create Deploy Log": {
+      "main": [[{"node": "Telegram: Deploy Success", "type": "main", "index": 0}]]
+    },
+    "Block: No Test Run": {
+      "main": [[{"node": "Merge Blocked Paths", "type": "main", "index": 0}]]
+    },
+    "Block: Status Not Passed": {
+      "main": [[{"node": "Merge Blocked Paths", "type": "main", "index": 1}]]
+    },
+    "Block: Has Blockers": {
+      "main": [[{"node": "Merge Blocked Paths", "type": "main", "index": 2}]]
+    },
+    "Block: can_deploy FALSE": {
+      "main": [[{"node": "Merge Blocked Paths", "type": "main", "index": 3}]]
+    },
+    "Merge Blocked Paths": {
+      "main": [[{"node": "Log Blocked Deploy", "type": "main", "index": 0}]]
+    },
+    "Log Blocked Deploy": {
+      "main": [[{"node": "Telegram: Deploy BLOCKED", "type": "main", "index": 0}]]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "active": false
+}
