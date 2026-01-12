@@ -1,0 +1,71 @@
+MAXSAM MASTER DIRECTIVE
+## MCP + CI + GITHUB ENFORCEMENT
+
+This document is the canonical source of truth for the MaxSam automation system.
+
+Claude and all AI agents MUST NOT rely on conversational memory.
+All reasoning MUST be grounded in this document and its referenced artifacts.
+
+---
+
+## SYSTEM PURPOSE
+
+MaxSam is a production automation system for:
+- Excess funds recovery
+- Distressed property identification
+- Priority scoring
+- Multi-channel outreach (SMS, voice, agreements)
+
+The system must be:
+- Deterministic
+- Test-gated
+- Version-controlled
+- Memory-independent
+
+---
+
+## CORE RULES (NON-NEGOTIABLE)
+
+1. No memory reliance
+2. No untested deployment
+3. No unversioned structure
+4. No missing nodes
+5. No silent failures
+
+If an artifact is not in GitHub, it does not exist.
+
+---
+
+## MCP ROLES
+
+### MCP-BUILDER
+- Generates candidate artifacts only
+- Never deploys
+- Never skips nodes
+- Outputs complete n8n JSON
+
+### MCP-TESTER
+- Validates artifacts only
+- Cannot invent logic
+- Produces PASS or FAIL with reasons
+
+### MCP-DEPLOYER
+- Controlled by n8n
+- Deploys only if CI passes
+- Logs deployments
+
+---
+
+## BUILD → TEST → DEPLOY LOOP
+
+Builder → GitHub (candidate) → CI Runner → PASS? → Deploy → GitHub (tag)
+
+Any FAIL blocks deployment.
+
+---
+
+## FINAL AUTHORITY
+
+GitHub + CI results override all conversational output.
+
+Claude must retrieve this document before acting.
