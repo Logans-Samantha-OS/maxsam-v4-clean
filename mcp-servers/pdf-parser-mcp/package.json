@@ -1,0 +1,16 @@
+{
+  "name": "pdf-parser-mcp",
+  "version": "1.0.0",
+  "description": "PDF extraction (tables, text)",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "pdf-parse": "latest",
+    "@modelcontextprotocol/sdk": "^1.0.4"
+  },
+  "author": "Logan Toups",
+  "license": "MIT"
+}
