@@ -1,0 +1,32 @@
+# RAG INGESTION RUNBOOK
+
+## Daily Ingestion (minimum)
+1) Pull latest main
+2) Re-index corpus folders:
+   - docs/
+   - sql/
+   - workflows/
+   - scripts/
+3) Store ingestion metadata:
+   - commit sha
+   - file list
+   - chunk counts
+   - timestamp
+
+## Chunking Guidance
+- Markdown: split by headings
+- JSON: split by node blocks (n8n) or major keys
+- SQL: split by table/function blocks
+
+## Required “Do Not Index”
+- .env
+- secrets
+- tokens
+- private keys
+
+## Verification Query (smoke test)
+Ask the RAG:
+- “What is the deploy precondition?”
+Expected:
+- citation to docs/MCP/MCP_DEPLOYER_RULES.md
+- explicit mention of CI green requirement

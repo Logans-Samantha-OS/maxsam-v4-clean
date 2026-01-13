@@ -1,0 +1,76 @@
+{
+  "name": "MCP - Deployer Gate",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger_manual",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 220]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            { "name": "git_sha", "value": "={{$env.MCP_TARGET_SHA || ''}}" },
+            { "name": "environment", "value": "prod" },
+            { "name": "deploy_target", "value": "n8n" }
+          ]
+        }
+      },
+      "id": "set_input",
+      "name": "Set Deploy Inputs",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 2,
+      "position": [480, 220]
+    },
+    {
+      "parameters": {
+        "functionCode": "const sha = $json.git_sha;\nif (!sha || sha.length < 7) throw new Error('Missing MCP_TARGET_SHA env var / git_sha');\nreturn [{ json: { ...$json, ok: true } }];"
+      },
+      "id": "validate_sha",
+      "name": "Validate SHA",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [710, 220]
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nGATE CHECK (placeholder):\n- Query your CI results source (GitHub API / Supabase test_runs)\n- Only pass if CI is green for this sha\n\nFor now this node intentionally FAILS unless MCP_FORCE_DEPLOY=true\n*/\nconst force = ($env.MCP_FORCE_DEPLOY || '').toLowerCase() === 'true';\nif (!force) throw new Error('CI gate is not wired. Set MCP_FORCE_DEPLOY=true ONLY for initial wiring.');\nreturn [{ json: { ...$json, ci_pass: true } }];"
+      },
+      "id": "ci_gate",
+      "name": "CI Gate (wire to Supabase/GitHub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [950, 220]
+    },
+    {
+      "parameters": {
+        "functionCode": "/* Deploy step placeholder.\nCall your internal deploy mechanism here (n8n API import/activate, etc).\n*/\nreturn [{ json: { ...$json, deployed: true, deployed_at: new Date().toISOString() } }];"
+      },
+      "id": "deploy_stub",
+      "name": "Deploy (stub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1200, 220]
+    },
+    {
+      "parameters": {
+        "functionCode": "/* Logging placeholder.\nWrite deploy_logs row to Supabase using your Supabase node.\n*/\nreturn [{ json: { ...$json, logged: true } }];"
+      },
+      "id": "log_stub",
+      "name": "Log Deploy (stub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [1450, 220]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Set Deploy Inputs", "type": "main", "index": 0 }]] },
+    "Set Deploy Inputs": { "main": [[{ "node": "Validate SHA", "type": "main", "index": 0 }]] },
+    "Validate SHA": { "main": [[{ "node": "CI Gate (wire to Supabase/GitHub)", "type": "main", "index": 0 }]] },
+    "CI Gate (wire to Supabase/GitHub)": { "main": [[{ "node": "Deploy (stub)", "type": "main", "index": 0 }]] },
+    "Deploy (stub)": { "main": [[{ "node": "Log Deploy (stub)", "type": "main", "index": 0 }]] }
+  }
+}

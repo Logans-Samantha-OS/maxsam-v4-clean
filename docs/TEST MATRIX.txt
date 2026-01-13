@@ -1,0 +1,32 @@
+# TEST MATRIX
+
+This defines the minimum gates required for any change.
+
+## A) Repo integrity (always)
+- validate_repo.sh must pass
+
+## B) n8n workflows
+- JSON parse
+- Required nodes present:
+  - logging
+  - error handling
+  - environment/credential placeholders only
+- No hardcoded secrets
+
+## C) SQL
+- Migration is idempotent
+- Tables:
+  - test_runs
+  - test_logs
+  - deploy_logs
+  - workflow_versions
+  - artifacts
+  - rag_documents
+
+## D) RAG
+- RAG corpus paths defined
+- Ingestion runbook exists
+- Citation format defined
+
+## PASS/FAIL RULE
+Any single FAIL blocks merge to main and blocks deploy.

@@ -1,0 +1,27 @@
+# MCP-DEPLOYER RULES
+
+## ROLE
+Deploy ONLY after CI passes.
+
+## DEPLOYMENT PRECONDITIONS
+- CI is green on the commit SHA being deployed
+- Artifacts are present in GitHub
+- Deployment intent is recorded (who/what/why)
+
+## REQUIRED LOGGING
+Every deploy must write:
+- deploy_logs row (supabase)
+- deployed commit SHA
+- workflow version identifiers
+
+## FORBIDDEN
+- Manual edits in n8n without version bump + PR
+- Deploying from local-only artifacts
+- Deploying on red CI
+- Bypassing gates
+
+## EMERGENCY POLICY
+If production is broken:
+- rollback to last known good tag
+- open incident note in docs/
+- then fix through normal loop

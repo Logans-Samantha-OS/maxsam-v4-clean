@@ -1,0 +1,26 @@
+{
+  "name": "MCP - Regression Test Runner",
+  "nodes": [
+    {
+      "parameters": {},
+      "id": "trigger_manual",
+      "name": "Manual Trigger",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [260, 240]
+    },
+    {
+      "parameters": {
+        "functionCode": "/*\nThis runner is the n8n-side harness.\nIn a mature setup it:\n- runs synthetic tests (webhook ping, supabase insert/read, messaging dry-run)\n- writes results to test_runs/test_logs\n\nFor now: emits a PASS placeholder so you can wire Supabase logging.\n*/\nreturn [{ json: { status: 'pass', suite: 'smoke', ran_at: new Date().toISOString() } }];"
+      },
+      "id": "run_smoke",
+      "name": "Run Smoke Suite (stub)",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 2,
+      "position": [540, 240]
+    }
+  ],
+  "connections": {
+    "Manual Trigger": { "main": [[{ "node": "Run Smoke Suite (stub)", "type": "main", "index": 0 }]] }
+  }
+}
