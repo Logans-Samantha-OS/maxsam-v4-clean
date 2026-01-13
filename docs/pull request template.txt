@@ -1,0 +1,21 @@
+## Purpose
+What problem does this change solve?
+
+## Scope
+- [ ] Documentation only
+- [ ] Logic change
+- [ ] Workflow change
+- [ ] Infrastructure change
+
+## Risk Level
+- LOW / MEDIUM / HIGH
+
+## Validation
+- [ ] Tests passed
+- [ ] CI checks passed
+- [ ] No silent behavior introduced
+
+## MAXSAM COMPLIANCE
+- [ ] Complies with MAXSAM_MASTER_DIRECTIVE
+- [ ] No memory reliance
+- [ ] Versioned artifacts only
