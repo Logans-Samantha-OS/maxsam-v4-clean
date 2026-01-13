@@ -1,0 +1,78 @@
+-- MaxSam CI/CD & Governance Schema
+-- Safe/idempotent creation for Supabase Postgres
+
+create table if not exists artifacts (
+  id uuid primary key default gen_random_uuid(),
+  artifact_path text not null,
+  artifact_type text not null check (artifact_type in ('doc','sql','workflow','code','config')),
+  checksum_sha256 text,
+  created_at timestamptz default now()
+);
+
+create unique index if not exists idx_artifacts_path on artifacts(artifact_path);
+
+create table if not exists workflow_versions (
+  id uuid primary key default gen_random_uuid(),
+  workflow_name text not null,
+  workflow_id text, -- n8n internal id (optional)
+  git_sha text not null,
+  version_tag text,
+  artifact_path text not null,
+  status text not null default 'candidate' check (status in ('candidate','tested','deployed','rolled_back')),
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_workflow_versions_name on workflow_versions(workflow_name);
+create index if not exists idx_workflow_versions_sha on workflow_versions(git_sha);
+
+create table if not exists test_runs (
+  id uuid primary key default gen_random_uuid(),
+  git_sha text not null,
+  initiator text, -- user/service
+  run_type text not null default 'ci' check (run_type in ('ci','manual','nightly')),
+  status text not null default 'running' check (status in ('running','pass','fail')),
+  started_at timestamptz default now(),
+  finished_at timestamptz
+);
+
+create index if not exists idx_test_runs_sha on test_runs(git_sha);
+create index if not exists idx_test_runs_status on test_runs(status);
+
+create table if not exists test_logs (
+  id uuid primary key default gen_random_uuid(),
+  test_run_id uuid references test_runs(id) on delete cascade,
+  test_name text not null,
+  status text not null check (status in ('pass','fail','warn','info')),
+  details text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_test_logs_run on test_logs(test_run_id);
+
+create table if not exists deploy_logs (
+  id uuid primary key default gen_random_uuid(),
+  git_sha text not null,
+  deploy_target text not null default 'n8n' check (deploy_target in ('n8n','vercel','supabase','other')),
+  environment text not null default 'prod' check (environment in ('dev','staging','prod')),
+  status text not null default 'started' check (status in ('started','success','fail','rolled_back')),
+  deployed_by text,
+  notes text,
+  created_at timestamptz default now()
+);
+
+create index if not exists idx_deploy_logs_sha on deploy_logs(git_sha);
+create index if not exists idx_deploy_logs_status on deploy_logs(status);
+
+-- RAG document registry (corpus tracking)
+create table if not exists rag_documents (
+  id uuid primary key default gen_random_uuid(),
+  artifact_path text not null,
+  title text,
+  content_type text not null default 'text' check (content_type in ('text','markdown','json','sql')),
+  git_sha text not null,
+  chunk_count integer default 0,
+  last_ingested_at timestamptz,
+  created_at timestamptz default now()
+);
+
+create unique index if not exists idx_rag_documents_path_sha on rag_documents(artifact_path, git_sha);

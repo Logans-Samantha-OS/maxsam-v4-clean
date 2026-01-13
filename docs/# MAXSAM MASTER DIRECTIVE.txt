@@ -3,8 +3,10 @@
 
 This document is the canonical source of truth for the MaxSam automation system.
 
-Claude and all AI agents MUST NOT rely on conversational memory.
-All reasoning MUST be grounded in this document and its referenced artifacts.
+All AI agents MUST NOT rely on conversational memory.
+All reasoning MUST be grounded in this repository and its referenced artifacts.
+
+If an artifact is not in GitHub, it does not exist.
 
 ---
 
@@ -26,44 +28,17 @@ The system must be:
 
 ## CORE RULES (NON-NEGOTIABLE)
 
-1. No memory reliance  
-2. No untested deployment  
-3. No unversioned structure  
-4. No missing nodes  
-5. No silent failures  
-
-If an artifact is not in GitHub, it does not exist.
-
----
-
-## MCP ROLES
-
-### MCP-BUILDER
-- Generates candidate artifacts only
-- Never deploys
-- Never skips nodes
-- Outputs complete n8n JSON
-
-### MCP-TESTER
-- Validates artifacts only
-- Cannot invent logic
-- Produces PASS or FAIL with reasons
-
-### MCP-DEPLOYER
-- Controlled by n8n
-- Deploys only if CI passes
-- Logs deployments
+1. No memory reliance
+2. No untested deployment
+3. No unversioned structure
+4. No missing nodes
+5. No silent failures
 
 ---
 
 ## BUILD → TEST → DEPLOY LOOP
 
-Builder  
-→ GitHub (candidate artifacts)  
-→ CI Runner  
-→ PASS?  
-→ Deploy  
-→ GitHub (tagged release)
+MCP-BUILDER → GitHub (candidate) → CI Runner → PASS? → MCP-DEPLOYER → Deploy → GitHub Tag
 
 Any FAIL blocks deployment.
 
@@ -72,5 +47,46 @@ Any FAIL blocks deployment.
 ## FINAL AUTHORITY
 
 GitHub + CI results override all conversational output.
+No agent is permitted to “hotfix” production without passing the loop above.
 
-Claude must retrieve and comply with this document before acting.
+---
+
+## REQUIRED ARTIFACTS
+
+### Governance
+- docs/MCP/MCP_BUILDER_RULES.md
+- docs/MCP/MCP_TESTER_RULES.md
+- docs/MCP/MCP_DEPLOYER_RULES.md
+- docs/MCP/TEST_MATRIX.md
+- docs/MCP/CHANGE_CONTROL.md
+
+### Database
+- sql/maxsam-cicd-schema.sql
+
+### n8n governance workflows
+- workflows/mcp/mcp-deployer-gate.json
+- workflows/mcp/regression-test-runner.json
+
+### CI enforcement
+- .github/workflows/mcp-ci.yml
+- scripts/validate_repo.sh
+
+---
+
+## RAG REQUIREMENT (STARTING POINT)
+
+MaxSam must treat this repo as the primary corpus.
+The RAG layer must index:
+- /docs
+- /sql
+- /workflows
+- key config artifacts
+
+RAG must return:
+- citations (file paths + sections)
+- version identifiers (commit sha / tag)
+- confidence boundaries
+
+See:
+- docs/RAG/RAG_SYSTEM_SPEC.md
+- docs/RAG/RAG_INGESTION_RUNBOOK.md
