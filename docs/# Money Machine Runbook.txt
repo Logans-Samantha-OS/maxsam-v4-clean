@@ -1,0 +1,36 @@
+# Money Machine Runbook
+
+## Purpose
+Automates outbound SMS to leads and handles inbound replies to route to (1) Excess Funds Recovery, (2) Wholesale Real Estate, or (3) Both.
+
+## Workflows
+- Outbound: workflows/money-machine/outbound.json
+- Inbound: workflows/money-machine/inbound.json
+
+## Required Integrations
+- Twilio SMS (outbound send + inbound webhook)
+- LLM (Claude) for message generation/classification
+- Supabase/Postgres logging tables
+
+## Required Variables (names only)
+- TWILIO_ACCOUNT_SID
+- TWILIO_AUTH_TOKEN
+- TWILIO_FROM_NUMBER
+- ANTHROPIC_API_KEY
+- SUPABASE_URL
+- SUPABASE_SERVICE_ROLE_KEY (or equivalent)
+- BOLDSIGN_API_KEY (if used)
+- BOLDSIGN_TEMPLATE_ID_RECOVERY
+- BOLDSIGN_TEMPLATE_ID_WHOLESALE
+
+## Database Expectations
+- Leads source query returns: id, phone, name (minimum)
+- Logging table exists for outreach + replies
+
+## Test Plan (End-to-End)
+1. Create test lead row with your phone number in staging table.
+2. Run Outbound manually.
+3. Reply “1”, “2”, “3”.
+4. Confirm Inbound logs reply + routes correctly.
+5. Confirm BoldSign sends correct template to the same recipient.
+6. Confirm status updated in DB.
