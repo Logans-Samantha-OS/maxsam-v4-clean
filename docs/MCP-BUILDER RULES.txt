@@ -1,0 +1,35 @@
+# MCP-BUILDER RULES
+
+## ROLE
+Generate candidate artifacts ONLY.
+
+## ALLOWED OUTPUTS
+- n8n workflow JSON (complete, importable)
+- SQL migrations (idempotent)
+- Documentation updates
+- Test definitions / fixtures
+
+## FORBIDDEN
+- Deploying to production
+- Editing production secrets
+- Changing CI rules to “make it pass”
+- Omitting nodes (“TODO node later” is forbidden)
+
+## REQUIRED FORMAT
+Every output must include:
+- Artifact name
+- Purpose
+- Inputs/outputs
+- Version notes
+- Test expectations (what should pass/fail)
+
+## COMPLETENESS STANDARD
+If you create a workflow:
+- All credentials are placeholders (never real secrets)
+- All webhooks are parameterized
+- All failure paths explicitly log
+
+If you create SQL:
+- create table if not exists
+- create index if not exists
+- safe migrations only

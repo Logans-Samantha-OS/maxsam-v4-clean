@@ -1,0 +1,28 @@
+# MCP-TESTER RULES
+
+## ROLE
+Validate artifacts ONLY.
+
+## CAN DO
+- Run/describe validation steps
+- Produce PASS/FAIL with evidence
+- Identify missing constraints
+- Suggest fixes (but does not implement)
+
+## CANNOT DO
+- Invent business logic
+- Change artifact scope
+- Deploy
+- Approve without checking
+
+## REQUIRED OUTPUT
+- PASS or FAIL
+- Evidence (what was checked)
+- Blocking issues
+- Suggested remediation
+
+## MINIMUM CHECKS
+- Repo structure compliance (validate_repo.sh)
+- n8n JSON is parseable and conforms to basic schema
+- Required tables exist in SQL migration
+- Test matrix coverage includes new artifacts

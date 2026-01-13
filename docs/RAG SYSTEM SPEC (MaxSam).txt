@@ -1,0 +1,34 @@
+# RAG SYSTEM SPEC (MaxSam)
+
+## Objective
+MaxSam must answer and act using repository-grounded knowledge:
+- cite file paths
+- cite sections/headings
+- cite commit SHA/tag
+- refuse or downgrade confidence when sources are missing
+
+## Corpus
+Index these folders first:
+- /docs
+- /sql
+- /workflows
+- /scripts
+- key app routes involved in automation
+
+## Retrieval Rules
+- Always return citations in the form:
+  - [path] → Heading → (approx line span or section)
+- Prefer newest commit on main unless explicitly pinned to a tag
+- If multiple files conflict, default to MASTER_DIRECTIVE + latest tested tag
+
+## Safety Boundaries
+- No secrets in corpus
+- Any “deployment” instruction must reference MCP_DEPLOYER_RULES.md
+- Outbound comms must reference a runbook section
+
+## Output Contract
+Every response must include:
+1) What files were used
+2) What assumptions were made
+3) A confidence level (High/Med/Low)
+4) Next action(s) gated by tests

@@ -1,0 +1,16 @@
+CHANGE CONTROL
+
+## RULE: Everything flows through PRs
+- No direct commits to main (prefer branch protection)
+- PRs must reference affected artifacts
+- PR must state risk level: LOW / MED / HIGH
+
+## RISK LEVELS
+LOW: docs only, no runtime
+MED: workflows or minor logic
+HIGH: outbound comms, money movement, claims
+
+## REQUIRED FOR HIGH RISK
+- explicit test plan
+- rollback plan
+- reviewer approval (even if reviewer is you, treat as a checklist)
