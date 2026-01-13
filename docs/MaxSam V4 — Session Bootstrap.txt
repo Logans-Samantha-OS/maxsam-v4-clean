@@ -1,0 +1,87 @@
+This document is canonical. Continue from this state.
+
+# MaxSam V4 — Session Bootstrap
+
+## 1. What This System Is
+MaxSam V4 is a modular convergence engine that automates:
+- Excess funds recovery
+- Distressed property acquisition
+- Lead qualification
+- Outreach and deal routing
+
+It is designed to later generalize into other domains
+(health, fitness, finance, relationships, time allocation).
+
+---
+
+## 2. Core Agents (Non-Negotiable)
+- **ALEX** — Knowledge + Memory Layer  
+  - NotebookLM-style ingestion
+  - Chunking, embeddings, retrieval
+  - Exposed via HTTP API (`/query`, `/add`, etc.)
+
+- **ELEANOR** — Scoring + Analysis  
+  - Lead scoring
+  - Pattern recognition
+  - Uses ALEX for grounded context
+
+- **SAM** — Conversational Lead Qualification Persona  
+  - SMS + phone outreach
+  - Context-aware
+  - No promises, no fees, compliance-safe
+
+- **ORION** — Decision Router  
+  - Determines next action:
+    skip trace, SMS, escalate, reject
+
+---
+
+## 3. Current State (FACTS)
+- n8n Cloud is used for orchestration
+- Supabase + pgvector is used for storage
+- ALEX HTTP API exists locally (FastAPI)
+- NotebookLM is currently manual (45 sources)
+- Goal: fully replace NotebookLM with ALEX + n8n
+
+---
+
+## 4. Golden Lead Definition
+A **Golden Lead** is:
+- A person who appears on BOTH:
+  - Excess funds list
+  - Distressed property list
+
+These are highest-priority leads.
+
+---
+
+## 5. Architecture Direction
+- NotebookLM → automated via ALEX
+- n8n calls ALEX `/query` at key decision points
+- Context is injected into LLM calls (Claude/Gemini)
+- Learning loops feed results back into ALEX
+
+---
+
+## 6. What Is NOT Done Yet
+- No Railway/Render deployment yet
+- No permanent repo integration of ALEX yet
+- n8n workflows are being generated next
+- Interface contracts still being frozen
+
+---
+
+## 7. Hard Rules
+- Do not over-design
+- Keep everything readable
+- Modular over monolithic
+- No single-file “god objects”
+- Validate locally before deploying
+
+---
+
+## 8. Immediate Next Objective
+Create and validate:
+1. Local ALEX API testing
+2. n8n workflows that call `/query`
+3. Minimal repo integration plan
