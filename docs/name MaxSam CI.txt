@@ -1,0 +1,19 @@
+name: MaxSam CI
+
+on:
+  pull_request:
+  push:
+    branches: [ main ]
+
+jobs:
+  governance-check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Verify governance artifacts exist
+        run: |
+          test -f MAXSAM_MASTER_DIRECTIVE.txt
+          test -f docs/META-COGNITION_APPENDIX.txt
+          test -f docs/DAILY_RUNBOOK.md
