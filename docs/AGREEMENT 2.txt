@@ -1,0 +1,23 @@
+/agreements/
+  excess_funds_recovery_master.md
+  wholesale_assignment_master.md
+
+/orion/
+  allowed_actions.json
+  decision_rules.json
+
+/intake/
+  intake_schema.json
+
+/analysis/
+  offer_calculation.md
+  priority_score.sql
+
+/workflows/
+  n8n_intake.json
+  n8n_orion_gate.json
+  n8n_boldsign_send.json
+
+/architecture/
+  system_invariants.md
+  money_state_model.md
