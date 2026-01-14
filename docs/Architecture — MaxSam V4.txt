@@ -1,0 +1,14 @@
+# Architecture — MaxSam V4
+
+## Data Flow
+County Activation → Ingestion → Leads → Scoring → Calling → Revenue
+
+## Control Planes
+- Ralph monitors via derived views
+- Sam gated by time + system_flags
+- Counties activated via toggle
+
+## Invariants
+- No agent reads UI state
+- No agent writes without ledger entry
+- No calls outside allowed window

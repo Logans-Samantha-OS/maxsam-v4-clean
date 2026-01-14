@@ -1,0 +1,14 @@
+# Operations — MaxSam V4
+
+## Daily
+- Activate 1 county
+- Verify ingestion success
+- Monitor Ralph alerts
+
+## Scaling
+- Duplicate Sam workflow
+- Never bypass lead locking
+
+## Emergency
+- Pause Sam via system_flags
+- Do not edit n8n logic live

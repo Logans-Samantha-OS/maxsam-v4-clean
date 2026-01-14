@@ -1,0 +1,21 @@
+# MaxSam V4 — System Overview (Frozen)
+
+## Purpose
+Autonomous lead ingestion, qualification, calling, and monetization system
+with full observability, control, and compliance.
+
+## Core Principles
+- Supabase = system of record
+- execution_ledger = canonical truth
+- n8n = executor
+- No runtime SQL
+- All actions logged
+- Hard time gates enforced
+
+## Agents
+- Eleanor: ingestion + scoring
+- Sam: calling + monetization (9–5 Mon–Sat)
+- Ralph: monitoring + escalation (read-only, control)
+
+## Status
+V4 baseline frozen.
