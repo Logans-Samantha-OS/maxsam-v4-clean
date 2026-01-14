@@ -1,0 +1,18 @@
+ralph/
+  README.md
+  ralph.config.json
+  prompts/
+    ralph_master_prompt.md
+    prd_template.md
+    task_schema.json
+    task_template.json
+  state/
+    active.json
+    history.ndjson
+    last_result.txt
+  hooks/
+    stop-hook.sh
+  scripts/
+    ralph-loop.sh
+    render-context.sh
+    verify.sh

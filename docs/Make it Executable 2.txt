@@ -1,0 +1,1 @@
+chmod +x ralph/scripts/render-context.sh

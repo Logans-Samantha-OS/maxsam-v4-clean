@@ -1,0 +1,72 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+USER_INTENT="${1:-}"
+PROMISE="${2:-DONE}"
+MAX_ITERS="${3:-10}"
+
+if [[ -z "$USER_INTENT" ]]; then
+  echo "Usage: ralph-loop.sh \"<intent>\" [PROMISE] [MAX_ITERS]"
+  exit 1
+fi
+
+mkdir -p ralph/state
+
+ACTIVE="ralph/state/active.json"
+HIST="ralph/state/history.ndjson"
+LAST="ralph/state/last_result.txt"
+PRD="ralph/state/PRD.md"
+TASKS="ralph/state/tasks.json"
+MASTER="ralph/prompts/ralph_master_prompt.md"
+
+echo "{}" > "$LAST" || true
+
+jq -n \
+  --arg intent "$USER_INTENT" \
+  --arg promise "$PROMISE" \
+  --argjson max "$MAX_ITERS" \
+  '{active:true,user_intent:$intent,completion_promise:$promise,max_iterations:$max,iteration_index:0}' > "$ACTIVE"
+
+for ((i=1; i<=MAX_ITERS; i++)); do
+  jq --argjson i "$i" '.iteration_index = $i' "$ACTIVE" > "${ACTIVE}.tmp" && mv "${ACTIVE}.tmp" "$ACTIVE"
+
+  echo "=== RALPH ITERATION $i/$MAX_ITERS ==="
+
+  CONTEXT="$(bash ralph/scripts/render-context.sh || true)"
+
+  # Build a single prompt payload for the agent
+  PROMPT_PAYLOAD=$(cat "$MASTER" | \
+    sed "s/{{USER_INTENT}}/$(printf "%s" "$USER_INTENT" | sed 's/[\/&]/\\&/g')/g" | \
+    sed "s/{{COMPLETION_PROMISE}}/$(printf "%s" "$PROMISE" | sed 's/[\/&]/\\&/g')/g" | \
+    sed "s/{{MAX_ITERATIONS}}/$MAX_ITERS/g" | \
+    sed "s/{{ITERATION_INDEX}}/$i/g")
+
+  {
+    echo "---- CONTEXT ----"
+    echo "$CONTEXT"
+    echo "---- END CONTEXT ----"
+    echo "$PROMPT_PAYLOAD"
+  } > ralph/state/current_prompt.txt
+
+  # === AGENT INVOCATION PLACEHOLDER ===
+  # Replace the next line with *your* actual Claude invocation.
+  # Examples:
+  #   claude -p ralph/state/current_prompt.txt
+  #   claude code --prompt-file ralph/state/current_prompt.txt
+  #
+  # For now, we record that the iteration ran:
+  echo "{\"iteration\":$i,\"event\":\"prompt_prepared\"}" >> "$HIST"
+
+  # Run verification
+  if bash ralph/scripts/verify.sh; then
+    echo "<promise>${PROMISE}</promise>" >> "$LAST"
+    echo "RALPH: DONE."
+    exit 0
+  fi
+
+  echo "{\"iteration\":$i,\"event\":\"verify_failed\"}" >> "$HIST"
+done
+
+echo "RALPH: Max iterations reached."
+echo "<promise>BLOCKED</promise>" >> "$LAST"
+exit 1

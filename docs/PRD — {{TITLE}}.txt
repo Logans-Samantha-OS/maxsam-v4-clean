@@ -1,0 +1,37 @@
+# PRD — {{TITLE}}
+
+## Goal
+{{GOAL}}
+
+## Non-Goals
+{{NON_GOALS}}
+
+## Scope
+- In-scope:
+  - {{IN_SCOPE_ITEMS}}
+- Out-of-scope:
+  - {{OUT_OF_SCOPE_ITEMS}}
+
+## Requirements (Acceptance Criteria)
+- [ ] {{AC_1}}
+- [ ] {{AC_2}}
+- [ ] {{AC_3}}
+
+## Interfaces
+- Inputs: {{INPUTS}}
+- Outputs: {{OUTPUTS}}
+
+## Data / Storage Changes
+- Tables:
+- Functions:
+- Triggers:
+- Indexes:
+
+## Operational Notes
+- Runbook:
+- Rollback:
+- Observability:
+
+## Risks
+- {{RISK_1}}
+- {{RISK_2}}

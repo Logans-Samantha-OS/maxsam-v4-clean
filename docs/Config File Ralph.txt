@@ -1,0 +1,11 @@
+{
+  "name": "MaxSam V4 Ralph",
+  "completion_promise": "DONE",
+  "max_iterations": 10,
+  "artifacts": {
+    "prd": "ralph/state/PRD.md",
+    "tasks": "ralph/state/tasks.json",
+    "last_result": "ralph/state/last_result.txt",
+    "history": "ralph/state/history.ndjson"
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "required": ["version", "title", "tasks"],
+  "properties": {
+    "version": { "type": "string" },
+    "title": { "type": "string" },
+    "tasks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["id", "name", "type", "acceptance", "steps"],
+        "properties": {
+          "id": { "type": "string" },
+          "name": { "type": "string" },
+          "type": { "type": "string", "enum": ["sql", "code", "docs", "config", "workflow"] },
+          "acceptance": { "type": "array", "items": { "type": "string" } },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "files_touched": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  }
+}
