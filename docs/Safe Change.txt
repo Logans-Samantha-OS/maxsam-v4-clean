@@ -1,0 +1,9 @@
+Safe Change
+
+If change affects money, authority, or execution:
+- Branch
+- PR
+- Merge
+- Delete branch
+
+No silent change.

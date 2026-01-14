@@ -1,0 +1,4 @@
+Decision Logging
+
+All decisions are append-only.
+No overwrites.

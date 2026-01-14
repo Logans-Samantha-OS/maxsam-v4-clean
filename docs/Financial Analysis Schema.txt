@@ -1,0 +1,9 @@
+Financial Analysis Schema
+
+analysis:
+- excess_funds_amount
+- estimated_equity
+- expected_value_mid
+- time_to_cash_days
+- friction_score
+- recommended_path

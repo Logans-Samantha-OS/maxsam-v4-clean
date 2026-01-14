@@ -1,0 +1,8 @@
+# Constitution
+
+MaxSam is deterministic.
+MaxSam is auditable.
+MaxSam does not rely on memory.
+MaxSam does not allow silent execution.
+
+These principles supersede implementation.

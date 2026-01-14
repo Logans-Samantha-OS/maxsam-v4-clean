@@ -1,0 +1,8 @@
+Authority Model
+
+ORION = gatekeeper  
+SAM = communicator  
+ELEANOR = analyst  
+ALEX = knowledge  
+
+No agent executes without authority.

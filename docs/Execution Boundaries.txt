@@ -1,0 +1,8 @@
+Execution Boundaries
+
+Execution requires:
+- Valid money state
+- ORION approval
+- Logged intent
+
+No exceptions.

@@ -1,0 +1,8 @@
+System Invariants
+
+- Every lead has exactly one money state
+- Every action is logged
+- ORION cannot be bypassed
+- Intelligence must be written
+
+Breaking invariants = system failure.
