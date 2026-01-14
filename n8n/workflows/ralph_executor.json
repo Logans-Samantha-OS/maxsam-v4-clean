@@ -1,0 +1,1026 @@
+{
+  "name": "Ralph Wiggum - Autonomous Task Executor",
+  "nodes": [
+    {
+      "id": "1",
+      "name": "Trigger - Scheduled",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 5
+            }
+          ]
+        }
+      },
+      "notes": "Runs every 5 minutes to check for pending tasks"
+    },
+    {
+      "id": "2",
+      "name": "Check Ralph Enabled",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [300, 300],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT control_value::boolean as enabled FROM system_controls WHERE control_key = 'ralph_enabled'",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Check if Ralph autonomous execution is enabled"
+    },
+    {
+      "id": "3",
+      "name": "Is Ralph Enabled?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-enabled",
+              "leftValue": "={{ $json.enabled }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Only proceed if ralph_enabled = true"
+    },
+    {
+      "id": "4",
+      "name": "Get System Controls",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [700, 200],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM v_system_controls_summary",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Fetch all system controls for policy enforcement"
+    },
+    {
+      "id": "5",
+      "name": "Check Budget Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [700, 400],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM check_budget_limits(0)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Check if daily budget allows more tasks"
+    },
+    {
+      "id": "6",
+      "name": "Merge Controls & Budget",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [900, 300],
+      "parameters": {
+        "mode": "combine",
+        "mergeByFields": {
+          "values": []
+        },
+        "options": {}
+      },
+      "notes": "Combine system controls with budget status"
+    },
+    {
+      "id": "7",
+      "name": "Can Proceed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "budget-check",
+              "leftValue": "={{ $json.can_proceed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            },
+            {
+              "id": "autonomy-check",
+              "leftValue": "={{ $json.autonomy_level }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check budget allows and autonomy > 0"
+    },
+    {
+      "id": "8",
+      "name": "Lease Next Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1300, 200],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM lease_next_task('n8n-ralph-worker-{{ $runId }}', {{ $json.lease_ttl_seconds || 300 }})",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Atomically lease the next available task with row locking"
+    },
+    {
+      "id": "9",
+      "name": "Task Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1500, 200],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "task-exists",
+              "leftValue": "={{ $json.task_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check if a task was successfully leased"
+    },
+    {
+      "id": "10",
+      "name": "Validate Task Schema",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1700, 100],
+      "parameters": {
+        "jsCode": "// Validate task spec schema\nconst task = $input.first().json;\n\nconst requiredFields = ['task_id', 'task_key', 'task_name', 'spec'];\nconst specFields = ['description'];\n\nconst errors = [];\n\n// Check required top-level fields\nfor (const field of requiredFields) {\n  if (!task[field]) {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\n\n// Validate spec structure\nif (task.spec) {\n  for (const field of specFields) {\n    if (!task.spec[field]) {\n      errors.push(`Missing spec field: ${field}`);\n    }\n  }\n  \n  // Validate file operations structure\n  if (task.spec.files_to_create) {\n    for (const file of task.spec.files_to_create) {\n      if (!file.path || !file.content) {\n        errors.push('files_to_create entries must have path and content');\n      }\n    }\n  }\n  \n  if (task.spec.files_to_modify) {\n    for (const file of task.spec.files_to_modify) {\n      if (!file.path || !file.changes) {\n        errors.push('files_to_modify entries must have path and changes');\n      }\n    }\n  }\n}\n\nreturn {\n  json: {\n    ...task,\n    validation_passed: errors.length === 0,\n    validation_errors: errors\n  }\n};"
+      },
+      "notes": "Validate task payload structure before execution"
+    },
+    {
+      "id": "11",
+      "name": "Schema Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1900, 100],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "valid-check",
+              "leftValue": "={{ $json.validation_passed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Only proceed if task schema is valid"
+    },
+    {
+      "id": "12",
+      "name": "Alex Gate - Policy Check",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2100, 50],
+      "parameters": {
+        "jsCode": "// ALEX GATE: Policy enforcement\nconst task = $input.first().json;\nconst controls = $('Get System Controls').first().json;\n\nconst blockedPatterns = controls.blocked_file_patterns || [];\nconst blockedDirs = controls.blocked_directories || [];\nconst maxFilesPerTask = controls.max_files_per_task || 20;\nconst maxLocPerTask = controls.max_loc_per_task || 500;\nconst autonomyLevel = controls.autonomy_level || 1;\n\nconst violations = [];\n\n// Check file count limits\nconst totalFiles = (\n  (task.spec.files_to_create?.length || 0) +\n  (task.spec.files_to_modify?.length || 0) +\n  (task.spec.files_to_delete?.length || 0)\n);\n\nif (totalFiles > maxFilesPerTask) {\n  violations.push(`Exceeds max files per task (${totalFiles} > ${maxFilesPerTask})`);\n}\n\n// Check estimated LOC\nif (task.estimated_loc && task.estimated_loc > maxLocPerTask) {\n  violations.push(`Exceeds max LOC per task (${task.estimated_loc} > ${maxLocPerTask})`);\n}\n\n// Check blocked file patterns\nconst allFiles = [\n  ...(task.spec.files_to_create?.map(f => f.path) || []),\n  ...(task.spec.files_to_modify?.map(f => f.path) || []),\n  ...(task.spec.files_to_delete || [])\n];\n\nfor (const filePath of allFiles) {\n  for (const pattern of blockedPatterns) {\n    const regex = new RegExp(pattern.replace('*', '.*'));\n    if (regex.test(filePath)) {\n      violations.push(`Blocked file pattern: ${filePath} matches ${pattern}`);\n    }\n  }\n  \n  for (const dir of blockedDirs) {\n    if (filePath.includes(`/${dir}/`) || filePath.startsWith(`${dir}/`)) {\n      violations.push(`Blocked directory: ${filePath} is in ${dir}`);\n    }\n  }\n}\n\n// Check autonomy level requirement\nif (task.required_autonomy_level > autonomyLevel) {\n  violations.push(`Requires autonomy level ${task.required_autonomy_level}, current is ${autonomyLevel}`);\n}\n\n// Determine if approval is needed\nconst requiresApproval = (\n  violations.length > 0 ||\n  task.required_autonomy_level > controls.require_approval_above_autonomy\n);\n\nreturn {\n  json: {\n    ...task,\n    policy_passed: violations.length === 0,\n    policy_violations: violations,\n    requires_approval: requiresApproval,\n    autonomy_level: autonomyLevel\n  }\n};"
+      },
+      "notes": "ALEX GATE: Enforce safety policies and check for blocked patterns"
+    },
+    {
+      "id": "13",
+      "name": "Policy Passed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2300, 50],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "policy-check",
+              "leftValue": "={{ $json.policy_passed }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check if policy enforcement passed"
+    },
+    {
+      "id": "14",
+      "name": "Requires Approval?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [2500, -50],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "approval-check",
+              "leftValue": "={{ $json.requires_approval }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check if task requires manual approval"
+    },
+    {
+      "id": "15",
+      "name": "Request Approval - Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2700, -150],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🤖 *Ralph Task Approval Required*\n\n*Task:* {{ $json.task_name }}\n*Key:* {{ $json.task_key }}\n*Priority:* {{ $json.priority }}\n*Autonomy Required:* {{ $json.required_autonomy_level }}\n\n*Description:*\n{{ $json.spec.description }}\n\n*Files to modify:* {{ ($json.spec.files_to_modify?.length || 0) + ($json.spec.files_to_create?.length || 0) + ($json.spec.files_to_delete?.length || 0) }}\n\n{{ $json.requires_approval ? '⚠️ Manual approval required' : '' }}\n\nReply with:\n✅ `/approve {{ $json.task_id }}` to approve\n❌ `/reject {{ $json.task_id }}` to reject",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIALS",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Send approval request to Telegram (stub - requires webhook for response)"
+    },
+    {
+      "id": "16",
+      "name": "Set Awaiting Approval",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2900, -150],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT request_approval('{{ $json.task_id }}'::uuid, 'n8n-ralph-worker', 'Autonomy level or policy check requires approval')",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Mark task as awaiting approval in database"
+    },
+    {
+      "id": "17",
+      "name": "Prepare Task Payload",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2700, 50],
+      "parameters": {
+        "jsCode": "// Prepare task payload for Ralph executor\nconst task = $input.first().json;\n\nconst payload = {\n  task_id: task.task_id,\n  task_key: task.task_key,\n  task_name: task.task_name,\n  spec: task.spec,\n  priority: task.priority,\n  required_autonomy_level: task.required_autonomy_level,\n  attempt_count: task.attempt_count,\n  worker_id: 'n8n-ralph-worker'\n};\n\nreturn {\n  json: {\n    task_payload: JSON.stringify(payload),\n    task_id: task.task_id\n  }\n};"
+      },
+      "notes": "Format task payload for Ralph runner script"
+    },
+    {
+      "id": "18",
+      "name": "Update Status - Running",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2900, 50],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE agent_tasks SET status = 'running', started_at = NOW() WHERE id = '{{ $json.task_id }}'::uuid",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Mark task as running before execution"
+    },
+    {
+      "id": "19",
+      "name": "Log Started Event",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [3100, 50],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agent_task_events (task_id, event_type, worker_id, event_data) VALUES ('{{ $json.task_id }}'::uuid, 'started', 'n8n-ralph-worker', '{\"n8n_run_id\": \"{{ $runId }}\"}'::jsonb)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Log task started event to append-only log"
+    },
+    {
+      "id": "20",
+      "name": "Execute Ralph Runner",
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [3300, 50],
+      "parameters": {
+        "command": "=echo '{{ $json.task_payload }}' | npx ts-node /path/to/tools/ralph/run_task.ts",
+        "cwd": "/path/to/maxsam-v4-clean"
+      },
+      "notes": "Execute Ralph task runner script. Update paths as needed."
+    },
+    {
+      "id": "21",
+      "name": "Parse Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [3500, 50],
+      "parameters": {
+        "jsCode": "// Parse Ralph runner output\nconst input = $input.first().json;\n\nlet result;\ntry {\n  result = JSON.parse(input.stdout || '{}');\n} catch (e) {\n  result = {\n    success: false,\n    error: 'Failed to parse runner output',\n    raw_output: input.stdout,\n    raw_error: input.stderr\n  };\n}\n\nreturn {\n  json: {\n    ...result,\n    task_id: $('Prepare Task Payload').first().json.task_id,\n    exit_code: input.exitCode\n  }\n};"
+      },
+      "notes": "Parse JSON output from Ralph runner"
+    },
+    {
+      "id": "22",
+      "name": "Task Succeeded?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [3700, 50],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "success-check",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check if task execution succeeded"
+    },
+    {
+      "id": "23",
+      "name": "Complete Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [3900, -50],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT complete_task('{{ $json.task_id }}'::uuid, 'n8n-ralph-worker', '{{ JSON.stringify($json).replace(/'/g, \"''\") }}'::jsonb)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Mark task as completed and update budget tracking"
+    },
+    {
+      "id": "24",
+      "name": "Notify Success - Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [4100, -50],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=✅ *Ralph Task Completed*\n\n*Task:* {{ $('Validate Task Schema').first().json.task_name }}\n*Branch:* `{{ $json.branch }}`\n*Commit:* `{{ $json.commit_sha || 'No changes' }}`\n\n*Summary:*\n{{ $json.summary }}\n\n*Stats:*\n📁 Files: {{ $json.files_changed?.length || 0 }}\n➕ Added: {{ $json.loc_added || 0 }} lines\n➖ Removed: {{ $json.loc_removed || 0 }} lines\n⏱️ Duration: {{ Math.round(($json.duration_ms || 0) / 1000) }}s\n\n{{ $json.tests_passed ? '✅ Tests passed' : '⚠️ Some tests failed' }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIALS",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Send success notification to Telegram"
+    },
+    {
+      "id": "25",
+      "name": "Fail Task with Retry",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [3900, 150],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM fail_task('{{ $json.task_id }}'::uuid, 'n8n-ralph-worker', '{{ ($json.error || $json.summary || 'Unknown error').replace(/'/g, \"''\") }}', true)",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Mark task as failed and schedule retry if applicable"
+    },
+    {
+      "id": "26",
+      "name": "Check Retry Status",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [4100, 150],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "will-retry",
+              "leftValue": "={{ $json.will_retry }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Check if task will be retried"
+    },
+    {
+      "id": "27",
+      "name": "Notify Retry - Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [4300, 100],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🔄 *Ralph Task Retry Scheduled*\n\n*Task:* {{ $('Validate Task Schema').first().json.task_name }}\n\n*Error:*\n{{ $('Parse Result').first().json.error || $('Parse Result').first().json.summary }}\n\n*Next attempt:* {{ $json.next_attempt_at }}\n*Attempts remaining:* {{ $json.attempts_remaining }}",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIALS",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Notify about scheduled retry"
+    },
+    {
+      "id": "28",
+      "name": "Notify Final Failure - Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [4300, 200],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=❌ *Ralph Task Failed*\n\n*Task:* {{ $('Validate Task Schema').first().json.task_name }}\n*Task ID:* {{ $('Parse Result').first().json.task_id }}\n\n*Final Error:*\n{{ $('Parse Result').first().json.error || $('Parse Result').first().json.summary }}\n\n⚠️ All retry attempts exhausted. Manual intervention required.",
+        "additionalFields": {
+          "parse_mode": "Markdown"
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIALS",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Notify about permanent failure"
+    },
+    {
+      "id": "29",
+      "name": "Log Policy Violation",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2500, 200],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agent_task_events (task_id, event_type, worker_id, event_data) VALUES ('{{ $json.task_id }}'::uuid, 'policy_violation', 'n8n-ralph-worker', '{{ JSON.stringify({violations: $json.policy_violations}).replace(/'/g, \"''\") }}'::jsonb); UPDATE agent_tasks SET status = 'blocked', last_error = '{{ $json.policy_violations.join(\"; \").replace(/'/g, \"''\") }}' WHERE id = '{{ $json.task_id }}'::uuid",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Log policy violation and block task"
+    },
+    {
+      "id": "30",
+      "name": "Log Schema Error",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [2100, 200],
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO agent_task_events (task_id, event_type, worker_id, event_data) VALUES ('{{ $json.task_id }}'::uuid, 'failed', 'n8n-ralph-worker', '{{ JSON.stringify({reason: \"schema_validation_failed\", errors: $json.validation_errors}).replace(/'/g, \"''\") }}'::jsonb); UPDATE agent_tasks SET status = 'failed', last_error = 'Schema validation failed' WHERE id = '{{ $json.task_id }}'::uuid",
+        "options": {}
+      },
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIALS",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Log schema validation failure"
+    },
+    {
+      "id": "31",
+      "name": "No-Op: Ralph Disabled",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [700, 500],
+      "parameters": {},
+      "notes": "Ralph is disabled - no action taken"
+    },
+    {
+      "id": "32",
+      "name": "No-Op: Budget Exhausted",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1300, 400],
+      "parameters": {},
+      "notes": "Daily budget exhausted - no tasks will be executed"
+    },
+    {
+      "id": "33",
+      "name": "No-Op: No Tasks",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1700, 300],
+      "parameters": {},
+      "notes": "No pending tasks in queue"
+    }
+  ],
+  "connections": {
+    "Trigger - Scheduled": {
+      "main": [
+        [
+          {
+            "node": "Check Ralph Enabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Ralph Enabled": {
+      "main": [
+        [
+          {
+            "node": "Is Ralph Enabled?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Ralph Enabled?": {
+      "main": [
+        [
+          {
+            "node": "Get System Controls",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Check Budget Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-Op: Ralph Disabled",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get System Controls": {
+      "main": [
+        [
+          {
+            "node": "Merge Controls & Budget",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Budget Status": {
+      "main": [
+        [
+          {
+            "node": "Merge Controls & Budget",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Controls & Budget": {
+      "main": [
+        [
+          {
+            "node": "Can Proceed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Can Proceed?": {
+      "main": [
+        [
+          {
+            "node": "Lease Next Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-Op: Budget Exhausted",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Lease Next Task": {
+      "main": [
+        [
+          {
+            "node": "Task Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Found?": {
+      "main": [
+        [
+          {
+            "node": "Validate Task Schema",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No-Op: No Tasks",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Task Schema": {
+      "main": [
+        [
+          {
+            "node": "Schema Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schema Valid?": {
+      "main": [
+        [
+          {
+            "node": "Alex Gate - Policy Check",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Schema Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Alex Gate - Policy Check": {
+      "main": [
+        [
+          {
+            "node": "Policy Passed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Policy Passed?": {
+      "main": [
+        [
+          {
+            "node": "Requires Approval?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Policy Violation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Requires Approval?": {
+      "main": [
+        [
+          {
+            "node": "Request Approval - Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Prepare Task Payload",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Request Approval - Telegram": {
+      "main": [
+        [
+          {
+            "node": "Set Awaiting Approval",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Task Payload": {
+      "main": [
+        [
+          {
+            "node": "Update Status - Running",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status - Running": {
+      "main": [
+        [
+          {
+            "node": "Log Started Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Started Event": {
+      "main": [
+        [
+          {
+            "node": "Execute Ralph Runner",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Ralph Runner": {
+      "main": [
+        [
+          {
+            "node": "Parse Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Result": {
+      "main": [
+        [
+          {
+            "node": "Task Succeeded?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Task Succeeded?": {
+      "main": [
+        [
+          {
+            "node": "Complete Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Fail Task with Retry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Complete Task": {
+      "main": [
+        [
+          {
+            "node": "Notify Success - Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fail Task with Retry": {
+      "main": [
+        [
+          {
+            "node": "Check Retry Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Retry Status": {
+      "main": [
+        [
+          {
+            "node": "Notify Retry - Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Final Failure - Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "ralph-wiggum",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "autonomous",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    },
+    {
+      "name": "maxsam",
+      "createdAt": "2025-01-01T00:00:00.000Z",
+      "updatedAt": "2025-01-01T00:00:00.000Z"
+    }
+  ],
+  "meta": {
+    "templateId": "ralph-wiggum-executor",
+    "version": "1.0.0",
+    "description": "Ralph Wiggum Autonomous Task Executor - Phase 5 & 6 implementation",
+    "documentation": {
+      "setup_instructions": [
+        "1. Configure Supabase PostgreSQL credentials",
+        "2. Configure Telegram Bot credentials",
+        "3. Set TELEGRAM_CHAT_ID environment variable",
+        "4. Update paths in 'Execute Ralph Runner' node",
+        "5. Run database migration 005_ralph_wiggum_autonomous_layer.sql",
+        "6. Enable Ralph by setting ralph_enabled = true in system_controls"
+      ],
+      "workflow_flow": [
+        "Trigger -> Check Ralph Enabled -> Check Budget -> Lease Task -> Validate -> Policy Check -> Execute -> Complete/Fail"
+      ],
+      "retry_behavior": "Exponential backoff with configurable max_retries (default: 3)",
+      "approval_flow": "Tasks requiring high autonomy or violating soft policies are sent to Telegram for approval"
+    }
+  }
+}
