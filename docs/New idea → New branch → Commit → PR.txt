@@ -1,0 +1,1 @@
+New idea → New branch → Commit → PR → Merge → Delete branch

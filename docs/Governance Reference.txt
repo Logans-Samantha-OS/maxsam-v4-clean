@@ -1,0 +1,9 @@
+## Governance Reference
+
+All system changes are governed by `GOVERNANCE.md`.
+
+In the event of conflict:
+- Governance rules supersede implementation
+- `main` branch artifacts are authoritative
+
+No agent, workflow, or human may bypass governance.

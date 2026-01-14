@@ -1,0 +1,8 @@
+## Governance
+
+MaxSam is governed by explicit rules and change-control policies.
+
+- System law: `GOVERNANCE.md`
+- Change process: `HOW_TO_CHANGE_MAXSAM_SAFELY.md`
+
+If it’s not in GitHub, it doesn’t exist.

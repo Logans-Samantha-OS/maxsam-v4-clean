@@ -1,0 +1,53 @@
+# How to Change MaxSam Safely
+
+## Rule Zero
+Never change `main` directly.
+
+---
+
+## Safe Change Procedure
+
+1. Create a new branch
+2. Make changes
+3. Commit with a clear message
+4. Open a Pull Request into `main`
+5. Review changes
+6. Merge
+7. Delete branch
+
+---
+
+## What Goes in a Branch
+
+- New logic
+- New documents
+- Experiments
+- Refactors
+
+---
+
+## What Goes in `main`
+
+Only merged, reviewed, governance-compliant artifacts.
+
+---
+
+## If Something Feels Wrong
+
+Stop.
+Do not commit.
+Do not merge.
+
+Review:
+- Branch
+- Diff
+- Governance rules
+
+---
+
+## Emergency Recovery
+
+If a mistake enters `main`:
+- Revert via PR
+- Never force-push
+- Never rewrite history

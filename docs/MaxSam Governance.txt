@@ -1,0 +1,53 @@
+# MaxSam Governance
+
+## Authority Hierarchy
+
+This document defines the binding governance rules for the MaxSam system.
+
+Order of authority (highest to lowest):
+
+1. GOVERNANCE.md
+2. System Constitution
+3. Main branch artifacts
+4. Agent logic and workflows
+5. Experimental or feature branches
+
+No system component may violate governance rules.
+
+---
+
+## Change Control
+
+All changes to MaxSam MUST:
+
+- Be made on a non-main branch
+- Be reviewed via Pull Request
+- Be merged into `main` to become authoritative
+
+Direct commits to `main` are prohibited.
+
+---
+
+## Canonical Source of Truth
+
+The `main` branch represents the authoritative state of the system.
+
+If a conflict exists:
+- Governance overrides implementation
+- Constitution overrides code
+- Main overrides branches
+
+---
+
+## Agent Compliance
+
+No agent (AI or human) may:
+- Bypass governance
+- Modify governance without a PR
+- Execute logic that contradicts governance artifacts
+
+---
+
+## Enforcement
+
+Violations invalidate downstream logic and outputs.
