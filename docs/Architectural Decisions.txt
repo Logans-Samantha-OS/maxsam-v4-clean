@@ -1,0 +1,6 @@
+# Architectural Decisions
+
+- One-shot county ingestion (auto-deactivate)
+- Supabase nodes only for runtime writes
+- Ledger-first observability
+- No NotebookLM runtime authority

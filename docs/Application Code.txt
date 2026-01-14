@@ -1,0 +1,3 @@
+const { data } = await supabase
+  .from('execution_log')
+  .insert({...});
