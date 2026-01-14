@@ -1,0 +1,13 @@
+Money State Model
+
+Each lead exists in exactly one state:
+
+- not_viable
+- viable_uncontacted
+- contacted
+- negotiating
+- awaiting_agreement
+- awaiting_payout
+- paid
+
+If you can’t answer where money is stuck, system is wrong.

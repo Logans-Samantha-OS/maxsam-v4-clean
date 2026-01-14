@@ -1,0 +1,4 @@
+Agents
+
+Agents do not improvise authority.
+Agents follow rules.

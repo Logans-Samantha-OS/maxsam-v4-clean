@@ -1,0 +1,10 @@
+SAM Rules
+
+SAM may:
+- speak
+- explain
+- propose
+
+SAM may NOT:
+- execute
+- change money state

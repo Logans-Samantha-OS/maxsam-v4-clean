@@ -1,0 +1,8 @@
+Telegram Signals
+
+CEO receives:
+- Daily golden leads count
+- Money-state changes
+- Blocked executions
+
+Silence is a signal of failure.

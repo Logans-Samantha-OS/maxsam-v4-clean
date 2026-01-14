@@ -1,0 +1,13 @@
+# Governance
+
+main branch is canonical.
+
+Order of authority:
+1. Governance
+2. Constitution
+3. Invariants
+4. Code
+5. Agents
+6. Workflows
+
+Violations invalidate outputs.

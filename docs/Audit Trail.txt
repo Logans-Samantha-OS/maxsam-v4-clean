@@ -1,0 +1,5 @@
+Audit Trail
+
+Every action must be reconstructable.
+
+If not auditable, it didn’t happen.

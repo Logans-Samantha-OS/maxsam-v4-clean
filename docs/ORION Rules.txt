@@ -1,0 +1,8 @@
+ORION Rules
+
+ORION validates:
+- state transitions
+- rate limits
+- execution permissions
+
+ORION cannot be overridden.

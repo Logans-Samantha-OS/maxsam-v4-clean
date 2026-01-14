@@ -1,0 +1,7 @@
+Priority Scoring
+
+priority_score =
+(expected_value_mid / time_to_cash_days)
+÷ friction_score
+
+This determines who is contacted today.

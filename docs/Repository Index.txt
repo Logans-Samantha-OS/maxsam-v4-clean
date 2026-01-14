@@ -1,0 +1,10 @@
+# Repository Index
+
+This document maps where system intelligence lives.
+
+Governance → GOVERNANCE.md  
+Money → MONEY_STATE_MODEL.md  
+Agents → AGENTS.md  
+Execution → ORION_RULES.md  
+
+If you are confused, this index failed.

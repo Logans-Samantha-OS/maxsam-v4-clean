@@ -1,0 +1,14 @@
+# MaxSam Bootstrap Protocol
+
+This is the mandatory entry point for any human or AI.
+
+If you are reading this, you must comply.
+
+Load these files in order:
+1. GOVERNANCE.md
+2. CONSTITUTION.md
+3. SYSTEM_INVARIANTS.md
+4. AUTHORITY_MODEL.md
+5. MONEY_STATE_MODEL.md
+
+If it is not written in GitHub, it does not exist.

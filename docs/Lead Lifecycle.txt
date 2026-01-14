@@ -1,0 +1,5 @@
+Lead Lifecycle
+
+Leads progress linearly.
+No skipping states.
+Reversals require explicit justification.

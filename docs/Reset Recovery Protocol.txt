@@ -1,0 +1,10 @@
+# Reset Recovery Protocol
+
+If context is lost:
+1. Reload repository
+2. Read BOOTSTRAP.md
+3. Treat repository as sole memory
+4. Resume only after compliance
+
+Conversation memory is invalid.
+Repository truth is mandatory.

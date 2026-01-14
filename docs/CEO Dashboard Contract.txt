@@ -1,0 +1,9 @@
+CEO Dashboard Contract
+
+Dashboard must show:
+- Golden leads today
+- Actions executed
+- Deals in motion
+- Cash pending
+
+Latency > 10 seconds = failure.
