@@ -1,53 +1,262 @@
-# MaxSam Governance
+MaxSam Governance
+Purpose
 
-## Authority Hierarchy
+This document defines how the MaxSam system is governed, changed, and trusted.
+
+It exists to ensure that:
+
+System behavior is deterministic
+
+Money, authority, and execution are auditable
+
+No agent, workflow, or human action can bypass defined rules
+
+The system can evolve without losing integrity
+
+If a rule is not written here or explicitly referenced by this repository, it does not exist.
+
+Authority Hierarchy
 
 This document defines the binding governance rules for the MaxSam system.
 
 Order of authority (highest to lowest):
 
-1. GOVERNANCE.md
-2. System Constitution
-3. Main branch artifacts
-4. Agent logic and workflows
-5. Experimental or feature branches
+GOVERNANCE.md
+
+System Constitution
+
+main branch artifacts
+
+Agent logic and workflows
+
+Experimental or feature branches
 
 No system component may violate governance rules.
 
----
+Canonical Source of Truth
 
-## Change Control
+The main branch is canonical
+
+All production behavior is defined by artifacts in main
+
+No agent may rely on conversational memory or undocumented logic
+
+If it’s not in GitHub, it doesn’t exist.
+
+In the event of conflict:
+
+Governance overrides implementation
+
+Constitution overrides code
+
+main overrides branches
+
+Change Control
 
 All changes to MaxSam MUST:
 
-- Be made on a non-main branch
-- Be reviewed via Pull Request
-- Be merged into `main` to become authoritative
+Be made on a non-main branch
 
-Direct commits to `main` are prohibited.
+Be reviewed via Pull Request
 
----
+Be merged into main to become authoritative
 
-## Canonical Source of Truth
+Direct commits to main are prohibited for governed changes.
 
-The `main` branch represents the authoritative state of the system.
+Branching Policy
+Default State
 
-If a conflict exists:
-- Governance overrides implementation
-- Constitution overrides code
-- Main overrides branches
+All normal work occurs on main
 
----
+main is always deployable, readable, and authoritative
 
-## Agent Compliance
+You do not toggle branches casually.
 
-No agent (AI or human) may:
-- Bypass governance
-- Modify governance without a PR
-- Execute logic that contradicts governance artifacts
+When a Branch Is Required
 
----
+A new branch must be created for changes that affect:
 
-## Enforcement
+System invariants
 
-Violations invalidate downstream logic and outputs.
+Money-state definitions
+
+Agreement templates
+
+ORION decision authority
+
+Intake schemas that affect money or execution
+
+Enforcement logic or guardrails
+
+These are considered constitutional changes.
+
+Required flow:
+
+Branch from main
+
+Make changes
+
+Open a Pull Request
+
+Review intent and system-level impact
+
+Merge into main
+
+Delete the branch
+
+No exceptions.
+
+When a Branch Is NOT Required
+
+Branches are not required for:
+
+County data additions
+
+PDFs or source documents
+
+Research notes
+
+Operational runbooks
+
+Dashboards
+
+Non-authoritative n8n workflows
+
+These may be committed directly to main.
+
+Pull Request Policy
+
+Pull Requests represent changes to law, not experiments.
+
+Every PR must:
+
+Clearly state intent
+
+Describe system-level impact
+
+Be mergeable without ambiguity
+
+Once merged:
+
+The change is binding
+
+Agents must comply
+
+Rollbacks require a new PR
+
+Agent Authority Model
+ORION
+
+Final gatekeeper for execution
+
+Enforces allowed actions
+
+Validates money-state transitions
+
+Cannot be bypassed
+
+SAM
+
+Executes outreach and interaction
+
+May propose actions
+
+Cannot change money-state or execute without ORION approval
+
+ELEANOR
+
+Produces analysis and scoring
+
+No execution authority
+
+ALEX
+
+Provides grounded knowledge retrieval
+
+No execution authority
+
+Money-State Governance
+
+Every lead exists in exactly one money-state
+
+States are immutable except via valid transitions
+
+Transitions are enforced by ORION and database constraints
+
+All changes are append-only and logged
+
+If you cannot answer:
+
+“Where is the money stuck?”
+
+in under 10 seconds, the system is wrong.
+
+Memory and Intelligence Rules
+
+The system does not rely on conversational memory
+
+Intelligence must be encoded as:
+
+Documents
+
+Schemas
+
+Rules
+
+SQL
+
+Workflow definitions
+
+Human understanding is optional. Repository truth is mandatory.
+
+CI / Deployment Signals
+
+CI or deployment failures do not invalidate governance changes
+
+Governance artifacts may exist independently of deployable applications
+
+Infrastructure errors do not override system law
+
+Rollback and Change Control
+
+No direct rollback of main
+
+Corrections require:
+
+New branch
+
+New PR
+
+Explicit justification
+
+History is preserved. Authority is versioned.
+
+Final Principle
+
+MaxSam is not operated by memory, habit, or intuition.
+
+It is operated by:
+
+Written rules
+
+Version control
+
+Enforced invariants
+
+This document is binding.
+
+What to do next (important)
+
+Save this file
+
+Mark the conflict as resolved
+
+Continue merge
+
+Commit with a summary like:
+
+Summary:
+Resolve governance conflict and unify authority model
+
+Description:
+Merged governance purpose, authority hierarchy, and change-control rules into a single binding document.
