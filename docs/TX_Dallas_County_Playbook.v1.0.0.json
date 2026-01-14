@@ -1,0 +1,71 @@
+{
+  "county": "Dallas County",
+  "state": "TX",
+  "claim_type": [
+    "excess_proceeds",
+    "tax_surplus"
+  ],
+  "required_documents": [
+    "motion_to_release_funds",
+    "affidavit_to_release_funds",
+    "government_id",
+    "proof_of_interest",
+    "notarization",
+    "irs_w9",
+    "proposed_order"
+  ],
+  "conditional_documents": {
+    "power_of_attorney": "required_if_agent",
+    "corporate_resolution": "required_if_business",
+    "written_statement_bidder": "required_if_tax_sale_bidder",
+    "ssn_verification": "recommended_if_common_name",
+    "address_verification": "required_if_address_mismatch"
+  },
+  "prohibited": [
+    "bundled_claims",
+    "digital_signatures"
+  ],
+  "submission": {
+    "method": "mail",
+    "county_address": "Dallas County District Clerk, Attn: Accounting Dept, 600 Commerce St, Suite B20, Dallas, TX 75202",
+    "city_address_under_100": "City Controller’s Office, 1500 Marilla St, 2BS, Dallas, TX 75201",
+    "original_signatures_required": true
+  },
+  "timeline": {
+    "estimated_days": 120,
+    "claim_window_years": 2,
+    "known_delays": [
+      "court_docket",
+      "incomplete_packet",
+      "bidder_statement_processing"
+    ]
+  },
+  "assembly_order": [
+    "cover_letter",
+    "motion_to_release_funds",
+    "affidavit_to_release_funds",
+    "proposed_order",
+    "proof_of_authority",
+    "proof_of_interest",
+    "irs_w9",
+    "return_envelope_optional"
+  ],
+  "county_specific_rules": [
+    "one_claim_per_parcel",
+    "wet_ink_signatures_only",
+    "bidder_restrictions_apply",
+    "fee_caps_vary_city_vs_county"
+  ],
+  "metadata": {
+    "notebooklm": {
+      "id": "TX_Dallas_County_Playbook",
+      "url": "https://notebooklm.google.com/notebook/3e9f8c9d-794c-4b21-9057-3cce8b97dadf",
+      "purpose": "Evidence, clerk instructions, PDFs, citations",
+      "last_reviewed": "2026-01-14"
+    },
+    "compiled_from": "Gemini",
+    "compiled_by": "Logan",
+    "version": "1.0.0",
+    "frozen": true
+  }
+}
