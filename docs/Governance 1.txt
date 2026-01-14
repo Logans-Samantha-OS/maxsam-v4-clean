@@ -1,0 +1,10 @@
+## Governance
+
+All system behavior is governed by [`docs/GOVERNANCE.md`](docs/GOVERNANCE.md).
+
+Changes to MaxSam must follow the procedures defined in:
+- Governance
+- Constitution
+- Safe Change Guide
+
+See [`docs/HOW_TO_CHANGE_MAXSAM_SAFELY.md`](docs/HOW_TO_CHANGE_MAXSAM_SAFELY.md)
