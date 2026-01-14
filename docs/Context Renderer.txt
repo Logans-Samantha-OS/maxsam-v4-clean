@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+echo "GIT_STATUS:"
+git status --porcelain || true
+echo
+
+echo "RECENT_COMMITS:"
+git --no-pager log -n 10 --oneline || true
+echo
+
+echo "KEY_FILES:"
+for f in ralph/state/PRD.md ralph/state/tasks.json ralph/state/last_result.txt; do
+  if [[ -f "$f" ]]; then
+    echo "---- $f ----"
+    sed -n '1,200p' "$f"
+    echo
+  fi
+done

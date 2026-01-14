@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Customize this to your repo.
+# The loop passes only when THIS exits 0.
+
+echo "VERIFY: placeholder"
+
+# Examples you might add:
+# npm test
+# pnpm lint
+# pytest
+# supabase db lint
+# or "psql -f migration.sql" in a controlled environment
+
+exit 0
