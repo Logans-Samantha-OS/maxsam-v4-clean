@@ -247,3 +247,131 @@ Keep grinding! 💪`;
 
   await sendTelegramMessage(message);
 }
+
+// ============================================
+// GOLDEN LEAD NOTIFICATIONS
+// ============================================
+
+export interface GoldenLeadData {
+  owner_name: string;
+  jurisdiction: string;
+  deal_type: 'excess_only' | 'wholesale' | 'dual';
+  excess_funds_amount?: number;
+  excess_funds_expiration?: string;
+  loan_balance?: number;
+  estimated_arv?: number;
+  priority_score: number;
+  estimated_total_upside?: number;
+  property_address?: string;
+  property_city?: string;
+  phone_primary?: string;
+  declared_by: string;
+  declaration_reason: string;
+}
+
+/**
+ * Format deal type for display
+ */
+function formatDealType(dealType: string): string {
+  switch (dealType) {
+    case 'dual':
+      return 'Excess + Wholesale';
+    case 'excess_only':
+      return 'Excess Funds Recovery';
+    case 'wholesale':
+      return 'Wholesale';
+    default:
+      return dealType;
+  }
+}
+
+/**
+ * Golden lead declared notification
+ * Sends the formatted golden lead alert to Logan
+ */
+export async function notifyGoldenLeadDeclared(lead: GoldenLeadData): Promise<void> {
+  const expirationText = lead.excess_funds_expiration
+    ? ` (expires ${lead.excess_funds_expiration})`
+    : '';
+
+  const propertyLocation = [lead.property_address, lead.property_city]
+    .filter(Boolean)
+    .join(', ') || 'Address on file';
+
+  const loanBalanceText = lead.loan_balance
+    ? `\nLoan balance: ${formatMoney(lead.loan_balance)}`
+    : '';
+
+  const message = `🚨 <b>GOLDEN LEAD DECLARED</b>
+
+<b>Name:</b> ${lead.owner_name}
+<b>Jurisdiction:</b> ${lead.jurisdiction}
+
+💰 <b>Excess Funds Available:</b>
+${formatMoney(lead.excess_funds_amount || 0)}${expirationText}
+
+🏠 <b>Property:</b>
+${propertyLocation}${loanBalanceText}
+
+📊 <b>Leverage Profile:</b>
+• Strategy: ${formatDealType(lead.deal_type)}
+• Priority score: ${lead.priority_score}/100
+• Est. upside: ~${formatMoney(lead.estimated_total_upside || 0)}
+
+🧠 <b>Decision Rationale:</b>
+${lead.declaration_reason}
+
+⚙️ <b>System:</b>
+Declared by: ${lead.declared_by}
+Status: Locked & ready for outreach`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
+ * Golden lead qualified notification
+ * When a golden lead responds positively
+ */
+export async function notifyGoldenLeadQualified(lead: {
+  owner_name: string;
+  property_address?: string;
+  excess_funds_amount?: number;
+  phone?: string;
+  response?: string;
+}): Promise<void> {
+  const message = `🎯 <b>GOLDEN LEAD QUALIFIED!</b>
+
+${lead.owner_name} is interested!
+
+📍 <b>Property:</b> ${lead.property_address || 'N/A'}
+💰 <b>Excess Funds:</b> ${formatMoney(lead.excess_funds_amount || 0)}
+📞 <b>Phone:</b> ${lead.phone || 'N/A'}
+
+${lead.response ? `💬 <i>"${lead.response}"</i>` : ''}
+
+<b>Next Step:</b> Send contract via DocuSign!`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
+ * Sam call task created notification
+ */
+export async function notifySamCallQueued(lead: {
+  owner_name: string;
+  phone?: string;
+  deal_type: string;
+  priority_score: number;
+}): Promise<void> {
+  const message = `📞 <b>SAM CALL QUEUED</b>
+
+${lead.owner_name} added to Sam's call queue.
+
+📱 <b>Phone:</b> ${lead.phone || 'N/A'}
+📋 <b>Deal Type:</b> ${formatDealType(lead.deal_type)}
+⭐ <b>Priority:</b> ${lead.priority_score}/100
+
+Sam will call during next available window.`;
+
+  await sendTelegramMessage(message);
+}
