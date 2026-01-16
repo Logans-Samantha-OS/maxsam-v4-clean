@@ -10,9 +10,10 @@ function getSupabase() {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
     const body = await request.json();
     const { buyer_email, bid_amount, bid_percentage } = body;
@@ -43,7 +44,7 @@ export async function POST(
     const { data: deal, error: dealError } = await supabase
       .from('maxsam_leads')
       .select('id, arv')
-      .eq('id', params.id)
+      .eq('id', dealId)
       .single();
 
     if (dealError || !deal) {
@@ -70,7 +71,7 @@ export async function POST(
     const { data: existingBid, error: existingBidError } = await supabase
       .from('deal_bids')
       .select('id')
-      .eq('deal_id', params.id)
+      .eq('deal_id', dealId)
       .eq('buyer_id', buyer.id)
       .eq('status', 'pending')
       .single();
@@ -86,7 +87,7 @@ export async function POST(
     const { data: bid, error: bidError } = await supabase
       .from('deal_bids')
       .insert({
-        deal_id: params.id,
+        deal_id: dealId,
         buyer_id: buyer.id,
         bid_amount,
         bid_percentage,
@@ -106,7 +107,7 @@ export async function POST(
     // 6. Trigger N8N webhook
     try {
       const webhookPayload = {
-        deal_id: params.id,
+        deal_id: dealId,
         buyer_id: buyer.id,
         bid_amount,
         bid_percentage,
@@ -157,11 +158,12 @@ export async function POST(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
-    
+
     // Fetch all bids for this deal with buyer information
     const { data, error } = await supabase
       .from('deal_bids')
@@ -177,7 +179,7 @@ export async function GET(
           company
         )
       `)
-      .eq('deal_id', params.id)
+      .eq('deal_id', dealId)
       .order('bid_amount', { ascending: false });
 
     if (error) {

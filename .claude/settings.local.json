@@ -17,7 +17,10 @@
       "Bash(npx tsc:*)",
       "Bash(curl:*)",
       "Bash(npx shadcn@latest add card radio-group -y)",
-      "Bash(git pull:*)"
+      "Bash(git pull:*)",
+      "Bash(claude /plugin list:*)",
+      "Skill(ralph-loop:ralph-loop)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

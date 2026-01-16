@@ -9,17 +9,19 @@ function getSupabase() {
   );
 }
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2025-11-17.clover',
-});
+function getStripe() {
+  return new Stripe(process.env.STRIPE_SECRET_KEY!, {
+    apiVersion: '2025-12-15.clover',
+  });
+}
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
-    const dealId = params.id;
 
     // Fetch winning bid (accepted bid) with buyer and deal details
     const { data: winningBid, error: bidError } = await supabase
@@ -105,11 +107,11 @@ export async function GET(
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
-    const dealId = params.id;
     const body = await request.json();
     const { buyer_email } = body;
 
@@ -181,6 +183,7 @@ export async function POST(
     const totalAmount = Math.round(bidAmount * 100); // Convert to cents
 
     // Create Stripe invoice
+    const stripe = getStripe();
     const customer = await stripe.customers.create({
       email: buyerData.email,
       name: buyerData.name,
