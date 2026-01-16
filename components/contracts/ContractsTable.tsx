@@ -43,7 +43,7 @@ export default function ContractsTable() {
             <tr key={c.id} className="border-b border-gray-800">
               <td className="py-2">{c.title}</td>
               <td>{c.status}</td>
-              <td>${Number(c.total_fee ?? 0).toLocaleString()}</td>
+              <td>${Number(c.value_cents ?? 0).toLocaleString()}</td>
 
             </tr>
           ))}

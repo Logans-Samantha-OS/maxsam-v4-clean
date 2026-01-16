@@ -10,11 +10,11 @@ function getSupabase() {
 
 export async function POST(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
-    const dealId = params.id;
 
     // 1. Verify deal exists
     const { data: deal, error: dealError } = await supabase
@@ -111,11 +111,11 @@ export async function POST(
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: dealId } = await params;
     const supabase = getSupabase();
-    const dealId = params.id;
 
     // Check if buyer blast has been sent for this deal
     const { data: deal, error } = await supabase

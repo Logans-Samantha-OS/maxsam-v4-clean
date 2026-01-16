@@ -23,7 +23,7 @@ export default function DashboardPage() {
   // Filter state
   const [minAmount, setMinAmount] = useState(0)
   const [minScore, setMinScore] = useState(0)
-  const [sortBy, setSortBy] = useState<FetchLeadsOptions['sortBy']>('score_desc')
+  const [sortBy, setSortBy] = useState<string>('score_desc')
   const [hasPhone, setHasPhone] = useState(false)
 
   // Load leads from Supabase
@@ -35,7 +35,7 @@ export default function DashboardPage() {
       minAmount,
       minScore,
       hasPhone,
-      sortBy,
+      sortBy: sortBy as FetchLeadsOptions['sortBy'],
       limit: 200,
     })
 
