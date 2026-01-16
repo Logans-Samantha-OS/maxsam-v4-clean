@@ -1,6 +1,6 @@
 /**
  * PDF Parser API - Extracts lead data from Dallas County excess funds PDFs
- * Returns array of parsed lead objects
+ * Uses Google Gemini Vision API for intelligent document parsing
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -16,154 +16,244 @@ interface ParsedLead {
   sale_date?: string;
 }
 
-// Mock parser - In production, use pdf-parse or similar library
-async function parsePDFContent(buffer: ArrayBuffer): Promise<ParsedLead[]> {
-  // For demo: Generate realistic mock data
-  // In production: Use pdf-parse to extract actual text, then regex patterns
+interface GeminiResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: Array<{
+        text?: string;
+      }>;
+    };
+  }>;
+  error?: {
+    message: string;
+  };
+}
 
-  const mockLeads: ParsedLead[] = [
-    {
-      property_address: '1234 Golden Opportunity Lane',
-      owner_name: 'Martinez, Sarah L.',
-      excess_funds_amount: 45000,
-      city: 'Dallas',
-      state: 'TX',
-      zip_code: '75201',
-      case_number: 'TX-2024-001234',
-      sale_date: '2024-08-15',
-    },
-    {
-      property_address: '5678 Diamond Ave',
-      owner_name: 'Johnson, Michael R.',
-      excess_funds_amount: 38000,
-      city: 'Dallas',
-      state: 'TX',
-      zip_code: '75202',
-      case_number: 'TX-2024-001235',
-      sale_date: '2024-08-16',
-    },
-    {
-      property_address: '9012 Emerald Court',
-      owner_name: 'Williams, Robert J.',
-      excess_funds_amount: 32000,
-      city: 'Richardson',
-      state: 'TX',
-      zip_code: '75080',
-      case_number: 'TX-2024-001236',
-      sale_date: '2024-08-17',
-    },
-    {
-      property_address: '3456 Park Ave',
-      owner_name: 'Davis, Jennifer K.',
-      excess_funds_amount: 28000,
-      city: 'Plano',
-      state: 'TX',
-      zip_code: '75024',
-      case_number: 'TX-2024-001237',
-      sale_date: '2024-08-18',
-    },
-    {
-      property_address: '7890 Oak St',
-      owner_name: 'Brown, David A.',
-      excess_funds_amount: 22000,
-      city: 'Dallas',
-      state: 'TX',
-      zip_code: '75206',
-      case_number: 'TX-2024-001238',
-      sale_date: '2024-08-19',
-    },
-    {
-      property_address: '2345 Maple Drive',
-      owner_name: 'Anderson, Patricia M.',
-      excess_funds_amount: 51000,
-      city: 'Frisco',
-      state: 'TX',
-      zip_code: '75034',
-      case_number: 'TX-2024-001239',
-      sale_date: '2024-08-20',
-    },
-    {
-      property_address: '6789 Elm Street',
-      owner_name: 'Garcia, Carlos R.',
-      excess_funds_amount: 18500,
-      city: 'Irving',
-      state: 'TX',
-      zip_code: '75061',
-      case_number: 'TX-2024-001240',
-      sale_date: '2024-08-21',
-    },
-    {
-      property_address: '1357 Cedar Lane',
-      owner_name: 'Thompson, Nancy L.',
-      excess_funds_amount: 67000,
-      city: 'Dallas',
-      state: 'TX',
-      zip_code: '75219',
-      case_number: 'TX-2024-001241',
-      sale_date: '2024-08-22',
-    },
-    {
-      property_address: '2468 Pine Road',
-      owner_name: 'Lee, James W.',
-      excess_funds_amount: 15000,
-      city: 'Garland',
-      state: 'TX',
-      zip_code: '75041',
-      case_number: 'TX-2024-001242',
-      sale_date: '2024-08-23',
-    },
-    {
-      property_address: '3579 Birch Blvd',
-      owner_name: 'Wilson, Emily S.',
-      excess_funds_amount: 42000,
-      city: 'Carrollton',
-      state: 'TX',
-      zip_code: '75006',
-      case_number: 'TX-2024-001243',
-      sale_date: '2024-08-24',
-    },
-  ];
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY;
+const GEMINI_MODEL = 'gemini-1.5-flash';
 
-  // Simulate parsing time
-  await new Promise(resolve => setTimeout(resolve, 1000));
+/**
+ * Parse PDF content using Gemini Vision API
+ */
+async function parsePDFWithGemini(base64Content: string, mimeType: string): Promise<ParsedLead[]> {
+  if (!GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY not configured');
+  }
 
-  // Return subset based on file size (simulating real parsing)
-  const fileSize = buffer.byteLength;
-  const leadCount = Math.min(mockLeads.length, Math.max(3, Math.floor(fileSize / 10000)));
+  const prompt = `You are a document parser specializing in Dallas County, Texas excess funds / surplus funds lists from tax sales and foreclosures.
 
-  return mockLeads.slice(0, leadCount);
+Analyze this PDF document and extract ALL property records you can find. For each record, extract:
+- property_address: The full street address of the property
+- owner_name: The owner's name (usually in "Last, First" format)
+- excess_funds_amount: The dollar amount of excess/surplus funds (number only, no $ or commas)
+- city: City name (default to "Dallas" if not specified)
+- state: State (default to "TX")
+- zip_code: ZIP code if available
+- case_number: Case number, cause number, or reference number if available
+- sale_date: Sale date if available (format: YYYY-MM-DD)
+
+Return ONLY a valid JSON array of objects with these fields. No markdown, no explanation, just the JSON array.
+If you cannot find any records, return an empty array: []
+
+Example output format:
+[{"property_address":"123 Main St","owner_name":"Smith, John","excess_funds_amount":45000,"city":"Dallas","state":"TX","zip_code":"75201","case_number":"TX-2024-001","sale_date":"2024-01-15"}]`;
+
+  const requestBody = {
+    contents: [
+      {
+        parts: [
+          { text: prompt },
+          {
+            inline_data: {
+              mime_type: mimeType,
+              data: base64Content,
+            },
+          },
+        ],
+      },
+    ],
+    generationConfig: {
+      temperature: 0.1,
+      maxOutputTokens: 8192,
+    },
+  };
+
+  const response = await fetch(
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_MODEL}:generateContent?key=${GEMINI_API_KEY}`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    }
+  );
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    console.error('Gemini API error:', response.status, errorText);
+    throw new Error(`Gemini API error: ${response.status}`);
+  }
+
+  const data: GeminiResponse = await response.json();
+
+  if (data.error) {
+    throw new Error(data.error.message);
+  }
+
+  const textContent = data.candidates?.[0]?.content?.parts?.[0]?.text;
+
+  if (!textContent) {
+    console.error('No text content in Gemini response');
+    return [];
+  }
+
+  // Clean up the response - remove markdown code blocks if present
+  let cleanedText = textContent.trim();
+  if (cleanedText.startsWith('```json')) {
+    cleanedText = cleanedText.slice(7);
+  }
+  if (cleanedText.startsWith('```')) {
+    cleanedText = cleanedText.slice(3);
+  }
+  if (cleanedText.endsWith('```')) {
+    cleanedText = cleanedText.slice(0, -3);
+  }
+  cleanedText = cleanedText.trim();
+
+  try {
+    const parsed = JSON.parse(cleanedText);
+
+    if (!Array.isArray(parsed)) {
+      console.error('Gemini response is not an array:', cleanedText);
+      return [];
+    }
+
+    // Validate and normalize each lead
+    return parsed.map((lead: Record<string, unknown>) => ({
+      property_address: String(lead.property_address || '').trim(),
+      owner_name: String(lead.owner_name || '').trim(),
+      excess_funds_amount: Number(lead.excess_funds_amount) || 0,
+      city: String(lead.city || 'Dallas').trim(),
+      state: String(lead.state || 'TX').trim(),
+      zip_code: lead.zip_code ? String(lead.zip_code).trim() : undefined,
+      case_number: lead.case_number ? String(lead.case_number).trim() : undefined,
+      sale_date: lead.sale_date ? String(lead.sale_date).trim() : undefined,
+    })).filter((lead: ParsedLead) =>
+      lead.property_address &&
+      lead.owner_name &&
+      lead.excess_funds_amount > 0
+    );
+  } catch (parseError) {
+    console.error('Failed to parse Gemini JSON response:', cleanedText);
+    throw new Error('Failed to parse document extraction results');
+  }
+}
+
+/**
+ * Fallback: Use N8N webhook for PDF parsing if Gemini fails
+ */
+async function parsePDFWithN8N(base64Content: string, fileName: string): Promise<ParsedLead[]> {
+  const response = await fetch('https://skooki.app.n8n.cloud/webhook/alex', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      files: [{
+        name: fileName,
+        type: 'application/pdf',
+        data: base64Content,
+      }],
+      source: 'pdf_parser_api',
+      parse_only: true,
+    }),
+  });
+
+  if (!response.ok) {
+    throw new Error('N8N parsing failed');
+  }
+
+  const data = await response.json();
+  return data.leads || [];
 }
 
 export async function POST(request: NextRequest) {
   try {
-    const formData = await request.formData();
-    const file = formData.get('file') as File;
+    const contentType = request.headers.get('content-type') || '';
 
-    if (!file) {
+    let base64Content: string;
+    let fileName = 'document.pdf';
+    let mimeType = 'application/pdf';
+
+    if (contentType.includes('multipart/form-data')) {
+      // Handle FormData upload
+      const formData = await request.formData();
+      const file = formData.get('file') as File;
+
+      if (!file) {
+        return NextResponse.json(
+          { error: 'No file provided' },
+          { status: 400 }
+        );
+      }
+
+      if (!file.name.toLowerCase().endsWith('.pdf')) {
+        return NextResponse.json(
+          { error: 'File must be a PDF' },
+          { status: 400 }
+        );
+      }
+
+      fileName = file.name;
+      mimeType = file.type || 'application/pdf';
+
+      const buffer = await file.arrayBuffer();
+      base64Content = Buffer.from(buffer).toString('base64');
+    } else if (contentType.includes('application/json')) {
+      // Handle JSON with base64 data
+      const body = await request.json();
+
+      if (!body.data) {
+        return NextResponse.json(
+          { error: 'No file data provided' },
+          { status: 400 }
+        );
+      }
+
+      base64Content = body.data;
+      fileName = body.name || 'document.pdf';
+      mimeType = body.type || 'application/pdf';
+    } else {
       return NextResponse.json(
-        { error: 'No file provided' },
+        { error: 'Unsupported content type' },
         { status: 400 }
       );
     }
 
-    if (!file.name.endsWith('.pdf')) {
-      return NextResponse.json(
-        { error: 'File must be a PDF' },
-        { status: 400 }
-      );
+    let leads: ParsedLead[];
+
+    // Try Gemini first, fallback to N8N
+    if (GEMINI_API_KEY) {
+      try {
+        leads = await parsePDFWithGemini(base64Content, mimeType);
+        console.log(`Gemini extracted ${leads.length} leads from ${fileName}`);
+      } catch (geminiError) {
+        console.error('Gemini parsing failed, trying N8N fallback:', geminiError);
+        leads = await parsePDFWithN8N(base64Content, fileName);
+      }
+    } else {
+      // No Gemini key, use N8N directly
+      leads = await parsePDFWithN8N(base64Content, fileName);
     }
 
-    // Read file content
-    const buffer = await file.arrayBuffer();
-
-    // Parse PDF
-    const leads = await parsePDFContent(buffer);
-
-    return NextResponse.json(leads);
+    return NextResponse.json({
+      success: true,
+      leads,
+      count: leads.length,
+      source: GEMINI_API_KEY ? 'gemini' : 'n8n',
+    });
   } catch (error) {
     console.error('PDF parse error:', error);
+    const message = error instanceof Error ? error.message : 'Failed to parse PDF';
     return NextResponse.json(
-      { error: 'Failed to parse PDF' },
+      { error: message, success: false },
       { status: 500 }
     );
   }
