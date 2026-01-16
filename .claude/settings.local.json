@@ -13,7 +13,11 @@
       "Bash(npx vercel --prod)",
       "Bash(npx vercel --prod --yes)",
       "Bash(npm update:*)",
-      "Bash(npm install:*)"
+      "Bash(npm install:*)",
+      "Bash(npx tsc:*)",
+      "Bash(curl:*)",
+      "Bash(npx shadcn@latest add card radio-group -y)",
+      "Bash(git pull:*)"
     ],
     "deny": [],
     "ask": []

@@ -18,6 +18,7 @@ export default function BulkActionsBar({
 }: BulkActionsBarProps) {
     const [sending, setSending] = useState(false);
     const [updating, setUpdating] = useState(false);
+    const [blasting, setBlasting] = useState(false);
     const [showStatusMenu, setShowStatusMenu] = useState(false);
     const { addToast } = useToast();
 
@@ -47,6 +48,33 @@ export default function BulkActionsBar({
             addToast('error', 'Network error');
         }
         setSending(false);
+    };
+
+    // SAM Initial Outreach via N8N webhook
+    const handleSamBlast = async () => {
+        if (!confirm(`Launch SAM outreach for ${selectedIds.length} leads? This will initiate automated contact sequences.`)) return;
+
+        setBlasting(true);
+        try {
+            const res = await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ lead_ids: selectedIds })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                addToast('success', `SAM outreach launched for ${selectedIds.length} leads`);
+                onSuccess();
+                onClear();
+            } else {
+                addToast('error', data.error || 'SAM outreach failed');
+            }
+        } catch {
+            addToast('error', 'Network error - SAM outreach failed');
+        }
+        setBlasting(false);
     };
 
     const handleBulkStatus = async (status: string) => {
@@ -143,6 +171,21 @@ export default function BulkActionsBar({
                 >
                     {sending ? <span className="animate-spin h-3 w-3 border-2 border-white/50 border-t-white rounded-full" /> : '💬'}
                     {sending ? 'Sending...' : 'SMS All'}
+                </button>
+
+                {/* SAM Blast Button */}
+                <button
+                    onClick={handleSamBlast}
+                    disabled={blasting}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-full font-bold text-xs transition-all
+            ${blasting
+                            ? 'bg-zinc-700 text-zinc-400 cursor-not-allowed'
+                            : 'bg-gradient-to-r from-orange-600 to-red-500 hover:from-orange-500 hover:to-red-400 text-white shadow-lg'
+                        }
+          `}
+                >
+                    {blasting ? <span className="animate-spin h-3 w-3 border-2 border-white/50 border-t-white rounded-full" /> : '🚀'}
+                    {blasting ? 'Launching...' : 'SAM Blast'}
                 </button>
 
                 {/* Status Dropdown */}
