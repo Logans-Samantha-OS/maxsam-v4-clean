@@ -192,21 +192,3 @@ ${excess > 0 ? `💵 Excess Funds: $${excess.toLocaleString()}` : ''}
     </div>
   );
 }
-```
-
----
-
-### **6. Save the file:**
-- Press: **Ctrl + S**
-
----
-
-## 📸 **TAKE A SCREENSHOT SHOWING:**
-
-The left sidebar should show:
-```
-app
-  └─ deals
-      └─ [id]
-          └─ blast          ← NEW FOLDER
-              └─ page.tsx   ← NEW FILE

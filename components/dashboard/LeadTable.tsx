@@ -23,6 +23,7 @@ export default function LeadTable({
     const [editingField, setEditingField] = useState<{ id: string; field: string } | null>(null);
     const [editValue, setEditValue] = useState('');
     const [sendingId, setSendingId] = useState<string | null>(null);
+    const [skipTracingId, setSkipTracingId] = useState<string | null>(null);
     const { addToast } = useToast();
 
     const toggleExpand = (id: string) => {
@@ -104,6 +105,45 @@ export default function LeadTable({
         }
 
         setSendingId(null);
+    };
+
+    // Skip Trace via N8N webhook
+    const skipTrace = async (lead: Lead) => {
+        setSkipTracingId(lead.id);
+
+        try {
+            const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lead_id: lead.id,
+                    owner_name: lead.owner_name,
+                    property_address: lead.property_address,
+                    city: lead.city,
+                    state: lead.state || 'TX',
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                addToast('success', `Skip trace started for ${lead.owner_name}`);
+                // If webhook returns phone data immediately, update the lead
+                if (data.phone_1 || data.phone_2) {
+                    onLeadUpdate({
+                        ...lead,
+                        phone_1: data.phone_1 || lead.phone_1,
+                        phone_2: data.phone_2 || lead.phone_2,
+                    });
+                }
+            } else {
+                addToast('error', data.error || 'Skip trace failed');
+            }
+        } catch {
+            addToast('error', 'Network error - skip trace failed');
+        }
+
+        setSkipTracingId(null);
     };
 
     // Render editable cell
@@ -315,6 +355,17 @@ export default function LeadTable({
                                                             <div className="flex flex-col gap-2">
                                                                 <a href={`tel:${lead.phone_1}`} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded text-xs flex items-center gap-2">📞 {formatPhone(lead.phone_1)}</a>
                                                                 {lead.phone_2 && <a href={`tel:${lead.phone_2}`} className="px-3 py-2 bg-zinc-800 hover:bg-zinc-700 rounded text-xs flex items-center gap-2">📞 {formatPhone(lead.phone_2)}</a>}
+                                                                <button
+                                                                    onClick={() => skipTrace(lead)}
+                                                                    disabled={skipTracingId === lead.id}
+                                                                    className={`px-3 py-2 rounded text-xs flex items-center justify-center gap-2 transition-colors ${
+                                                                        skipTracingId === lead.id
+                                                                            ? 'bg-yellow-900/30 text-yellow-400 border border-yellow-500/30 animate-pulse'
+                                                                            : 'bg-orange-900/30 hover:bg-orange-900/50 text-orange-400 border border-orange-500/30'
+                                                                    }`}
+                                                                >
+                                                                    {skipTracingId === lead.id ? '⏳ Tracing...' : '🔍 Skip Trace'}
+                                                                </button>
                                                                 <a href={`/contracts?leadId=${lead.id}`} className="px-3 py-2 bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-500/30 rounded text-xs text-center">📄 Generate Contract</a>
                                                             </div>
                                                         </div>
