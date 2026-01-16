@@ -1,0 +1,458 @@
+{
+  "name": "MaxSam Golden Lead Execution Pipeline",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "minutes",
+              "minutesInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "poll-trigger",
+      "name": "Poll Every Minute",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        100,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM get_unprocessed_golden_events(10);",
+        "options": {}
+      },
+      "id": "fetch-events",
+      "name": "Fetch Unprocessed Events",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        300,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-has-events",
+              "leftValue": "={{ $json.event_id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-events-exist",
+      "name": "Has Events?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        500,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-event-type",
+              "leftValue": "={{ $json.event_type }}",
+              "rightValue": "declared",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-declaration-event",
+      "name": "Is Declaration?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        700,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"🚨 <b>GOLDEN LEAD DECLARED</b>\\n\\n<b>Name:</b> {{ $json.event_data.owner_name }}\\n<b>Jurisdiction:</b> {{ $json.event_data.jurisdiction }}\\n\\n💰 <b>Excess Funds Available:</b>\\n${{ $json.event_data.excess_funds_amount?.toLocaleString() || 'N/A' }}{{ $json.event_data.excess_funds_expiration ? ' (expires ' + $json.event_data.excess_funds_expiration + ')' : '' }}\\n\\n🏠 <b>Property:</b>\\n{{ $json.event_data.property_address || 'Address on file' }}{{ $json.event_data.property_city ? ', ' + $json.event_data.property_city : '' }}\\n{{ $json.event_data.loan_balance ? 'Loan balance: $' + $json.event_data.loan_balance.toLocaleString() : '' }}\\n\\n📊 <b>Leverage Profile:</b>\\n• Strategy: {{ $json.event_data.deal_type.replace('_', ' ').charAt(0).toUpperCase() + $json.event_data.deal_type.replace('_', ' ').slice(1) }}\\n• Priority score: {{ $json.event_data.priority_score }}/100\\n• Est. upside: ~${{ $json.event_data.estimated_total_upside?.toLocaleString() || 'TBD' }}\\n\\n🧠 <b>Decision Rationale:</b>\\n{{ $json.event_data.declaration_reason }}\\n\\n⚙️ <b>System:</b>\\nDeclared by: {{ $json.event_data.declared_by }}\\nStatus: Locked & ready for outreach\",\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {}
+      },
+      "id": "send-telegram-alert",
+      "name": "Send Telegram Alert",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        900,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM update_golden_lead_status('{{ $json.golden_lead_id }}'::uuid, 'telegram_sent', 'n8n_workflow');",
+        "options": {}
+      },
+      "id": "update-status-telegram-sent",
+      "name": "Update Status: Telegram Sent",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1100,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT is_within_sam_hours() as within_hours;",
+        "options": {}
+      },
+      "id": "check-sam-hours",
+      "name": "Check Sam Hours",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1300,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-within-hours",
+              "leftValue": "={{ $json.within_hours }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-within-sam-hours",
+      "name": "Within Sam Hours?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT * FROM create_sam_call_task('{{ $('Update Status: Telegram Sent').item.json.golden_lead_id || $('Send Telegram Alert').first().json.golden_lead_id }}'::uuid);",
+        "options": {}
+      },
+      "id": "create-sam-call-task",
+      "name": "Create Sam Call Task",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1700,
+        0
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT mark_event_processed('{{ $('Is Declaration?').item.json.event_id }}'::uuid, 'n8n_golden_lead_workflow', NULL);",
+        "options": {}
+      },
+      "id": "mark-event-processed-success",
+      "name": "Mark Event Processed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        1900,
+        100
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=SELECT mark_event_processed('{{ $json.event_id }}'::uuid, 'n8n_golden_lead_workflow', 'Non-declaration event processed');",
+        "options": {}
+      },
+      "id": "mark-other-event-processed",
+      "name": "Mark Other Event Processed",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [
+        900,
+        300
+      ],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "no-events-noop",
+      "name": "No Events (No-Op)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        700,
+        400
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "outside-hours-noop",
+      "name": "Outside Hours (Queued for Later)",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        1700,
+        200
+      ]
+    }
+  ],
+  "connections": {
+    "Poll Every Minute": {
+      "main": [
+        [
+          {
+            "node": "Fetch Unprocessed Events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Unprocessed Events": {
+      "main": [
+        [
+          {
+            "node": "Has Events?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Events?": {
+      "main": [
+        [
+          {
+            "node": "Is Declaration?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Events (No-Op)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Declaration?": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Alert",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Mark Other Event Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Telegram Alert": {
+      "main": [
+        [
+          {
+            "node": "Update Status: Telegram Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status: Telegram Sent": {
+      "main": [
+        [
+          {
+            "node": "Check Sam Hours",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Sam Hours": {
+      "main": [
+        [
+          {
+            "node": "Within Sam Hours?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Within Sam Hours?": {
+      "main": [
+        [
+          {
+            "node": "Create Sam Call Task",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Outside Hours (Queued for Later)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Sam Call Task": {
+      "main": [
+        [
+          {
+            "node": "Mark Event Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outside Hours (Queued for Later)": {
+      "main": [
+        [
+          {
+            "node": "Mark Event Processed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "maxsam",
+      "id": "maxsam-tag"
+    },
+    {
+      "name": "golden-lead",
+      "id": "golden-lead-tag"
+    },
+    {
+      "name": "production",
+      "id": "production-tag"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-15T00:00:00.000Z",
+  "versionId": "1.0.0",
+  "meta": {
+    "templateCredsSetupCompleted": false,
+    "instanceId": "maxsam-v4"
+  }
+}
