@@ -24,6 +24,7 @@ export default function LeadTable({
     const [editValue, setEditValue] = useState('');
     const [sendingId, setSendingId] = useState<string | null>(null);
     const [skipTracingId, setSkipTracingId] = useState<string | null>(null);
+    const [scoringId, setScoringId] = useState<string | null>(null);
     const { addToast } = useToast();
 
     const toggleExpand = (id: string) => {
@@ -144,6 +145,55 @@ export default function LeadTable({
         }
 
         setSkipTracingId(null);
+    };
+
+    // Eleanor Score via N8N webhook
+    const scoreWithEleanor = async (lead: Lead) => {
+        setScoringId(lead.id);
+
+        try {
+            const res = await fetch('https://skooki.app.n8n.cloud/webhook/eleanor-score', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    lead_id: lead.id,
+                    owner_name: lead.owner_name,
+                    property_address: lead.property_address,
+                    city: lead.city,
+                    state: lead.state || 'TX',
+                    excess_funds_amount: lead.excess_funds_amount,
+                    phone_1: lead.phone_1,
+                    phone_2: lead.phone_2,
+                    estimated_equity: lead.estimated_equity,
+                    deal_type: lead.deal_type,
+                })
+            });
+
+            const data = await res.json();
+
+            if (res.ok) {
+                const newScore = data.eleanor_score || data.score;
+                const newGrade = data.deal_grade || data.grade;
+
+                addToast('success', `Eleanor scored ${lead.owner_name}: ${newScore} (${newGrade})`);
+
+                // Update lead with new score
+                if (newScore !== undefined) {
+                    onLeadUpdate({
+                        ...lead,
+                        eleanor_score: newScore,
+                        deal_grade: newGrade || lead.deal_grade,
+                        contact_priority: data.contact_priority || lead.contact_priority,
+                    });
+                }
+            } else {
+                addToast('error', data.error || 'Eleanor scoring failed');
+            }
+        } catch {
+            addToast('error', 'Network error - Eleanor scoring failed');
+        }
+
+        setScoringId(null);
     };
 
     // Render editable cell
@@ -365,6 +415,17 @@ export default function LeadTable({
                                                                     }`}
                                                                 >
                                                                     {skipTracingId === lead.id ? '⏳ Tracing...' : '🔍 Skip Trace'}
+                                                                </button>
+                                                                <button
+                                                                    onClick={() => scoreWithEleanor(lead)}
+                                                                    disabled={scoringId === lead.id}
+                                                                    className={`px-3 py-2 rounded text-xs flex items-center justify-center gap-2 transition-colors ${
+                                                                        scoringId === lead.id
+                                                                            ? 'bg-blue-900/30 text-blue-400 border border-blue-500/30 animate-pulse'
+                                                                            : 'bg-cyan-900/30 hover:bg-cyan-900/50 text-cyan-400 border border-cyan-500/30'
+                                                                    }`}
+                                                                >
+                                                                    {scoringId === lead.id ? '⏳ Scoring...' : '🧠 Eleanor Score'}
                                                                 </button>
                                                                 <a href={`/contracts?leadId=${lead.id}`} className="px-3 py-2 bg-purple-900/30 hover:bg-purple-900/50 text-purple-400 border border-purple-500/30 rounded text-xs text-center">📄 Generate Contract</a>
                                                             </div>
