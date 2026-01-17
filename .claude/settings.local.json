@@ -20,7 +20,9 @@
       "Bash(git pull:*)",
       "Bash(claude /plugin list:*)",
       "Skill(ralph-loop:ralph-loop)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_close"
     ],
     "deny": [],
     "ask": []
