@@ -1,232 +1,208 @@
+'use client';
+
+import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+
+export type LeadStatus =
+  | 'new'
+  | 'contacted'
+  | 'contract'
+  | 'closed'
+  | 'do_not_contact'
+  | 'opted_out';
 
 interface Lead {
   id: string;
-  case_number?: string;
   owner_name: string;
   property_address?: string;
-  property_city?: string;
   source_county?: string;
   phone_1?: string;
   phone_2?: string;
   excess_amount: number;
-  status: 'new' | 'contacted' | 'contract' | 'closed' | 'do_not_contact' | 'opted_out';
-  priority: 'low' | 'medium' | 'high' | 'critical';
-  expiration_date?: string;
-  golden_lead: boolean;
-  eleanor_score?: number;
+  status: LeadStatus;
+  notes?: string;
+  golden_lead?: boolean;
   created_at: string;
   updated_at: string;
-  last_contacted_at?: string;
-  first_contacted_at?: string;
-  contact_count?: number;
 }
 
 interface LeadCardProps {
   lead: Lead;
-  variant?: 'dashboard' | 'sellers' | 'compact';
-  onStatusChange?: (leadId: string, newStatus: string) => void;
-  onContact?: (leadId: string) => void;
+  onStatusChange?: (leadId: string, status: LeadStatus) => void;
 }
 
-export default function LeadCard({ lead, variant = 'sellers', onStatusChange, onContact }: LeadCardProps) {
+export default function LeadCard({ lead, onStatusChange }: LeadCardProps) {
   const router = useRouter();
 
-  const formatCurrency = (amount: number) => {
-    return new Intl.NumberFormat('en-US', {
+  // UI state
+  const [expanded, setExpanded] = useState(false);
+  const [animating, setAnimating] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  // Keyboard focus
+  const cardRef = useRef<HTMLDivElement>(null);
+
+  const phone = lead.phone_1 || lead.phone_2;
+
+  const formatCurrency = (n: number) =>
+    new Intl.NumberFormat('en-US', {
       style: 'currency',
-      currency: 'USD'
-    }).format(amount);
-  };
+      currency: 'USD',
+    }).format(n);
 
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'new': return 'bg-gray-500/20 text-gray-400 border-gray-500/30';
-      case 'contacted': return 'bg-blue-500/20 text-blue-400 border-blue-500/30';
-      case 'contract': return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-      case 'closed': return 'bg-green-500/20 text-green-400 border-green-500/30';
-      default: return 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30';
+  // Persist status
+  const updateStatus = async (status: LeadStatus) => {
+    if (status === lead.status) return;
+
+    setSaving(true);
+
+    try {
+      await fetch('/api/leads/status', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ leadId: lead.id, status }),
+      });
+
+      onStatusChange?.(lead.id, status);
+    } finally {
+      setSaving(false);
     }
   };
 
-  const getPriorityColor = (priority: string) => {
-    switch (priority) {
-      case 'critical': return 'bg-red-500/20 text-red-400 border-red-500/30';
-      case 'high': return 'bg-orange-500/20 text-orange-400 border-orange-500/30';
-      case 'medium': return 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30';
-      default: return 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30';
-    }
-  };
+  // Keyboard shortcuts (operator power)
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (document.activeElement !== cardRef.current) return;
 
-  const handleCall = () => {
-    if (lead.phone_1 || lead.phone_2) {
-      const phone = lead.phone_1 || lead.phone_2;
-      window.open(`tel:${phone}`);
-    } else {
-      alert('No phone number available');
-    }
+      if (e.key === 'e') setExpanded((v) => !v);
+      if (e.key === 'c' && phone) window.open(`tel:${phone}`);
+      if (e.key === 's' && phone) handleSMS();
+      if (e.key === 'k') handleContract();
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [phone]);
+
+  const handleExpandToggle = () => {
+    setAnimating(true);
+    setExpanded((v) => !v);
+    setTimeout(() => setAnimating(false), 200);
   };
 
   const handleSMS = () => {
-    if (lead.phone_1 || lead.phone_2) {
-      // Trigger SMS via API
-      fetch('/api/sms/send', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: lead.id,
-          message: `Hello ${lead.owner_name?.split(' ')[0]}, I found your excess funds claim and wanted to reach out about helping you recover your money.`,
-          template: 'initial_outreach'
-        })
-      }).then(response => {
-        if (response.ok) {
-          alert('SMS sent successfully!');
-          // Update contact count
-          if (onContact) onContact(lead.id);
-        } else {
-          alert('Failed to send SMS');
-        }
-      }).catch(error => {
-        console.error('SMS error:', error);
-        alert('Error sending SMS');
-      });
-    } else {
-      alert('No phone number available');
-    }
+    fetch('/api/sms/send', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ leadId: lead.id }),
+    });
   };
 
   const handleContract = () => {
     router.push(`/contracts/new?lead_id=${lead.id}`);
   };
 
-  const handleViewLead = () => {
-    router.push(`/sellers?lead=${lead.id}`);
-  };
-
-  const isCompact = variant === 'compact';
-  const isDashboard = variant === 'dashboard';
-
   return (
-    <div className={`pharaoh-card hover:border-gold/50 transition-all duration-300 ${
-      lead.golden_lead ? 'ring-2 ring-yellow-500/50 shadow-lg shadow-yellow-500/20' : ''
-    } ${isCompact ? 'p-4' : 'p-6'}`}>
-      {/* Header */}
-      <div className="flex justify-between items-start mb-4">
-        <div className="flex-1">
-          <h3 className={`text-lg font-bold text-white mb-1 ${isDashboard ? 'text-xl' : ''}`}>
-            {lead.property_address || lead.case_number || 'Unknown Property'}
+    <div
+      ref={cardRef}
+      tabIndex={0}
+      className={`rounded-xl border bg-zinc-900 p-4 space-y-3 transition
+        focus:outline-none focus:ring-2 focus:ring-zinc-600
+        ${lead.golden_lead ? 'border-yellow-500/60 ring-1 ring-yellow-500/40' : 'border-zinc-800'}
+      `}
+    >
+      {/* HEADER */}
+      <div className="flex justify-between items-start gap-3">
+        <div>
+          <h3 className="text-white font-semibold leading-tight">
+            {lead.property_address || lead.source_county || 'Unknown Property'}
           </h3>
-          <div className="flex items-center gap-2">
-            {lead.golden_lead && (
-              <span className="text-yellow-500 text-xl">⭐</span>
-            )}
-            <span className={`px-2 py-1 rounded-full text-xs font-bold ${getStatusColor(lead.status)}`}>
-              {lead.status || 'New'}
-            </span>
-          </div>
+          <p className="text-sm text-zinc-400">{lead.owner_name}</p>
         </div>
-        {!isDashboard && (
-          <div className="text-right">
-            <span className={`text-xs font-bold ${getPriorityColor(lead.priority)}`}>
-              {lead.priority?.toUpperCase() || 'LOW'}
-            </span>
-          </div>
-        )}
+
+        {/* STATUS — ALWAYS VISIBLE */}
+        <div className="flex items-center gap-2">
+          <select
+            value={lead.status}
+            disabled={saving}
+            onChange={(e) => updateStatus(e.target.value as LeadStatus)}
+            className={`text-xs rounded-md px-2 py-1 transition
+              ${
+                saving
+                  ? 'bg-zinc-700 border border-zinc-600 text-zinc-400 animate-pulse'
+                  : 'bg-zinc-800 border border-zinc-700 text-white hover:border-zinc-500'
+              }
+            `}
+          >
+            <option value="new">NEW</option>
+            <option value="contacted">CONTACTED</option>
+            <option value="contract">CONTRACT</option>
+            <option value="closed">CLOSED</option>
+            <option value="do_not_contact">DO NOT CONTACT</option>
+            <option value="opted_out">OPTED OUT</option>
+          </select>
+
+          {saving && <span className="text-xs text-zinc-500">Saving…</span>}
+        </div>
       </div>
 
-      {/* Content based on variant */}
-      {isDashboard ? (
-        <div className="grid grid-cols-2 gap-4 mb-4">
-          <div>
-            <span className="text-zinc-400 text-sm">Excess Amount</span>
-            <div className="text-2xl font-bold text-gold">
-              {formatCurrency(lead.excess_amount || 0)}
-            </div>
+      {/* SUMMARY */}
+      <div className="flex justify-between items-center">
+        <div className="text-green-400 font-bold">
+          {formatCurrency(lead.excess_amount)}
+        </div>
+
+        <button
+          onClick={handleExpandToggle}
+          className="text-xs text-zinc-400 hover:text-white"
+        >
+          {expanded ? 'Collapse' : 'Expand'}
+        </button>
+      </div>
+
+      {/* EXPANDED */}
+      <div
+        className={`overflow-hidden transition-all duration-200 ease-out
+          ${expanded ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'}
+          ${animating ? 'pointer-events-none' : ''}
+        `}
+      >
+        <div className="pt-3 border-t border-zinc-800 space-y-3">
+          {/* CONTACT */}
+          <div className="flex gap-2">
+            <button
+              disabled={!phone}
+              onClick={() => window.open(`tel:${phone}`)}
+              className="px-3 py-1 text-xs rounded bg-cyan-700 text-white disabled:opacity-40"
+            >
+              Call
+            </button>
+
+            <button
+              disabled={!phone}
+              onClick={handleSMS}
+              className="px-3 py-1 text-xs rounded bg-blue-700 text-white disabled:opacity-40"
+            >
+              SMS
+            </button>
+
+            <button
+              onClick={handleContract}
+              className="px-3 py-1 text-xs rounded bg-purple-700 text-white"
+            >
+              Contract
+            </button>
           </div>
+
+          {/* NOTES */}
           <div>
-            <span className="text-zinc-400 text-sm">Your Fee (25%)</span>
-            <div className="text-2xl font-bold text-green-400">
-              {formatCurrency((lead.excess_amount || 0) * 0.25)}
+            <label className="text-xs text-zinc-400">Notes</label>
+            <div className="mt-1 text-sm text-zinc-200">
+              {lead.notes || 'No notes yet'}
             </div>
           </div>
         </div>
-      ) : (
-        <>
-          {/* Contact Info */}
-          <div className="mb-4">
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-zinc-400 text-sm">Owner</span>
-              <span className="text-white font-medium">{lead.owner_name?.split(' ')[0]}</span>
-            </div>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-zinc-400 text-sm">Location</span>
-              <span className="text-white font-medium">
-                {lead.property_address || `${lead.source_county}, TX`}
-              </span>
-            </div>
-            <div className="flex justify-between items-center mb-2">
-              <span className="text-zinc-400 text-sm">Phone</span>
-              <span className="text-white font-medium">
-                {lead.phone_1 || lead.phone_2 || 'No phone'}
-              </span>
-            </div>
-          </div>
-
-          {/* Expiration Badge */}
-          {lead.expiration_date && (
-            <div className="mb-4">
-              <span className="text-zinc-400 text-sm">Expires</span>
-              <div className={`px-2 py-1 rounded-full text-xs font-bold ${
-                new Date(lead.expiration_date) <= new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
-                  ? 'bg-red-500 text-white animate-pulse'
-                  : new Date(lead.expiration_date) <= new Date(Date.now() + 90 * 24 * 60 * 60 * 1000)
-                  ? 'bg-orange-500 text-white'
-                  : 'bg-green-500 text-white'
-              }`}>
-                {new Date(lead.expiration_date).toLocaleDateString()}
-              </div>
-            </div>
-          )}
-
-          {/* Action Buttons */}
-          <div className="grid grid-cols-3 gap-2 mb-4">
-            <button
-              onClick={handleCall}
-              className={`px-3 py-2 rounded-lg text-sm font-medium text-center transition-colors ${
-                lead.phone_1 || lead.phone_2
-                  ? 'bg-cyan-600 hover:bg-cyan-700 text-white'
-                  : 'bg-zinc-800 text-zinc-500 cursor-not-allowed'
-              }`}
-              disabled={!lead.phone_1 && !lead.phone_2}
-            >
-              📞 Call
-            </button>
-            <button
-              onClick={handleSMS}
-              className="px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-sm font-medium transition-colors"
-              disabled={!lead.phone_1 && !lead.phone_2}
-            >
-              💬 SMS
-            </button>
-            <button
-              onClick={handleContract}
-              className="px-3 py-2 bg-purple-600 hover:bg-purple-700 text-white rounded-lg text-sm font-medium transition-colors"
-            >
-              📄 Contract
-            </button>
-          </div>
-
-          {/* Last Contact */}
-          <div className="pt-3 border-t border-zinc-800">
-            <div className="flex justify-between items-center">
-              <span className="text-zinc-400 text-xs">Last Contact</span>
-              <span className="text-zinc-400 text-sm">
-                {new Date(lead.last_contacted_at || lead.created_at).toLocaleDateString()}
-              </span>
-            </div>
-          </div>
-        </>
-      )}
+      </div>
     </div>
   );
 }

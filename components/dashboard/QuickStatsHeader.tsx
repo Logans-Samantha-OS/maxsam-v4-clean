@@ -1,34 +1,50 @@
-type LeadLike = {
-  status?: string | null
-  phone_1?: string | null
-  phone_2?: string | null
+'use client'
+
+import { useEffect, useState } from 'react'
+import { fetchDashboardStats } from '@/lib/dashboard/stats'
+
+type DashboardStats = {
+  readyToBlast: number
+  pendingReply: number
+  hotResponses: number
+  activityEvents: number
 }
 
-type QuickStatsHeaderProps = {
-  leads?: LeadLike[]
-}
+export default function QuickStatsHeader() {
+  const [stats, setStats] = useState<DashboardStats>({
+    readyToBlast: 0,
+    pendingReply: 0,
+    hotResponses: 0,
+    activityEvents: 0,
+  })
 
-export default function QuickStatsHeader({ leads = [] }: QuickStatsHeaderProps) {
-  const safeLeads = Array.isArray(leads) ? leads : []
+  useEffect(() => {
+    // initial fetch
+    fetchDashboardStats().then(setStats)
 
-  const readyToBlast = safeLeads.filter(
-    (l) => ((l?.status ?? "new") === "new") && (l?.phone_1 || l?.phone_2)
-  ).length
+    // poll every 5 seconds
+    const interval = setInterval(() => {
+      fetchDashboardStats().then(setStats)
+    }, 5000)
 
-  const awaitingResponse = safeLeads.filter((l) => l?.status === "contacted").length
-  const hotResponses = safeLeads.filter((l) => l?.status === "qualified").length
-  const agreementsSent = safeLeads.filter((l) => l?.status === "contract_sent").length
+    return () => clearInterval(interval)
+  }, [])
 
   return (
-    <section>
-      <h2 style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>Quick Stats</h2>
-      <pre style={{ margin: 0 }}>
-        {JSON.stringify(
-          { readyToBlast, awaitingResponse, hotResponses, agreementsSent },
-          null,
-          2
-        )}
-      </pre>
-    </section>
+    <div className="grid grid-cols-4 gap-4">
+      <Stat label="Ready to Blast" value={stats.readyToBlast} />
+      <Stat label="Pending Reply" value={stats.pendingReply} />
+      <Stat label="Hot Responses" value={stats.hotResponses} />
+      <Stat label="Activity Events" value={stats.activityEvents} />
+    </div>
+  )
+}
+
+function Stat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-xl bg-zinc-900 p-4">
+      <div className="text-sm text-zinc-400">{label}</div>
+      <div className="text-2xl font-bold text-white">{value}</div>
+    </div>
   )
 }
