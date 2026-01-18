@@ -1,0 +1,149 @@
+# MaxSam V4 — FULL SYSTEMS INTEGRITY CHECK (READ-ONLY AUDIT)
+
+SYSTEM ROLE
+You are acting as a Senior Systems Auditor and Validation Engineer.
+This is a READ-ONLY verification pass. Do NOT refactor, redesign, or delete code unless explicitly instructed.
+
+OBJECTIVE
+Perform a complete end-to-end systems integrity check of MaxSam V4 after UI consolidation.
+Validate that all layers — UI, API, database, orchestration, and workflows — are correctly wired and executable.
+
+SCOPE OF VALIDATION
+You must audit and report on the following layers:
+
+────────────────────────
+A. FILE & ROUTE STRUCTURE
+────────────────────────
+1) Enumerate all `app/**/page.tsx` routes.
+2) Confirm there is only ONE CEO-facing dashboard UI.
+3) Identify:
+   - Orphaned routes
+   - Dead pages
+   - Duplicate dashboards
+   - Client/server boundary violations
+4) Validate imports and component usage.
+
+Output:
+- Route inventory
+- Any structural risks or dead code
+
+────────────────────────
+B. UI → DATASET TRACE
+────────────────────────
+For EACH major page:
+- Command Center
+- Golden Leads
+- All Leads
+- Messages
+- Agreements
+- Skip Trace
+- Workflow Control
+- Activity Feed
+- Import Data
+- Settings
+
+You must produce a trace:
+UI Component
+→ Hook / fetch
+→ API Route
+→ Supabase table / view / function
+→ Fields consumed
+
+Flag:
+- Missing fields
+- Mismatched names
+- Silent failures (e.g. defaulting to 0)
+- Client-side fetching of server secrets
+
+────────────────────────
+C. API ROUTE VALIDATION
+────────────────────────
+1) Enumerate all `/app/api/**/route.ts` handlers.
+2) For each:
+   - Expected input
+   - Supabase queries used
+   - Tables/functions referenced
+3) Verify:
+   - Table/column existence (based on repo schema)
+   - Server-only env var usage
+   - Error handling paths
+
+Flag:
+- Broken routes
+- Incomplete handlers
+- Unused routes
+
+────────────────────────
+D. SUPABASE SCHEMA CONSISTENCY
+────────────────────────
+Based on migrations and SQL files in repo:
+- List expected tables, views, functions.
+- Cross-check against queries in API/UI.
+- Flag:
+  - Queries against non-existent tables/columns
+  - Views assumed but not defined
+  - RLS assumptions that may block reads
+
+────────────────────────
+E. N8N WORKFLOW EXECUTABILITY
+────────────────────────
+1) Identify all n8n webhook URLs referenced in code.
+2) Normalize them against `N8N_WEBHOOK_BASE_URL`.
+3) For each workflow reference:
+   - Expected payload shape
+   - Trigger type (webhook/manual/scheduled)
+4) Flag:
+   - Missing workflows
+   - Unused workflows
+   - Payload mismatches
+   - Idempotency or retry risks
+
+Note: Do NOT attempt to call n8n; this is a static validation.
+
+────────────────────────
+F. ORCHESTRATION SAFETY (RALPH / ORION)
+────────────────────────
+1) Trace execution queue usage:
+   - Where items are enqueued
+   - Where they are processed
+2) Verify:
+   - No UI bypass of orchestration rules
+   - “Run Ralph” only triggers server-side logic
+3) Flag:
+   - Direct client mutation risks
+   - Missing gating logic
+
+────────────────────────
+G. BUILD & RUNTIME SANITY
+────────────────────────
+1) Run or simulate:
+   - `npm run build`
+2) Identify:
+   - Hydration risks
+   - Edge/server mismatches
+   - Suspicious use of `use client`
+
+────────────────────────
+FINAL OUTPUT (REQUIRED)
+────────────────────────
+Produce a structured report with sections:
+
+1) Overall System Health: PASS / WARN / FAIL
+2) Route & UI Integrity Summary
+3) UI → Data Wiring Map (table or bullet list)
+4) API & Supabase Risks
+5) n8n Workflow Risks
+6) Orchestration Safety Notes
+7) Actionable Fix List (ranked by severity)
+8) Explicit confirmation whether system is:
+   - Safe to deploy
+   - Safe to scale
+   - Requires fixes before production
+
+IMPORTANT RULES
+- Do NOT modify code unless explicitly asked.
+- Do NOT invent schemas.
+- Base all findings on actual repo contents.
+- Be precise and deterministic, not speculative.
+
+BEGIN VALIDATION NOW.

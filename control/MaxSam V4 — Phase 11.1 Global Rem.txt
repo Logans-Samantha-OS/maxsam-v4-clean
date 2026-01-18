@@ -1,0 +1,207 @@
+# MaxSam V4 — Phase 11.1 Global Remediation (Audit Closure)
+
+SYSTEM ROLE
+You are acting as the Lead Systems Engineer and Security Hardening Specialist for MaxSam V4.
+This task is a CONTROLLED REMEDIATION pass based strictly on an existing Systems Integrity Audit.
+You are authorized to MODIFY CODE to fix all findings listed below.
+Do NOT redesign UI/UX or introduce new features beyond what is required to close audit gaps.
+
+OBJECTIVE
+Remediate ALL critical, high, and medium findings from the MaxSam V4 Systems Integrity Audit.
+The end state must be:
+- Secure for headless / autonomous operation
+- Safe for public exposure of webhooks
+- Deterministic under load
+- Cleanly consolidated under the single CEO dashboard doctrine
+
+Use the audit as the source of truth. Do not speculate.
+
+────────────────────────
+GLOBAL RULES
+────────────────────────
+1) Fix issues in priority order: CRITICAL → HIGH → MEDIUM.
+2) Prefer minimal, explicit changes over abstractions.
+3) Preserve existing behavior unless it is unsafe.
+4) Every fix must be verifiable by re-running the audit.
+5) Do NOT remove working automation without replacing it with a safer equivalent.
+
+────────────────────────
+PHASE 1 — API SECURITY & AUTHENTICATION (CRITICAL)
+────────────────────────
+
+1. Protect ALL sensitive API routes:
+   - /api/ralph/*
+   - /api/cron/*
+   - /api/admin/*
+   - Any endpoint triggering automation
+
+Implement ONE of the following (choose simplest viable):
+- Shared API key via Authorization header
+- Vercel cron secret header validation
+- Middleware-based admin guard
+
+Ensure:
+- Requests without valid auth return 401/403
+- Secrets are server-only (never NEXT_PUBLIC)
+
+2. Webhook Signature Verification (MANDATORY)
+
+Implement signature verification for:
+- Twilio inbound SMS webhook
+- DocuSign Connect webhook
+- Stripe webhook
+
+Requirements:
+- Use official SDK verification methods
+- Reject invalid signatures with 400
+- Do NOT process payload before verification
+- Keep secrets in environment variables
+
+Update files:
+- app/api/twilio/inbound-sms/route.ts
+- app/api/docusign/webhook/route.ts
+- app/api/stripe/webhook/route.ts
+
+────────────────────────
+PHASE 2 — SUPABASE RLS HARDENING (CRITICAL)
+────────────────────────
+
+Enable RLS on:
+- maxsam_leads
+- communication_logs
+
+Add policies:
+- Read/write restricted to authenticated service roles
+- No anonymous or overly broad authenticated access
+
+Ensure:
+- Existing server-side operations continue to function
+- Client access is read-only where applicable
+
+Update or add migrations as needed.
+
+────────────────────────
+PHASE 3 — N8N & CONFIGURATION FIXES (HIGH)
+────────────────────────
+
+1. Remove ALL hardcoded webhook URLs.
+
+Specifically:
+- components/dashboard/BatchOutreachWidget.tsx
+
+Replace with:
+- process.env.N8N_SAM_OUTREACH_URL
+
+2. Create a .env.example file.
+
+Include ALL required variables discovered in audit:
+- Supabase
+- Twilio
+- Telegram
+- n8n
+- Stripe
+- DocuSign
+
+Document purpose of each variable inline as comments.
+
+────────────────────────
+PHASE 4 — ORCHESTRATION & HEADLESS SAFETY (HIGH)
+────────────────────────
+
+1. Fix missing RPC reference:
+- Replace get_next_queue_action with lease_next_task
+  OR
+- Add missing RPC in migration (choose simplest correct path)
+
+2. Add execution timeout to Ralph loop:
+- Prevent serverless timeout violations
+- Gracefully stop execution when time budget exceeded
+
+3. Add Emergency Stop API:
+- POST /api/admin/emergency-stop
+- Toggles database-level kill switches:
+  - ralph_enabled = false
+  - outreach_enabled = false
+  - autonomy_level = 0
+
+Protect this endpoint with admin auth.
+
+────────────────────────
+PHASE 5 — RATE LIMITING & BACKPRESSURE (HIGH)
+────────────────────────
+
+1. Add API rate limiting for:
+- /api/ralph/*
+- /api/cron/*
+- Webhook endpoints (basic protection)
+
+Use:
+- Vercel middleware
+- Or Upstash Redis (if already present)
+- Or simple in-memory limiter (acceptable initially)
+
+Ensure:
+- Legitimate automation is not blocked
+- Abuse is throttled
+
+────────────────────────
+PHASE 6 — ROUTE CLEANUP (MEDIUM)
+────────────────────────
+
+Remove or neutralize orphan/redundant pages:
+
+DELETE or REDIRECT:
+- /Executive
+- /admin/buyers
+- /conversations
+- /simulator
+- /testing
+- /test-buyers
+
+CONSOLIDATE:
+- /sellers → /dashboard/sellers
+- /analytics → /dashboard/analytics
+
+Ensure:
+- No broken imports
+- No broken links
+- Build still passes
+
+────────────────────────
+PHASE 7 — OBSERVABILITY BASELINE (MEDIUM)
+────────────────────────
+
+Improve failure visibility:
+- Replace silent catch blocks with explicit logging
+- Ensure critical automation failures write to activity_log
+- Preserve existing Telegram alerts
+
+Do NOT add third-party services unless trivial.
+
+────────────────────────
+FINAL VERIFICATION (REQUIRED)
+────────────────────────
+
+After remediation:
+1) Run:
+   - npm run build
+2) Confirm:
+   - No TypeScript errors
+   - No lint errors
+3) Re-run the Systems Integrity Audit mentally and confirm:
+   - API Security ≥ B
+   - Headless Readiness ≥ B
+   - Overall System Health = PASS or WARN (no FAIL)
+
+────────────────────────
+FINAL OUTPUT
+────────────────────────
+
+Provide:
+1) Summary of fixes applied by phase
+2) List of files modified
+3) Any remaining WARN items (if any) and justification
+4) Explicit statement:
+   “MaxSam V4 is now safe for headless, autonomous operation.”
+
+BEGIN REMEDIATION NOW.
