@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import QuickStatsHeader from '@/components/dashboard/QuickStatsHeader'
 import AnalyticsOverview from '@/components/dashboard/AnalyticsOverview'
+import ClassificationSummary from '@/components/dashboard/ClassificationSummary'
 import LeadTable from '@/components/dashboard/LeadTable'
 import FilterPanel from '@/components/dashboard/FilterPanel'
 import BulkActionsBar from '@/components/dashboard/BulkActionsBar'
@@ -150,6 +151,8 @@ export default function DashboardPage() {
       </div>
 
       <QuickStatsHeader leads={leads} />
+
+      <ClassificationSummary />
 
       <UploadZone />
 
