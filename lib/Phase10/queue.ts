@@ -1,11 +1,14 @@
 import { createClient } from '@supabase/supabase-js'
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+function getSupabase() {
+  return createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+}
 
 export async function fetchExecutionQueue(actorType: string) {
+  const supabase = getSupabase();
   return supabase
     .from('execution_queue')
     .select('*')
@@ -14,6 +17,7 @@ export async function fetchExecutionQueue(actorType: string) {
 }
 
 export async function fetchActivityFeed() {
+  const supabase = getSupabase();
   return supabase
     .from('activity_feed')
     .select('*')
@@ -22,6 +26,7 @@ export async function fetchActivityFeed() {
 }
 
 export async function fetchPendingEscalations() {
+  const supabase = getSupabase();
   return supabase
     .from('pending_escalations')
     .select('*')

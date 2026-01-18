@@ -7,10 +7,10 @@ export default function Activity() {
   const [events, setEvents] = useState<any[]>([])
 
   useEffect(() => {
-    fetchActivityFeed().then(setEvents)
+    fetchActivityFeed().then(({ data }) => setEvents(data || []))
 
     const interval = setInterval(() => {
-      fetchActivityFeed().then(setEvents)
+      fetchActivityFeed().then(({ data }) => setEvents(data || []))
     }, 3000)
 
     return () => clearInterval(interval)

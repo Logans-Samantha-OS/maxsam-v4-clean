@@ -150,7 +150,7 @@ export default function DashboardPage() {
         )}
       </div>
 
-      <QuickStatsHeader leads={leads} />
+      <QuickStatsHeader />
 
       <ClassificationSummary />
 

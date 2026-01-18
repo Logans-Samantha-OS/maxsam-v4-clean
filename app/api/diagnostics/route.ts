@@ -14,6 +14,36 @@
 import { NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 
+interface DiagnosticsResult {
+  timestamp: string;
+  environment: string | undefined;
+  supabase: {
+    url_host: string;
+    url_set: boolean;
+    anon_key_set: boolean;
+    service_key_set: boolean;
+  };
+  tables_queried: string[];
+  lead_counts: {
+    total: number;
+    by_status: Record<string, number>;
+    by_class: {
+      A: number;
+      B: number;
+      C: number;
+      unclassified: number;
+    };
+    with_phone: number;
+    with_excess_funds: number;
+  };
+  classification_status: {
+    backfill_complete: boolean;
+    last_backfill_at: string | null;
+    big_fish_threshold: number;
+  };
+  errors: string[];
+}
+
 export async function GET() {
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
   const supabaseKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
@@ -29,7 +59,7 @@ export async function GET() {
     redactedUrl = 'INVALID_URL';
   }
 
-  const diagnostics: Record<string, unknown> = {
+  const diagnostics: DiagnosticsResult = {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV,
     supabase: {
@@ -63,7 +93,7 @@ export async function GET() {
       last_backfill_at: null,
       big_fish_threshold: 75000,
     },
-    errors: [] as string[],
+    errors: [],
   };
 
   // If no Supabase URL, return early
@@ -83,7 +113,7 @@ export async function GET() {
     if (countError) {
       diagnostics.errors.push(`Lead count error: ${countError.message}`);
     } else {
-      (diagnostics.lead_counts as Record<string, unknown>).total = totalCount || 0;
+      diagnostics.lead_counts.total = totalCount || 0;
     }
 
     // Get counts by status
@@ -99,7 +129,7 @@ export async function GET() {
       for (const row of statusCounts) {
         byStatus[row.status] = (byStatus[row.status] || 0) + 1;
       }
-      (diagnostics.lead_counts as Record<string, unknown>).by_status = byStatus;
+      diagnostics.lead_counts.by_status = byStatus;
     }
 
     // Get counts by class
@@ -117,7 +147,7 @@ export async function GET() {
         else if (row.lead_class === 'C') classC++;
         else unclassified++;
       }
-      (diagnostics.lead_counts as Record<string, unknown>).by_class = {
+      diagnostics.lead_counts.by_class = {
         A: classA,
         B: classB,
         C: classC,
@@ -131,7 +161,7 @@ export async function GET() {
       .select('*', { count: 'exact', head: true })
       .not('phone', 'is', null);
 
-    (diagnostics.lead_counts as Record<string, unknown>).with_phone = phoneCount || 0;
+    diagnostics.lead_counts.with_phone = phoneCount || 0;
 
     // Get leads with excess funds > 0
     const { count: excessCount } = await supabase
@@ -139,7 +169,7 @@ export async function GET() {
       .select('*', { count: 'exact', head: true })
       .gt('excess_funds_amount', 0);
 
-    (diagnostics.lead_counts as Record<string, unknown>).with_excess_funds = excessCount || 0;
+    diagnostics.lead_counts.with_excess_funds = excessCount || 0;
 
     // Check backfill status
     const { data: configData } = await supabase
@@ -150,8 +180,8 @@ export async function GET() {
     if (configData) {
       for (const config of configData) {
         if (config.key === 'last_classification_backfill') {
-          (diagnostics.classification_status as Record<string, unknown>).last_backfill_at = config.value;
-          (diagnostics.classification_status as Record<string, unknown>).backfill_complete = !!config.value;
+          diagnostics.classification_status.last_backfill_at = config.value;
+          diagnostics.classification_status.backfill_complete = !!config.value;
         }
       }
     }

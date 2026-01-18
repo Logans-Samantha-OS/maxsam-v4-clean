@@ -168,7 +168,7 @@ export async function executeRollback(
       error: {
         code: 'AUDIT_WRITE_FAILED',
         message: 'Failed to write rollback audit record',
-        details: auditResult.error,
+        details: { nestedError: auditResult.error },
       },
     };
   }
