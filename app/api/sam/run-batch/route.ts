@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { runOutreachBatch, getOutreachStats } from '@/lib/sam-outreach';
 import { isTwilioConfigured } from '@/lib/twilio';
+import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
  * POST /api/sam/run-batch - Run Sam AI outreach batch
  */
 export async function POST(request: NextRequest) {
+  // GATE ENFORCEMENT - SAM OUTREACH
+  const blocked = await enforceGates({ agent: 'sam', gate: 'gate_sam_outreach' });
+  if (blocked) {
+    return NextResponse.json(createBlockedResponse(blocked), { status: 503 });
+  }
+
   try {
     if (!isTwilioConfigured()) {
       return NextResponse.json({

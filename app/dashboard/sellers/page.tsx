@@ -3,11 +3,6 @@
 import { useState, useEffect } from 'react';
 import { createClient } from '@supabase/supabase-js';
 
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL || '',
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ''
-);
-
 interface Lead {
   id: string;
   property_address: string;
@@ -16,25 +11,55 @@ interface Lead {
   eleanor_score: number;
 }
 
+function getSupabaseClient() {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const key = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
+
+  if (!url || !key) {
+    return null;
+  }
+
+  return createClient(url, key);
+}
+
 export default function SellersPage() {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     async function fetchLeads() {
-      const { data, error } = await supabase
-        .from('maxsam_leads')
-        .select('*')
-        .order('eleanor_score', { ascending: false });
-      
-      if (error) console.error('Error:', error);
-      else setLeads(data || []);
+      const supabase = getSupabaseClient();
+
+      if (!supabase) {
+        setError('Supabase not configured. Check environment variables.');
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const { data, error: fetchError } = await supabase
+          .from('maxsam_leads')
+          .select('*')
+          .order('eleanor_score', { ascending: false });
+
+        if (fetchError) {
+          setError(fetchError.message);
+        } else {
+          setLeads(data || []);
+        }
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unknown error');
+      }
+
       setLoading(false);
     }
     fetchLeads();
   }, []);
 
   if (loading) return <div className="p-8 text-white">Loading from database...</div>;
+
+  if (error) return <div className="p-8 text-red-400">Error: {error}</div>;
 
   return (
     <div className="p-8 bg-gray-900 min-h-screen text-white">

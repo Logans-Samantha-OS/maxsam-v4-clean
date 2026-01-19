@@ -1,11 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { calculateEleanorScore } from '@/lib/eleanor';
+import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
  * POST /api/eleanor/score - Score a single lead
  */
 export async function POST(request: NextRequest) {
+  // GATE ENFORCEMENT - ORION SCORING
+  const blocked = await enforceGates({ agent: 'orion', gate: 'gate_orion_scoring' });
+  if (blocked) {
+    return NextResponse.json(createBlockedResponse(blocked), { status: 503 });
+  }
+
   try {
     const body = await request.json();
     const { lead_id, lead_data } = body;
