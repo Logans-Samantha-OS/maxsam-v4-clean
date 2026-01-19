@@ -8,7 +8,7 @@ interface GoldenLead {
   id: string;
   owner_name: string;
   property_address: string;
-  excess_amount: number;
+  excess_funds_amount: number;
   buyer_match_count: number;
   eleanor_score: number;
   created_at: string;
@@ -23,10 +23,10 @@ export default function GoldenLeadsSpotlight() {
     async function fetchGoldenLeads() {
       try {
         const { data, error } = await supabase
-          .from('leads')
+          .from('maxsam_leads')
           .select('*')
-          .eq('golden_lead', true)
-          .order('excess_amount', { ascending: false })
+          .eq('is_golden_lead', true)
+          .order('excess_funds_amount', { ascending: false })
           .limit(5);
 
         if (error) throw error;
@@ -108,7 +108,7 @@ export default function GoldenLeadsSpotlight() {
             
             <div className="text-right">
               <div className="text-yellow-500 font-bold text-lg">
-                ${(lead.excess_amount || 0).toLocaleString()}
+                ${(lead.excess_funds_amount || 0).toLocaleString()}
               </div>
               <div className="text-zinc-400 text-sm">
                 {lead.buyer_match_count} buyers matched

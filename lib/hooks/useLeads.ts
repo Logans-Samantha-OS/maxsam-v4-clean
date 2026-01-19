@@ -10,11 +10,11 @@ export interface Lead {
   source_county?: string;
   phone_1?: string;
   phone_2?: string;
-  excess_amount: number;
+  excess_funds_amount: number;  // Fixed: was excess_amount
   status: 'new' | 'contacted' | 'contract' | 'closed' | 'do_not_contact' | 'opted_out';
   priority: 'low' | 'medium' | 'high' | 'critical';
   expiration_date?: string;
-  golden_lead: boolean;
+  is_golden_lead: boolean;  // Fixed: was golden_lead
   eleanor_score?: number;
   created_at: string;
   updated_at: string;
@@ -47,8 +47,9 @@ export function useLeads(filters?: LeadFilters) {
       setLoading(true);
       setError(null);
 
+      // Use maxsam_leads (canonical table)
       let query = supabase
-        .from('leads')
+        .from('maxsam_leads')
         .select('*')
         .eq('do_not_contact', false)
         .eq('opted_out', false);
@@ -57,67 +58,68 @@ export function useLeads(filters?: LeadFilters) {
       if (filters?.status && filters.status !== 'all') {
         query = query.eq('status', filters.status);
       }
-      
+
       if (filters?.priority && filters.priority !== 'all') {
         query = query.eq('priority', filters.priority);
       }
-      
+
       if (filters?.county && filters.county !== 'all') {
         query = query.eq('source_county', filters.county);
       }
-      
+
       if (filters?.hasPhone === true) {
         query = query.not('phone_1', 'is', null);
       } else if (filters?.hasPhone === false) {
         query = query.is('phone_1', null);
       }
-      
+
+      // Use excess_funds_amount (correct column name)
       if (filters?.minAmount) {
-        query = query.gte('excess_amount', filters.minAmount);
+        query = query.gte('excess_funds_amount', filters.minAmount);
       }
-      
+
       if (filters?.maxAmount) {
-        query = query.lte('excess_amount', filters.maxAmount);
+        query = query.lte('excess_funds_amount', filters.maxAmount);
       }
-      
+
       if (filters?.expiringDays) {
         const days = parseInt(String(filters.expiringDays) || '30');
         const futureDate = new Date();
         futureDate.setDate(futureDate.getDate() + days);
         query = query.lte('expiration_date', futureDate.toISOString());
       }
-      
-      // Lead type filter
+
+      // Lead type filter - use is_golden_lead
       if (filters?.leadType === 'golden') {
-        query = query.eq('golden_lead', true);
+        query = query.eq('is_golden_lead', true);
       } else if (filters?.leadType === 'excess_funds') {
-        query = query.in('lead_type', ['excess_funds', 'both']);
+        query = query.in('deal_type', ['excess_only', 'dual']);
       } else if (filters?.leadType === 'wholesale') {
-        query = query.in('lead_type', ['wholesale', 'both']);
+        query = query.in('deal_type', ['wholesale', 'dual']);
       }
-      
+
       // Search
       if (filters?.search) {
         query = query.or(`
-          owner_name.ilike.%${filters.search}%, 
-          case_number.ilike.%${filters.search}%, 
-          property_address.ilike.%${filters.search}%, 
-          phone_1.ilike.%${filters.search}%, 
+          owner_name.ilike.%${filters.search}%,
+          case_number.ilike.%${filters.search}%,
+          property_address.ilike.%${filters.search}%,
+          phone_1.ilike.%${filters.search}%,
           phone_2.ilike.%${filters.search}%
         `);
       }
-      
-      // Sorting
-      const sortBy = filters?.sortBy || 'excess_amount';
+
+      // Sorting - use excess_funds_amount as default
+      const sortBy = filters?.sortBy === 'excess_amount' ? 'excess_funds_amount' : (filters?.sortBy || 'excess_funds_amount');
       const sortOrder = filters?.sortOrder || 'desc';
       query = query.order(sortBy, { ascending: sortOrder === 'asc' });
 
       const { data, error } = await query;
-      
+
       if (error) {
         throw error;
       }
-      
+
       setLeads(data || []);
     } catch (err) {
       console.error('Error fetching leads:', err);
@@ -130,15 +132,15 @@ export function useLeads(filters?: LeadFilters) {
   useEffect(() => {
     fetchLeads();
 
-    // Set up real-time subscription
+    // Set up real-time subscription for maxsam_leads
     const channel = supabase
-      .channel('leads-changes')
-      .on('postgres_changes', 
-        { 
+      .channel('maxsam-leads-changes')
+      .on('postgres_changes',
+        {
           event: '*',
           schema: 'public',
-          table: 'leads'
-        }, 
+          table: 'maxsam_leads'
+        },
         () => {
           fetchLeads();
         }
