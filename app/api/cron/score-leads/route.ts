@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { calculateEleanorScore } from '@/lib/eleanor';
 import { notifyLeadsImported } from '@/lib/telegram';
+import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
  * POST /api/cron/score-leads - Score all unscored leads
@@ -10,6 +11,12 @@ import { notifyLeadsImported } from '@/lib/telegram';
  * Or can be triggered manually
  */
 export async function POST() {
+  // GATE ENFORCEMENT - ORION SCORING (via cron)
+  const blocked = await enforceGates({ agent: 'orion', gate: 'gate_orion_scoring' });
+  if (blocked) {
+    return NextResponse.json(createBlockedResponse(blocked), { status: 503 });
+  }
+
   try {
     const supabase = createClient();
 

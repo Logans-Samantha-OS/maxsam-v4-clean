@@ -22,7 +22,9 @@
       "Skill(ralph-loop:ralph-loop)",
       "Bash(find:*)",
       "mcp__plugin_playwright_playwright__browser_navigate",
-      "mcp__plugin_playwright_playwright__browser_close"
+      "mcp__plugin_playwright_playwright__browser_close",
+      "Skill(superpowers:brainstorming)",
+      "Skill(superpowers:brainstorming:*)"
     ],
     "deny": [],
     "ask": []

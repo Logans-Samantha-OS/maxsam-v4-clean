@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
  * POST /api/cron/import-leads - Import leads from Dallas County PDF
@@ -10,6 +11,12 @@ import { NextResponse } from 'next/server';
  * This endpoint triggers the n8n webhook
  */
 export async function POST() {
+  // GATE ENFORCEMENT - INTAKE PIPELINE
+  const blocked = await enforceGates({ gate: 'gate_intake' });
+  if (blocked) {
+    return NextResponse.json(createBlockedResponse(blocked), { status: 503 });
+  }
+
   try {
     // Check for n8n webhook URL
     const n8nWebhookUrl = process.env.N8N_IMPORT_WEBHOOK_URL;

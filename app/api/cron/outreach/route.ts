@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import { runOutreachBatch } from '@/lib/sam-outreach';
 import { isTwilioConfigured } from '@/lib/twilio';
+import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
  * POST /api/cron/outreach - Run Sam AI outreach batch
@@ -10,6 +11,12 @@ import { isTwilioConfigured } from '@/lib/twilio';
  * Or can be triggered manually
  */
 export async function POST() {
+  // GATE ENFORCEMENT - SAM OUTREACH (via cron)
+  const blocked = await enforceGates({ agent: 'sam', gate: 'gate_sam_outreach' });
+  if (blocked) {
+    return NextResponse.json(createBlockedResponse(blocked), { status: 503 });
+  }
+
   try {
     // Check if outreach is enabled
     const supabase = createClient();
