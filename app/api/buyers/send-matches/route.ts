@@ -20,14 +20,14 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Buyer not found' }, { status: 404 });
     }
 
-    // Get matching leads (example: leads with excess_amount > $50,000 in buyer's budget range)
+    // Get matching leads (example: leads with excess_funds_amount > $50,000 in buyer's budget range)
     const { data: leads, error: leadsError } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .select('*')
-      .gte('excess_amount', buyer.budget_min || 0)
-      .lte('excess_amount', buyer.budget_max || 999999999)
+      .gte('excess_funds_amount', buyer.budget_min || 0)
+      .lte('excess_funds_amount', buyer.budget_max || 999999999)
       .eq('status', 'new')
-      .order('excess_amount', { ascending: false })
+      .order('excess_funds_amount', { ascending: false })
       .limit(10);
 
     if (leadsError) {

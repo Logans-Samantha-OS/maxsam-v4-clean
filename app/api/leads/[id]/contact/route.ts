@@ -10,7 +10,7 @@ export async function POST(
 
     // Increment contact count and update last_contacted_at
     const { data, error } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .update({
         last_contacted_at: new Date().toISOString(),
         contact_count: supabase.rpc('increment_contact_count', { lead_id: id })
