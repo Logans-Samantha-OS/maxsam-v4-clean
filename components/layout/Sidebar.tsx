@@ -9,7 +9,7 @@ const NAV_ITEMS = [
   { label: 'Command Center', href: '/dashboard/command-center' },
   { label: 'Messages', href: '/dashboard/messages' },
   { label: 'Governance', href: '/dashboard/governance' },
-  { label: 'Upload PDFs', href: '/dashboard/upload' },
+  { label: 'Smart Import', href: '/dashboard/upload' },
   { label: 'Stats', href: '/dashboard/stats' },
   { label: 'Leads', href: '/leads' },
 ]
