@@ -33,6 +33,7 @@ interface GovernanceState {
 interface SystemConfig {
   autonomy_level: number
   ralph_enabled: boolean
+  outreach_enabled: boolean
 }
 
 // ============================================================================
@@ -287,31 +288,44 @@ function WorkflowRow({
 
 export default function CEODashboard() {
   const [state, setState] = useState<GovernanceState | null>(null)
-  const [config, setConfig] = useState<SystemConfig>({ autonomy_level: 0, ralph_enabled: false })
+  const [config, setConfig] = useState<SystemConfig>({ autonomy_level: 0, ralph_enabled: false, outreach_enabled: false })
   const [loading, setLoading] = useState(true)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [lastAction, setLastAction] = useState<string | null>(null)
   const [workflowFilter, setWorkflowFilter] = useState<string>('')
 
-  // Fetch governance state
+  // Fetch governance state and system config
   const fetchState = useCallback(async () => {
     try {
-      const res = await fetch('/api/governance')
-      if (!res.ok) throw new Error('Failed to fetch governance state')
-      const data = await res.json()
-      setState(data)
+      // Fetch governance state and settings in parallel
+      const [govRes, settingsRes] = await Promise.all([
+        fetch('/api/governance'),
+        fetch('/api/settings')
+      ])
 
-      // Extract config from gates
-      const ralphGate = data.governance_gates?.find(
+      if (!govRes.ok) throw new Error('Failed to fetch governance state')
+      const govData = await govRes.json()
+      setState(govData)
+
+      // Extract RALPH state from governance gates
+      const ralphGate = govData.governance_gates?.find(
         (g: GovernanceGate) => g.control_key === 'gate_ralph_execution'
       )
-      const autonomyConfig = data.governance_gates?.find(
-        (g: GovernanceGate) => g.control_key === 'autonomy_level'
-      )
+
+      // Get autonomy level from settings
+      let autonomyLevel = 0
+      let outreachEnabled = false
+      if (settingsRes.ok) {
+        const settingsData = await settingsRes.json()
+        autonomyLevel = parseInt(settingsData.config?.autonomy_level) || 0
+        outreachEnabled = settingsData.config?.outreach_enabled === true || settingsData.config?.outreach_enabled === 'true'
+      }
+
       setConfig({
         ralph_enabled: ralphGate?.enabled ?? false,
-        autonomy_level: autonomyConfig?.enabled ? 3 : 0
+        autonomy_level: autonomyLevel,
+        outreach_enabled: outreachEnabled
       })
 
       setError(null)
@@ -345,10 +359,15 @@ export default function CEODashboard() {
         })
       })
 
+      const data = await res.json()
+
       if (res.ok) {
         setConfig((prev) => ({ ...prev, ralph_enabled: newEnabled }))
         setLastAction(`RALPH ${newEnabled ? 'enabled' : 'disabled'}`)
         await fetchState()
+      } else {
+        // Handle gate not found - provide helpful message
+        setError(data.error || 'Failed to toggle RALPH. Gate may not exist in database.')
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to toggle RALPH')
@@ -398,9 +417,14 @@ export default function CEODashboard() {
         })
       })
 
+      const data = await res.json()
+
       if (res.ok) {
-        setLastAction(`${gateKey} ${enabled ? 'enabled' : 'disabled'}`)
+        const friendlyName = gateKey.replace('gate_', '').replace('sam_', '').replace(/_/g, ' ')
+        setLastAction(`${friendlyName} ${enabled ? 'enabled' : 'disabled'}`)
         await fetchState()
+      } else {
+        setError(data.error || `Failed to toggle ${gateKey}. Gate may not exist.`)
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : `Failed to toggle ${gateKey}`)
@@ -425,19 +449,30 @@ export default function CEODashboard() {
         })
       })
 
-      if (!gateRes.ok) throw new Error('Failed to update gate')
+      const gateData = await gateRes.json()
 
-      // Then sync to N8N
-      await fetch('/api/governance/n8n-sync', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workflow_id: workflowId,
-          enabled
+      if (!gateRes.ok) {
+        setError(gateData.error || 'Failed to update workflow gate')
+        return
+      }
+
+      // Then sync to N8N (best effort - don't fail if N8N is unavailable)
+      try {
+        await fetch('/api/governance/n8n-sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            workflow_id: workflowId,
+            enabled
+          })
         })
-      })
+      } catch {
+        // N8N sync failed but gate state is saved
+        console.warn('N8N sync failed, gate state saved locally')
+      }
 
-      setLastAction(`Workflow ${enabled ? 'enabled' : 'disabled'}`)
+      const workflowName = gateData.workflow_name || workflowId
+      setLastAction(`${workflowName} ${enabled ? 'enabled' : 'disabled'}`)
       await fetchState()
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to toggle workflow')
