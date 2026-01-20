@@ -9,7 +9,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 interface Message {
   id: string
   lead_id: string
-  direction: 'inbound' | 'outbound'
+  direction: 'inbound' | 'outbound' | 'system'
   message: string
   from_number: string
   to_number: string
@@ -19,6 +19,11 @@ interface Message {
   intent?: 'AFFIRMATIVE' | 'NEGATIVE' | 'QUESTION' | 'CONFUSED' | 'HOSTILE' | 'OUT_OF_SCOPE' | null
   sentiment?: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | null
   next_action?: string | null
+  // New unified timeline fields
+  channel?: 'sms' | 'email' | 'agreement' | 'system'
+  agreement_packet_id?: string
+  agreement_event_type?: string
+  metadata?: Record<string, unknown>
 }
 
 interface Lead {
@@ -169,10 +174,51 @@ function ConversationItem({
 
 function MessageBubble({ message }: { message: Message }) {
   const isOutbound = message.direction === 'outbound'
+  const isSystem = message.direction === 'system'
+  const isAgreement = message.channel === 'agreement'
   const time = new Date(message.created_at).toLocaleTimeString('en-US', {
     hour: 'numeric',
     minute: '2-digit'
   })
+
+  // Handle agreement events with special styling
+  if (isAgreement || isSystem) {
+    return (
+      <div className="flex justify-center mb-3">
+        <div className="max-w-[85%]">
+          <div className={`rounded-xl px-4 py-3 ${
+            message.agreement_event_type === 'signed'
+              ? 'bg-green-900/30 border border-green-500/30'
+              : message.agreement_event_type === 'sent'
+              ? 'bg-blue-900/30 border border-blue-500/30'
+              : message.agreement_event_type === 'viewed'
+              ? 'bg-yellow-900/30 border border-yellow-500/30'
+              : 'bg-zinc-800/50 border border-zinc-700'
+          }`}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">
+                {message.agreement_event_type === 'signed' ? '✅' :
+                 message.agreement_event_type === 'sent' ? '📝' :
+                 message.agreement_event_type === 'viewed' ? '👁️' :
+                 '📋'}
+              </span>
+              <span className={`text-sm font-medium ${
+                message.agreement_event_type === 'signed' ? 'text-green-400' :
+                message.agreement_event_type === 'sent' ? 'text-blue-400' :
+                message.agreement_event_type === 'viewed' ? 'text-yellow-400' :
+                'text-zinc-300'
+              }`}>
+                {message.message}
+              </span>
+            </div>
+            <div className="text-[10px] text-zinc-500 text-center">
+              {time}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'} mb-3`}>
@@ -201,6 +247,7 @@ function MessageBubble({ message }: { message: Message }) {
               isOutbound ? 'text-blue-200' : 'text-zinc-400'
             }`}
           >
+            {message.channel === 'email' && <span className="mr-1">📧</span>}
             {time}
             {isOutbound && (
               <span className="ml-2">

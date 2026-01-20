@@ -27,7 +27,8 @@
       "Skill(superpowers:brainstorming:*)",
       "Bash(vercel whoami:*)",
       "Bash(vercel link:*)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "Bash(grep:*)"
     ],
     "deny": [],
     "ask": []

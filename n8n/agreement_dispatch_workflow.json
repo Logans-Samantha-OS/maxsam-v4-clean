@@ -1,0 +1,435 @@
+{
+  "name": "Agreement Dispatch Workflow (Provider-Agnostic)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-dispatch",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse incoming request\nconst input = $input.all()[0].json;\n\n// Validate required fields\nif (!input.lead_id) {\n  throw new Error('lead_id is required');\n}\n\nif (!input.selection_code || ![1, 2, 3].includes(input.selection_code)) {\n  throw new Error('selection_code must be 1, 2, or 3');\n}\n\nreturn [{\n  json: {\n    lead_id: input.lead_id,\n    selection_code: input.selection_code,\n    triggered_by: input.triggered_by || 'workflow',\n    source_message_sid: input.source_message_sid || null\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM maxsam_leads WHERE id = '{{ $json.lead_id }}'"
+      },
+      "id": "fetch-lead",
+      "name": "Fetch Lead Data",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.phone || $json.phone_1 || $json.phone_2 }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "check-phone",
+      "name": "Has Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Calculate fees and prepare packet data\nconst lead = $input.all()[0].json;\nconst selectionCode = $('Validate Input').first().json.selection_code;\n\nconst excessAmount = parseFloat(lead.excess_funds_amount) || 0;\nconst equity = parseFloat(lead.estimated_equity) || excessAmount * 0.5;\n\nlet excessFee = 0;\nlet wholesaleFee = 0;\n\nif (selectionCode === 1 || selectionCode === 3) {\n  excessFee = excessAmount * 0.25;\n}\n\nif (selectionCode === 2 || selectionCode === 3) {\n  wholesaleFee = equity * 0.10;\n}\n\nconst totalFee = excessFee + wholesaleFee;\nconst phone = lead.phone || lead.phone_1 || lead.phone_2;\n\nreturn [{\n  json: {\n    lead_id: lead.id,\n    client_name: lead.owner_name || 'Property Owner',\n    client_email: lead.email,\n    client_phone: phone,\n    property_address: lead.property_address,\n    case_number: lead.case_number,\n    selection_code: selectionCode,\n    excess_funds_amount: excessAmount,\n    estimated_equity: equity,\n    calculated_excess_fee: excessFee,\n    calculated_wholesale_fee: wholesaleFee,\n    total_fee: totalFee,\n    triggered_by: $('Validate Input').first().json.triggered_by,\n    source_message_sid: $('Validate Input').first().json.source_message_sid\n  }\n}];"
+      },
+      "id": "prepare-packet",
+      "name": "Prepare Packet Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "agreement_packets",
+        "columns": "lead_id,client_name,client_email,client_phone,property_address,case_number,selection_code,excess_funds_amount,estimated_equity,calculated_excess_fee,calculated_wholesale_fee,total_fee,triggered_by,source_message_sid,status,next_reminder_at",
+        "additionalFields": {
+          "status": "created",
+          "next_reminder_at": "={{ DateTime.now().plus({ hours: 2 }).toISO() }}"
+        }
+      },
+      "id": "create-packet",
+      "name": "Create Packet Record",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build JotForm prefill URL\nconst packet = $input.all()[0].json;\nconst jotformFormId = $env.JOTFORM_EXCESS_FUNDS_FORM_ID;\n\n// Build prefill params\nconst params = new URLSearchParams({\n  client_name: packet.client_name,\n  client_email: packet.client_email || '',\n  client_phone: packet.client_phone,\n  property_address: packet.property_address || '',\n  case_number: packet.case_number || '',\n  excess_funds_amount: packet.excess_funds_amount?.toFixed(2) || '0.00',\n  total_fee_amount: packet.total_fee?.toFixed(2) || '0.00',\n  agreement_date: new Date().toLocaleDateString('en-US', {\n    year: 'numeric',\n    month: 'long',\n    day: 'numeric'\n  }),\n  packet_id: packet.id,\n  lead_id: packet.lead_id\n});\n\nconst signingLink = `https://form.jotform.com/${jotformFormId}?${params.toString()}`;\n\nreturn [{\n  json: {\n    ...packet,\n    signing_link: signingLink,\n    provider_document_id: `${jotformFormId}_${packet.id}`\n  }\n}];"
+      },
+      "id": "generate-signing-link",
+      "name": "Generate Signing Link",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": "signing_link,provider_document_id,status,sent_at,signing_link_expires_at",
+        "additionalFields": {
+          "status": "sent",
+          "sent_at": "={{ DateTime.now().toISO() }}",
+          "signing_link_expires_at": "={{ DateTime.now().plus({ days: 7 }).toISO() }}"
+        }
+      },
+      "id": "update-packet-sent",
+      "name": "Update Packet - Sent",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_PHONE_NUMBER }}",
+        "to": "={{ $json.client_phone }}",
+        "body": "Hi {{ $json.client_name.split(' ')[0] }}! Your agreement for {{ $json.property_address || 'your property' }} is ready. Sign in 60 seconds on your phone: {{ $json.signing_link }}"
+      },
+      "id": "send-sms",
+      "name": "Send SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1850, 100],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-cred",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.client_email }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "has-email",
+      "name": "Has Email?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1850, 300]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.client_email }}",
+        "subject": "Action Required: Sign Your Agreement - {{ $json.property_address || 'Property Recovery' }}",
+        "message": "Hi {{ $json.client_name }},\n\nYour agreement is ready to sign! This only takes 60 seconds on your phone.\n\nProperty: {{ $json.property_address }}\nEstimated Recovery: ${{ $json.total_fee.toLocaleString() }}\n\nClick here to sign: {{ $json.signing_link }}\n\nQuestions? Reply to this email or call us.\n\n-MaxSam Real Estate",
+        "options": {}
+      },
+      "id": "send-email",
+      "name": "Send Email",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [2050, 200],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "gmail-cred",
+          "name": "Gmail"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "agreement_events",
+        "columns": "packet_id,event_type,source,event_data"
+      },
+      "id": "log-event",
+      "name": "Log Send Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "📝 AGREEMENT SENT!\n\n{{ $json.selection_code === 1 ? '📋 Excess Funds' : $json.selection_code === 2 ? '🏠 Wholesale' : '⭐ DUAL DEAL' }}\n\n👤 {{ $json.client_name }}\n🏠 {{ $json.property_address }}\n💰 ${{ $json.total_fee.toLocaleString() }}\n📱 {{ $json.client_phone }}\n\nPacket ID: {{ $json.id }}\n\nWaiting for signature...",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2250, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, packet_id: $json.id, signing_link: $json.signing_link }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2450, 200]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: 'Lead does not have a phone number' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-no-phone",
+      "name": "Respond No Phone",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Fetch Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Has Phone?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Phone?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Packet Data",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond No Phone",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Packet Data": {
+      "main": [
+        [
+          {
+            "node": "Create Packet Record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Packet Record": {
+      "main": [
+        [
+          {
+            "node": "Generate Signing Link",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Signing Link": {
+      "main": [
+        [
+          {
+            "node": "Update Packet - Sent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Packet - Sent": {
+      "main": [
+        [
+          {
+            "node": "Send SMS",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has Email?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS": {
+      "main": [
+        [
+          {
+            "node": "Log Send Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Email?": {
+      "main": [
+        [
+          {
+            "node": "Send Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Email": {
+      "main": [
+        [
+          {
+            "node": "Telegram Notify",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Send Event": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram Notify": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-dispatch-workflow",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}
