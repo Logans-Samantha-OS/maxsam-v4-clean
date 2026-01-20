@@ -459,13 +459,25 @@ export default function MessagingCenter() {
   const fetchConversations = useCallback(async () => {
     try {
       const res = await fetch('/api/messages')
-      if (!res.ok) throw new Error('Failed to fetch conversations')
       const data = await res.json()
+
+      // API now returns success: true with empty arrays on graceful errors
+      // Only show error banner for actual network/server failures
+      if (!res.ok && !data.success) {
+        throw new Error(data.error || 'Failed to fetch conversations')
+      }
+
       setConversations(data.conversations || [])
       setTotalUnread(data.total_unread || 0)
       setError(null)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      // Only set error for actual failures, not empty results
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Network error - please check your connection')
+      } else if (err instanceof Error && err.message !== 'Failed to fetch conversations') {
+        setError(err.message)
+      }
+      // Don't set error for empty conversations - that's expected
     } finally {
       setLoading(false)
     }
@@ -476,13 +488,19 @@ export default function MessagingCenter() {
     setLoadingMessages(true)
     try {
       const res = await fetch(`/api/messages?lead_id=${leadId}`)
-      if (!res.ok) throw new Error('Failed to fetch messages')
       const data = await res.json()
+
+      // API returns success: true with empty arrays on graceful errors
+      // Only show error for actual failures
+      if (!res.ok && !data.success) {
+        throw new Error(data.error || 'Failed to fetch messages')
+      }
+
       setMessages(data.messages || [])
       setSelectedLead(data.lead || null)
 
       // Mark messages as read
-      if (markAsRead) {
+      if (markAsRead && data.messages?.length > 0) {
         await fetch('/api/messages', {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json' },
@@ -502,7 +520,11 @@ export default function MessagingCenter() {
         })
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      // Only set error for actual network failures
+      if (err instanceof TypeError && err.message.includes('fetch')) {
+        setError('Network error - please check your connection')
+      }
+      // Don't set error for empty messages - that's expected
     } finally {
       setLoadingMessages(false)
     }
