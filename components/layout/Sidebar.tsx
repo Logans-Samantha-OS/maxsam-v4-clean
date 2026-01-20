@@ -7,6 +7,7 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'CEO Control', href: '/Executive' },
   { label: 'Command Center', href: '/dashboard/command-center' },
+  { label: 'Messages', href: '/dashboard/messages' },
   { label: 'Governance', href: '/dashboard/governance' },
   { label: 'Upload PDFs', href: '/dashboard/upload' },
   { label: 'Stats', href: '/dashboard/stats' },
