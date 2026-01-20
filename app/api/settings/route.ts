@@ -82,6 +82,53 @@ export async function GET() {
 }
 
 /**
+ * POST /api/settings - Update a single setting (for CEO Dashboard)
+ */
+export async function POST(request: NextRequest) {
+  try {
+    const supabase = createClient();
+    const body = await request.json();
+
+    const { key, value } = body;
+
+    if (!key || value === undefined) {
+      return NextResponse.json({ error: 'key and value are required' }, { status: 400 });
+    }
+
+    const allowedKeys = [
+      'autonomy_level',
+      'ralph_enabled',
+      'outreach_enabled',
+      'max_daily_sms',
+      'max_contact_attempts'
+    ];
+
+    if (!allowedKeys.includes(key)) {
+      return NextResponse.json({ error: `Key '${key}' is not allowed` }, { status: 400 });
+    }
+
+    await supabase
+      .from('system_config')
+      .upsert({
+        key,
+        value: String(value),
+        updated_at: new Date().toISOString(),
+        updated_by: 'ceo_dashboard'
+      }, { onConflict: 'key' });
+
+    return NextResponse.json({
+      success: true,
+      key,
+      value: String(value)
+    });
+
+  } catch (error: unknown) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: errorMessage }, { status: 500 });
+  }
+}
+
+/**
  * PUT /api/settings - Update settings
  */
 export async function PUT(request: NextRequest) {
@@ -103,7 +150,9 @@ export async function PUT(request: NextRequest) {
       'dallas_county_pdf_url',
       'outreach_enabled',
       'max_daily_sms',
-      'max_contact_attempts'
+      'max_contact_attempts',
+      'autonomy_level',
+      'ralph_enabled'
     ];
 
     const updates: Array<{ key: string; value: string }> = [];
