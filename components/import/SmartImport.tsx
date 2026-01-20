@@ -7,12 +7,13 @@ import { useToast } from '@/components/Toast';
 // TYPES
 // ============================================================================
 
-type ImportMode = 'pdf' | 'csv' | 'url';
+type ImportMode = 'pdf' | 'csv' | 'url' | 'drive';
 
 interface ImportResult {
   success: boolean;
   message: string;
   imported?: number;
+  updated?: number;
   skipped?: number;
   total?: number;
   grades?: Record<string, number>;
@@ -802,6 +803,149 @@ function URLScrapeSection({
 }
 
 // ============================================================================
+// GOOGLE DRIVE IMPORT SECTION
+// ============================================================================
+
+function DriveImportSection({
+  county,
+  onResult,
+}: {
+  county: string;
+  onResult: (result: ImportResult) => void;
+}) {
+  const [fileId, setFileId] = useState('');
+  const [importing, setImporting] = useState(false);
+  const { addToast } = useToast();
+
+  // Extract file ID from various Google Drive URL formats
+  const extractFileId = (input: string): string => {
+    // If it's already just an ID
+    if (/^[a-zA-Z0-9_-]{25,}$/.test(input.trim())) {
+      return input.trim();
+    }
+
+    // Extract from URL formats
+    const patterns = [
+      /\/d\/([a-zA-Z0-9_-]+)/,           // /d/FILE_ID/
+      /id=([a-zA-Z0-9_-]+)/,             // id=FILE_ID
+      /spreadsheets\/d\/([a-zA-Z0-9_-]+)/, // spreadsheets/d/FILE_ID
+    ];
+
+    for (const pattern of patterns) {
+      const match = input.match(pattern);
+      if (match) return match[1];
+    }
+
+    return input.trim();
+  };
+
+  const handleImport = async () => {
+    const extractedId = extractFileId(fileId);
+
+    if (!extractedId) {
+      addToast('error', 'Please enter a Google Drive file ID or URL');
+      return;
+    }
+
+    setImporting(true);
+
+    try {
+      const res = await fetch('/api/golden-leads/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          drive_file_id: extractedId,
+          source_name: `drive_import_${county || 'unknown'}_${new Date().toISOString().split('T')[0]}`,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (res.ok && data.success) {
+        onResult({
+          success: true,
+          message: data.message || `Imported ${data.imported} leads from Google Drive`,
+          imported: data.imported,
+          updated: data.updated,
+          skipped: data.skipped,
+          total: data.total,
+        });
+        addToast('success', `Imported ${data.imported} leads, updated ${data.updated || 0}`);
+        setFileId('');
+      } else {
+        onResult({
+          success: false,
+          message: data.error || 'Failed to import from Google Drive',
+          errors: data.errors,
+        });
+        addToast('error', data.error || 'Import failed');
+      }
+    } catch (error) {
+      console.error('Drive import error:', error);
+      onResult({ success: false, message: 'Network error' });
+      addToast('error', 'Network error');
+    } finally {
+      setImporting(false);
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="space-y-2">
+        <label className="text-sm font-medium text-zinc-300">Google Drive File ID or URL</label>
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={fileId}
+            onChange={(e) => setFileId(e.target.value)}
+            placeholder="Paste file ID or Drive URL..."
+            className="flex-1 px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:border-blue-500 transition-colors"
+          />
+          <button
+            onClick={handleImport}
+            disabled={importing || !fileId.trim()}
+            className="px-6 py-3 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-400 hover:to-indigo-400 text-white font-semibold rounded-lg transition-all disabled:opacity-50"
+          >
+            {importing ? 'Importing...' : 'Import'}
+          </button>
+        </div>
+      </div>
+
+      {importing && (
+        <div className="flex items-center justify-center gap-3 py-8">
+          <div className="animate-spin w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full" />
+          <span className="text-zinc-400">Fetching and importing leads from Google Drive...</span>
+        </div>
+      )}
+
+      <div className="p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+        <div className="flex items-start gap-2">
+          <svg className="w-5 h-5 text-blue-400 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+          </svg>
+          <div className="text-sm text-blue-200">
+            <p className="font-medium">How Google Drive Import Works</p>
+            <p className="text-blue-300/70 mt-1">
+              Paste your Google Drive file ID or share URL. The file must be a publicly shared CSV or Google Sheet.
+              Make sure the file has columns for owner_name, property_address, and excess_funds_amount.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <div className="p-3 bg-zinc-800/50 rounded-lg">
+        <h4 className="text-xs font-medium text-zinc-400 mb-2">Accepted Formats:</h4>
+        <div className="space-y-1 text-xs text-zinc-500">
+          <p>• File ID: <code className="bg-zinc-700 px-1 rounded">1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms</code></p>
+          <p>• Share URL: <code className="bg-zinc-700 px-1 rounded">https://drive.google.com/file/d/FILE_ID/view</code></p>
+          <p>• Sheet URL: <code className="bg-zinc-700 px-1 rounded">https://docs.google.com/spreadsheets/d/FILE_ID</code></p>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // RESULT DISPLAY
 // ============================================================================
 
@@ -920,7 +1064,7 @@ export default function SmartImport() {
       <div>
         <h1 className="text-2xl font-bold text-white">Smart Import</h1>
         <p className="text-gray-400 text-sm mt-1">
-          Import leads from PDFs, CSV files, or scrape directly from county websites
+          Import leads from PDFs, CSV files, Google Drive, or scrape directly from county websites
         </p>
       </div>
 
@@ -959,6 +1103,17 @@ export default function SmartImport() {
           label="URL Scrape"
           description="ALEX extracts from web"
         />
+        <TabButton
+          active={mode === 'drive'}
+          onClick={() => { setMode('drive'); resetResult(); }}
+          icon={
+            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+          }
+          label="Google Drive"
+          description="Import from shared file"
+        />
       </div>
 
       {/* Main Import Card */}
@@ -976,6 +1131,7 @@ export default function SmartImport() {
               {mode === 'pdf' && <PDFUploadSection county={county} onResult={handleResult} />}
               {mode === 'csv' && <CSVUploadSection county={county} onResult={handleResult} />}
               {mode === 'url' && <URLScrapeSection county={county} onResult={handleResult} />}
+              {mode === 'drive' && <DriveImportSection county={county} onResult={handleResult} />}
             </>
           )}
         </div>
