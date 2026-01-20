@@ -65,6 +65,83 @@ export default function QuickActionsBar() {
     router.push('/reports');
   };
 
+  const handleScanGoldenLeads = async () => {
+    setLoading('golden-scan');
+    try {
+      const response = await fetch('https://skooki.app.n8n.cloud/webhook/zillow-scan', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'scan_golden_leads',
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      if (response.ok) {
+        alert('Golden Lead scan initiated!');
+      } else {
+        throw new Error('Failed to initiate scan');
+      }
+    } catch (error) {
+      alert('Error initiating Golden Lead scan');
+      console.error(error);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleImportNow = async () => {
+    setLoading('import-now');
+    try {
+      const response = await fetch('/api/cron/import-leads', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'manual_trigger',
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(`Import complete: ${data.imported || 0} leads imported`);
+      } else {
+        throw new Error(data.error || 'Failed to import');
+      }
+    } catch (error) {
+      alert('Error running import');
+      console.error(error);
+    } finally {
+      setLoading(null);
+    }
+  };
+
+  const handleScoreAll = async () => {
+    setLoading('score-all');
+    try {
+      const response = await fetch('/api/eleanor/score-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: 'manual_trigger',
+          timestamp: new Date().toISOString()
+        })
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        alert(`Scoring complete: ${data.scored || data.processed || 0} leads scored`);
+      } else {
+        throw new Error(data.error || 'Failed to score');
+      }
+    } catch (error) {
+      alert('Error running scoring');
+      console.error(error);
+    } finally {
+      setLoading(null);
+    }
+  };
+
   return (
     <div className="pharaoh-card">
       <h3 className="text-lg font-bold text-gold mb-4 flex items-center gap-2">
@@ -106,6 +183,33 @@ export default function QuickActionsBar() {
         >
           <span>📊</span>
           <span>{loading === 'report' ? 'Generating...' : 'Generate Report'}</span>
+        </button>
+
+        <button
+          onClick={handleScanGoldenLeads}
+          className="flex items-center justify-center gap-2 px-4 py-3 bg-yellow-600 hover:bg-yellow-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          disabled={loading !== null}
+        >
+          <span>🏆</span>
+          <span>{loading === 'golden-scan' ? 'Scanning...' : 'Scan Golden Leads'}</span>
+        </button>
+
+        <button
+          onClick={handleImportNow}
+          className="flex items-center justify-center gap-2 px-4 py-3 bg-orange-600 hover:bg-orange-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          disabled={loading !== null}
+        >
+          <span>📥</span>
+          <span>{loading === 'import-now' ? 'Importing...' : 'Import Now'}</span>
+        </button>
+
+        <button
+          onClick={handleScoreAll}
+          className="flex items-center justify-center gap-2 px-4 py-3 bg-pink-600 hover:bg-pink-700 text-white rounded-lg font-medium transition-colors disabled:opacity-50"
+          disabled={loading !== null}
+        >
+          <span>🎯</span>
+          <span>{loading === 'score-all' ? 'Scoring...' : 'Score All'}</span>
         </button>
       </div>
     </div>
