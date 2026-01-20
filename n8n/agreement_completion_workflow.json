@@ -1,0 +1,559 @@
+{
+  "name": "Agreement Completion Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-completion",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse webhook payload from JotForm Sign or internal trigger\nconst input = $input.all()[0].json;\n\nlet packetId = input.packet_id;\nlet eventType = input.event || 'signed';\n\n// Try to extract packet_id from various JotForm payload formats\nif (!packetId && input.rawRequest) {\n  try {\n    const parsed = JSON.parse(input.rawRequest);\n    packetId = parsed.packet_id || parsed.packetId;\n  } catch (e) {}\n}\n\nif (!packetId && input.submissionID) {\n  // Look up by submission ID\n  return [{\n    json: {\n      lookup_by_submission: true,\n      submission_id: input.submissionID,\n      event_type: eventType\n    }\n  }];\n}\n\nif (!packetId) {\n  throw new Error('packet_id not found in webhook payload');\n}\n\nreturn [{\n  json: {\n    packet_id: packetId,\n    event_type: eventType,\n    webhook_payload: input\n  }\n}];"
+      },
+      "id": "parse-webhook",
+      "name": "Parse Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ap.*, ml.owner_name, ml.email, ml.phone FROM agreement_packets ap LEFT JOIN maxsam_leads ml ON ap.lead_id = ml.id WHERE ap.id = '{{ $json.packet_id }}'"
+      },
+      "id": "fetch-packet",
+      "name": "Fetch Packet",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $json.event_type }}",
+              "operation": "equals",
+              "value2": "signed"
+            }
+          ]
+        }
+      },
+      "id": "is-signed",
+      "name": "Is Signed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.packet_id }}"
+            }
+          ]
+        },
+        "columns": "status,signed_at,updated_at",
+        "additionalFields": {
+          "status": "signed",
+          "signed_at": "={{ DateTime.now().toISO() }}",
+          "updated_at": "={{ DateTime.now().toISO() }}"
+        }
+      },
+      "id": "update-status-signed",
+      "name": "Update Status - Signed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_documents",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "packet_id",
+              "keyValue": "={{ $json.packet_id }}"
+            }
+          ]
+        },
+        "columns": "status,signed_at",
+        "additionalFields": {
+          "status": "signed",
+          "signed_at": "={{ DateTime.now().toISO() }}"
+        }
+      },
+      "id": "update-documents-signed",
+      "name": "Update Documents - Signed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "maxsam_leads",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "columns": "status",
+        "additionalFields": {
+          "status": "contract_signed"
+        }
+      },
+      "id": "update-lead-status",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "status_history",
+        "columns": "lead_id,old_status,new_status,changed_by,reason"
+      },
+      "id": "log-status-change",
+      "name": "Log Status Change",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1650, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "https://api.jotform.com/submission/{{ $json.provider_document_id.split('_')[1] }}?apiKey={{ $env.JOTFORM_API_KEY }}",
+        "options": {}
+      },
+      "id": "fetch-signed-pdf",
+      "name": "Fetch Signed PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1850, 200]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "path": "/MAXSAM V4/Signed/{{ $json.client_name }}/{{ DateTime.now().toFormat('yyyy-MM-dd') }}_{{ $json.selection_code === 1 ? 'Excess_Funds' : $json.selection_code === 2 ? 'Wholesale' : 'Dual_Deal' }}_Agreement.pdf",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-dropbox",
+      "name": "Upload to Dropbox",
+      "type": "n8n-nodes-base.dropbox",
+      "typeVersion": 1,
+      "position": [2050, 100],
+      "credentials": {
+        "dropboxOAuth2Api": {
+          "id": "dropbox-cred",
+          "name": "Dropbox"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "driveId": "root",
+        "folderId": "NotebookLM/Clients",
+        "name": "={{ $json.client_name }}/Agreements/{{ DateTime.now().toFormat('yyyy-MM-dd') }}_Agreement.pdf",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-gdrive",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [2050, 300],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive-cred",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.packet_id }}"
+            }
+          ]
+        },
+        "columns": "signed_pdf_dropbox_url,signed_pdf_gdrive_url,signed_pdf_gdrive_file_id"
+      },
+      "id": "update-pdf-urls",
+      "name": "Update PDF URLs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2250, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "✅ AGREEMENT SIGNED!\n\n🎉 {{ $json.client_name }} signed!\n\n{{ $json.selection_code === 1 ? '📋 Excess Funds' : $json.selection_code === 2 ? '🏠 Wholesale' : '⭐ DUAL DEAL' }}\n\n🏠 {{ $json.property_address }}\n💰 Total Fee: ${{ $json.total_fee?.toLocaleString() }}\n\n📁 PDFs uploaded to Dropbox & Drive\n\nSam can proceed to next phase!",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-signed",
+      "name": "Notify Telegram - Signed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2450, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "agreement_events",
+        "columns": "packet_id,event_type,source,event_data"
+      },
+      "id": "log-signed-event",
+      "name": "Log Signed Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2450, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_PHONE_NUMBER }}",
+        "to": "={{ $json.client_phone }}",
+        "body": "{{ $json.client_name.split(' ')[0] }}, thank you for signing! 🎉 We'll start processing your claim right away. Most claims complete within 30-60 days. We'll keep you updated! -MaxSam"
+      },
+      "id": "send-confirmation-sms",
+      "name": "Send Confirmation SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [2650, 200],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-cred",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'signed', packet_id: $json.packet_id }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2850, 200]
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.packet_id }}"
+            }
+          ]
+        },
+        "columns": "first_viewed_at,updated_at",
+        "additionalFields": {
+          "first_viewed_at": "={{ DateTime.now().toISO() }}",
+          "updated_at": "={{ DateTime.now().toISO() }}"
+        }
+      },
+      "id": "update-viewed",
+      "name": "Update Viewed",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: $json.event_type, packet_id: $json.packet_id }) }}"
+      },
+      "id": "respond-other",
+      "name": "Respond Other Event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Packet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Packet": {
+      "main": [
+        [
+          {
+            "node": "Is Signed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Signed?": {
+      "main": [
+        [
+          {
+            "node": "Update Status - Signed",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Update Viewed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Status - Signed": {
+      "main": [
+        [
+          {
+            "node": "Update Documents - Signed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Documents - Signed": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Log Status Change",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Status Change": {
+      "main": [
+        [
+          {
+            "node": "Fetch Signed PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Signed PDF": {
+      "main": [
+        [
+          {
+            "node": "Upload to Dropbox",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Dropbox": {
+      "main": [
+        [
+          {
+            "node": "Update PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Update PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update PDF URLs": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram - Signed",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log Signed Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram - Signed": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation SMS": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Viewed": {
+      "main": [
+        [
+          {
+            "node": "Respond Other Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-completion-workflow",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

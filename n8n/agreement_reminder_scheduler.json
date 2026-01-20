@@ -1,0 +1,326 @@
+{
+  "name": "Agreement Reminder Scheduler",
+  "description": "Runs hourly to find unsigned agreements and send reminders. Schedule: +2h, +24h, +72h, then escalate.",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Hourly Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/reminders",
+        "authentication": "none",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-due-reminders",
+      "name": "Fetch Due Reminders",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.packets?.length > 0 }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "has-reminders",
+      "name": "Has Reminders?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-packets",
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [850, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine reminder type based on reminder_count\nconst packet = $input.all()[0].json;\n\nconst reminderCount = packet.reminder_count || 0;\nlet messageType = 'reminder';\nlet messageText = '';\nlet shouldEscalate = false;\n\nswitch (reminderCount) {\n  case 0:\n    // First reminder (+2h)\n    messageType = 'friendly_nudge';\n    messageText = `Hi ${packet.client_name?.split(' ')[0] || 'there'}! Just a friendly reminder - your agreement is ready to sign. Takes less than 60 seconds: ${packet.signing_link}`;\n    break;\n  case 1:\n    // Second reminder (+24h)\n    messageType = 'urgency';\n    messageText = `Hi ${packet.client_name?.split(' ')[0] || 'there'}, we noticed you haven't signed yet. This agreement secures your claim to ${packet.total_fee ? '$' + packet.total_fee.toLocaleString() : 'your funds'}. Sign now: ${packet.signing_link}`;\n    break;\n  case 2:\n    // Third reminder (+72h)\n    messageType = 'final_notice';\n    messageText = `Final notice: Your agreement for ${packet.property_address || 'property recovery'} expires soon. This is your last reminder before we close your file. Sign now: ${packet.signing_link}`;\n    break;\n  default:\n    // After 3 reminders, escalate\n    shouldEscalate = true;\n    break;\n}\n\nreturn [{\n  json: {\n    ...packet,\n    message_type: messageType,\n    message_text: messageText,\n    should_escalate: shouldEscalate,\n    new_reminder_count: reminderCount + 1\n  }\n}];"
+      },
+      "id": "determine-reminder-type",
+      "name": "Determine Reminder Type",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_escalate }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "should-escalate",
+      "name": "Should Escalate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/sms/send",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "to",
+              "value": "={{ $json.client_phone }}"
+            },
+            {
+              "name": "body",
+              "value": "={{ $json.message_text }}"
+            },
+            {
+              "name": "lead_id",
+              "value": "={{ $json.lead_id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-reminder-sms",
+      "name": "Send Reminder SMS",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/reminder-sent",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "packet_id",
+              "value": "={{ $('Determine Reminder Type').first().json.id }}"
+            },
+            {
+              "name": "reminder_count",
+              "value": "={{ $('Determine Reminder Type').first().json.new_reminder_count }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-reminder-count",
+      "name": "Update Reminder Count",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ ESCALATION: Unsigned Agreement\n\n👤 {{ $json.client_name }}\n📱 {{ $json.client_phone }}\n🏠 {{ $json.property_address || 'N/A' }}\n💰 Fee: ${{ $json.total_fee?.toLocaleString() || '0' }}\n\n📝 Packet: {{ $json.id }}\n🔔 Reminders sent: {{ $json.reminder_count }}\n📅 First sent: {{ $json.sent_at }}\n\n❌ 3 reminders sent with no response.\nManual follow-up recommended.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-escalate",
+      "name": "Escalate to Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/escalate",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "packet_id",
+              "value": "={{ $json.id }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "mark-escalated",
+      "name": "Mark Escalated",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {},
+      "id": "no-reminders",
+      "name": "No Reminders Due",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [850, 400]
+    }
+  ],
+  "connections": {
+    "Hourly Trigger": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Reminders": {
+      "main": [
+        [
+          {
+            "node": "Has Reminders?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Reminders?": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Reminders Due",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches": {
+      "main": [
+        [
+          {
+            "node": "Determine Reminder Type",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Determine Reminder Type": {
+      "main": [
+        [
+          {
+            "node": "Should Escalate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Escalate to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send Reminder SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder SMS": {
+      "main": [
+        [
+          {
+            "node": "Update Reminder Count",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escalate to Telegram": {
+      "main": [
+        [
+          {
+            "node": "Mark Escalated",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-reminder-scheduler",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "scheduled",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

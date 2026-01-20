@@ -1,0 +1,330 @@
+{
+  "name": "Agreement Dispatch Workflow V2 (Provider-Agnostic)",
+  "description": "Creates and sends agreement packets via /api/signing/* routes. Provider is determined by PRIMARY_SIGN_PROVIDER env var.",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-dispatch-v2",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming request\nconst input = $input.all()[0].json;\n\nif (!input.lead_id) {\n  throw new Error('lead_id is required');\n}\n\nif (!input.selection_code || ![1, 2, 3].includes(input.selection_code)) {\n  throw new Error('selection_code must be 1, 2, or 3');\n}\n\nreturn [{\n  json: {\n    lead_id: input.lead_id,\n    selection_code: input.selection_code,\n    triggered_by: input.triggered_by || 'n8n_workflow',\n    source_message_sid: input.source_message_sid || null,\n    delivery_method: input.delivery_method || 'both'\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/create",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "lead_id",
+              "value": "={{ $json.lead_id }}"
+            },
+            {
+              "name": "selection_code",
+              "value": "={{ $json.selection_code }}"
+            },
+            {
+              "name": "triggered_by",
+              "value": "={{ $json.triggered_by }}"
+            },
+            {
+              "name": "source_message_sid",
+              "value": "={{ $json.source_message_sid }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-packet",
+      "name": "Create Packet via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-create-success",
+      "name": "Create Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/send",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "packet_id",
+              "value": "={{ $json.packetId }}"
+            },
+            {
+              "name": "delivery_method",
+              "value": "={{ $('Validate Input').first().json.delivery_method }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-packet",
+      "name": "Send Packet via API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-send-success",
+      "name": "Send Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "📝 AGREEMENT SENT!\n\n{{ $('Validate Input').first().json.selection_code === 1 ? '📋 Excess Funds' : $('Validate Input').first().json.selection_code === 2 ? '🏠 Wholesale' : '⭐ DUAL DEAL' }}\n\n📱 SMS: {{ $json.sms_sent ? '✅' : '❌' }}\n📧 Email: {{ $json.email_sent ? '✅' : '❌' }}\n\n🔗 {{ $json.signing_link }}\n\nPacket ID: {{ $json.packet_id }}\n\nWaiting for signature...",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-success",
+      "name": "Notify Telegram - Success",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, packet_id: $json.packet_id, signing_link: $json.signing_link, sms_sent: $json.sms_sent, email_sent: $json.email_sent }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Agreement Send Failed!\n\nLead: {{ $('Validate Input').first().json.lead_id }}\nError: {{ $json.error || 'Unknown error' }}\n\nCheck logs for details.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-send-fail",
+      "name": "Notify Telegram - Send Failed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Failed to send packet' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-send-fail",
+      "name": "Respond Send Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Failed to create packet' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-create-fail",
+      "name": "Respond Create Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Input": {
+      "main": [
+        [
+          {
+            "node": "Create Packet via API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Packet via API": {
+      "main": [
+        [
+          {
+            "node": "Create Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Success?": {
+      "main": [
+        [
+          {
+            "node": "Send Packet via API",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Create Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Packet via API": {
+      "main": [
+        [
+          {
+            "node": "Send Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Success?": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram - Success",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Telegram - Send Failed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram - Success": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram - Send Failed": {
+      "main": [
+        [
+          {
+            "node": "Respond Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-dispatch-workflow-v2",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "provider-agnostic",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}
