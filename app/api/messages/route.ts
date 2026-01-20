@@ -50,7 +50,10 @@ export async function GET(request: NextRequest) {
         to_number,
         status,
         created_at,
-        read_at
+        read_at,
+        intent,
+        sentiment,
+        next_action
       `)
       .order('created_at', { ascending: false })
 
@@ -71,6 +74,7 @@ export async function GET(request: NextRequest) {
       unread_count: number
       total_messages: number
       phone: string
+      last_intent: string | null
     }>()
 
     for (const msg of allMessages || []) {
@@ -87,12 +91,16 @@ export async function GET(request: NextRequest) {
           last_direction: msg.direction,
           unread_count: isUnread ? 1 : 0,
           total_messages: 1,
-          phone: msg.direction === 'inbound' ? msg.from_number : msg.to_number
+          phone: msg.direction === 'inbound' ? msg.from_number : msg.to_number,
+          last_intent: msg.direction === 'inbound' ? (msg.intent || null) : null
         })
       } else {
         existing.total_messages++
         if (isUnread) existing.unread_count++
-        // Update last message if this is more recent (already sorted desc)
+        // Update last_intent if this is an inbound with intent
+        if (msg.direction === 'inbound' && msg.intent && !existing.last_intent) {
+          existing.last_intent = msg.intent
+        }
       }
     }
 

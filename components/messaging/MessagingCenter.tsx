@@ -16,6 +16,9 @@ interface Message {
   status: string
   created_at: string
   read_at: string | null
+  intent?: 'AFFIRMATIVE' | 'NEGATIVE' | 'QUESTION' | 'CONFUSED' | 'HOSTILE' | 'OUT_OF_SCOPE' | null
+  sentiment?: 'POSITIVE' | 'NEUTRAL' | 'NEGATIVE' | null
+  next_action?: string | null
 }
 
 interface Lead {
@@ -42,6 +45,33 @@ interface Conversation {
   total_messages: number
   phone: string
   lead: Lead | null
+  last_intent?: string | null
+}
+
+// ============================================================================
+// INTENT BADGE
+// ============================================================================
+
+function IntentBadge({ intent, size = 'sm' }: { intent?: string | null; size?: 'sm' | 'xs' }) {
+  if (!intent) return <span className="text-zinc-600 text-[10px]">—</span>
+
+  const config: Record<string, { bg: string; text: string; label: string }> = {
+    AFFIRMATIVE: { bg: 'bg-green-500/20', text: 'text-green-400', label: 'YES' },
+    NEGATIVE: { bg: 'bg-red-500/20', text: 'text-red-400', label: 'NO' },
+    QUESTION: { bg: 'bg-blue-500/20', text: 'text-blue-400', label: '?' },
+    CONFUSED: { bg: 'bg-yellow-500/20', text: 'text-yellow-400', label: '??' },
+    HOSTILE: { bg: 'bg-red-600/30', text: 'text-red-300', label: '!!' },
+    OUT_OF_SCOPE: { bg: 'bg-zinc-500/20', text: 'text-zinc-400', label: '—' },
+  }
+
+  const c = config[intent] || config.OUT_OF_SCOPE
+  const sizeClass = size === 'xs' ? 'text-[9px] px-1 py-0.5' : 'text-[10px] px-1.5 py-0.5'
+
+  return (
+    <span className={`${c.bg} ${c.text} ${sizeClass} rounded font-medium`}>
+      {c.label}
+    </span>
+  )
 }
 
 // ============================================================================
@@ -95,6 +125,7 @@ function ConversationItem({
                 {conversation.unread_count}
               </span>
             )}
+            <IntentBadge intent={conversation.last_intent} size="xs" />
           </div>
           <div className="text-xs text-zinc-500 truncate">
             {conversation.phone}
@@ -145,25 +176,38 @@ function MessageBubble({ message }: { message: Message }) {
 
   return (
     <div className={`flex ${isOutbound ? 'justify-end' : 'justify-start'} mb-3`}>
-      <div
-        className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-          isOutbound
-            ? 'bg-blue-600 text-white rounded-br-md'
-            : 'bg-zinc-700 text-white rounded-bl-md'
-        }`}
-      >
-        <p className="text-sm whitespace-pre-wrap break-words">{message.message}</p>
+      <div className="max-w-[70%]">
+        {/* Intent badge for inbound messages */}
+        {!isOutbound && message.intent && (
+          <div className="mb-1 flex items-center gap-1">
+            <IntentBadge intent={message.intent} size="xs" />
+            {message.next_action && message.next_action !== 'WAIT' && (
+              <span className="text-[9px] text-zinc-500">
+                → {message.next_action.replace(/_/g, ' ')}
+              </span>
+            )}
+          </div>
+        )}
         <div
-          className={`text-[10px] mt-1 ${
-            isOutbound ? 'text-blue-200' : 'text-zinc-400'
+          className={`rounded-2xl px-4 py-2 ${
+            isOutbound
+              ? 'bg-blue-600 text-white rounded-br-md'
+              : 'bg-zinc-700 text-white rounded-bl-md'
           }`}
         >
-          {time}
-          {isOutbound && (
-            <span className="ml-2">
-              {message.status === 'delivered' ? 'Delivered' : message.status === 'sent' ? 'Sent' : ''}
-            </span>
-          )}
+          <p className="text-sm whitespace-pre-wrap break-words">{message.message}</p>
+          <div
+            className={`text-[10px] mt-1 ${
+              isOutbound ? 'text-blue-200' : 'text-zinc-400'
+            }`}
+          >
+            {time}
+            {isOutbound && (
+              <span className="ml-2">
+                {message.status === 'delivered' ? 'Delivered' : message.status === 'sent' ? 'Sent' : ''}
+              </span>
+            )}
+          </div>
         </div>
       </div>
     </div>
