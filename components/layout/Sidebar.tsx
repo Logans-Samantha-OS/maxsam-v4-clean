@@ -5,9 +5,10 @@ import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard' },
+  { label: 'Command Center', href: '/dashboard/command-center' },
+  { label: 'Governance', href: '/dashboard/governance' },
   { label: 'Upload PDFs', href: '/dashboard/upload' },
   { label: 'Stats', href: '/dashboard/stats' },
-  { label: 'Command Center', href: '/dashboard/command-center' },
   { label: 'Leads', href: '/leads' },
 ]
 
