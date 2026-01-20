@@ -357,6 +357,12 @@ export default function MessagingCenter() {
   const [totalUnread, setTotalUnread] = useState(0)
   const [searchQuery, setSearchQuery] = useState('')
   const messagesEndRef = useRef<HTMLDivElement>(null)
+  const selectedConversationRef = useRef<string | null>(null)
+
+  // Keep ref in sync
+  useEffect(() => {
+    selectedConversationRef.current = selectedConversation
+  }, [selectedConversation])
 
   // Fetch all conversations
   const fetchConversations = useCallback(async () => {
@@ -374,8 +380,8 @@ export default function MessagingCenter() {
     }
   }, [])
 
-  // Fetch messages for selected conversation
-  const fetchMessages = useCallback(async (leadId: string) => {
+  // Fetch messages for selected conversation - no conversations dependency
+  const fetchMessages = useCallback(async (leadId: string, markAsRead = true) => {
     setLoadingMessages(true)
     try {
       const res = await fetch(`/api/messages?lead_id=${leadId}`)
@@ -385,50 +391,59 @@ export default function MessagingCenter() {
       setSelectedLead(data.lead || null)
 
       // Mark messages as read
-      await fetch('/api/messages', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_id: leadId, mark_all_read: true })
-      })
+      if (markAsRead) {
+        await fetch('/api/messages', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: leadId, mark_all_read: true })
+        })
 
-      // Update unread count in conversations list
-      setConversations((prev) =>
-        prev.map((c) =>
-          c.lead_id === leadId ? { ...c, unread_count: 0 } : c
-        )
-      )
-      setTotalUnread((prev) => {
-        const conv = conversations.find((c) => c.lead_id === leadId)
-        return prev - (conv?.unread_count || 0)
-      })
+        // Update unread count in conversations list
+        setConversations((prev) => {
+          const conv = prev.find((c) => c.lead_id === leadId)
+          const unreadToRemove = conv?.unread_count || 0
+          if (unreadToRemove > 0) {
+            setTotalUnread((t) => Math.max(0, t - unreadToRemove))
+          }
+          return prev.map((c) =>
+            c.lead_id === leadId ? { ...c, unread_count: 0 } : c
+          )
+        })
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Unknown error')
     } finally {
       setLoadingMessages(false)
     }
-  }, [conversations])
+  }, [])
 
   // Initial load
   useEffect(() => {
     fetchConversations()
   }, [fetchConversations])
 
-  // Poll for new messages every 10 seconds
+  // Poll for new messages every 10 seconds - use refs to avoid dependency cycles
   useEffect(() => {
-    const interval = setInterval(() => {
-      fetchConversations()
-      if (selectedConversation) {
-        fetchMessages(selectedConversation)
+    const interval = setInterval(async () => {
+      await fetchConversations()
+      // Only fetch messages if we have a selected conversation
+      if (selectedConversationRef.current) {
+        // Don't mark as read during polling, just refresh
+        const res = await fetch(`/api/messages?lead_id=${selectedConversationRef.current}`)
+        if (res.ok) {
+          const data = await res.json()
+          setMessages(data.messages || [])
+        }
       }
     }, 10000)
 
     return () => clearInterval(interval)
-  }, [fetchConversations, fetchMessages, selectedConversation])
+  }, [fetchConversations])
 
   // Load messages when conversation is selected
   useEffect(() => {
     if (selectedConversation) {
-      fetchMessages(selectedConversation)
+      fetchMessages(selectedConversation, true)
     }
   }, [selectedConversation, fetchMessages])
 
