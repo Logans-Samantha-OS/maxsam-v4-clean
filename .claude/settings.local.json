@@ -29,7 +29,8 @@
       "Bash(vercel link:*)",
       "Bash(vercel:*)",
       "Bash(grep:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(node -e:*)"
     ],
     "deny": [],
     "ask": []
