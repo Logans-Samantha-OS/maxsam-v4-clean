@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { createClientComponentClient } from '@supabase/auth-helpers-nextjs';
+import { createClient } from '@/lib/supabase/client';
 
 type MessageThread = {
   lead_id: string;
@@ -20,7 +20,7 @@ type SMSMessage = {
 };
 
 export default function MessagingCenter() {
-  const supabase = createClientComponentClient();
+  const supabase = createClient();
   const [threads, setThreads] = useState<MessageThread[]>([]);
   const [selectedThread, setSelectedThread] = useState<string | null>(null);
   const [messages, setMessages] = useState<SMSMessage[]>([]);
