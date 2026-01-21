@@ -86,12 +86,14 @@ export default function MessagingCenter() {
       });
 
       // Update unread count locally
-      setConversations(prev => prev.map(c =>
-        c.lead_id === leadId ? { ...c, unread_count: 0 } : c
-      ));
-      setTotalUnread(prev => {
-        const conv = conversations.find(c => c.lead_id === leadId);
-        return Math.max(0, prev - (conv?.unread_count || 0));
+      setConversations(prev => {
+        const conv = prev.find(c => c.lead_id === leadId);
+        if (conv && conv.unread_count > 0) {
+          setTotalUnread(t => Math.max(0, t - conv.unread_count));
+        }
+        return prev.map(c =>
+          c.lead_id === leadId ? { ...c, unread_count: 0 } : c
+        );
       });
 
     } catch (err) {
@@ -100,7 +102,7 @@ export default function MessagingCenter() {
     } finally {
       setLoadingMessages(false);
     }
-  }, [conversations]);
+  }, []);
 
   // Initial load
   useEffect(() => {
