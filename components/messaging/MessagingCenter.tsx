@@ -262,10 +262,116 @@ function MessageBubble({ message }: { message: Message }) {
 }
 
 // ============================================================================
+// SEND AGREEMENT BUTTON
+// ============================================================================
+// PHASE 10 COMPLIANT: This is a CONTROL SURFACE only.
+// It does NOT send contracts directly - it inserts into execution_queue.
+// The actual contract sending is handled by background workers/n8n.
+// ============================================================================
+
+function SendAgreementButton({
+  leadId,
+  disabled,
+  onSuccess
+}: {
+  leadId: string | null
+  disabled: boolean
+  onSuccess?: () => void
+}) {
+  const [sending, setSending] = useState(false)
+  const [showOptions, setShowOptions] = useState(false)
+
+  const handleSendAgreement = async (contractType: 'excess_funds' | 'wholesale' | 'dual') => {
+    if (!leadId || sending) return
+
+    setSending(true)
+    try {
+      // PHASE 10: Insert into execution_queue, NOT direct contract send
+      const res = await fetch('/api/execution-queue', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: leadId,
+          action_type: 'SEND_CONTRACT',
+          payload: {
+            contract_type: contractType,
+            template_id: contractType === 'excess_funds'
+              ? 'excess-funds-recovery'
+              : contractType === 'wholesale'
+              ? 'wholesale-assignment'
+              : 'dual-deal'
+          },
+          status: 'pending',
+          source: 'messaging_center'
+        })
+      })
+
+      if (!res.ok) {
+        const data = await res.json()
+        throw new Error(data.error || 'Failed to queue agreement')
+      }
+
+      setShowOptions(false)
+      onSuccess?.()
+    } catch (err) {
+      console.error('Failed to queue agreement:', err)
+    } finally {
+      setSending(false)
+    }
+  }
+
+  if (!leadId) return null
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShowOptions(!showOptions)}
+        disabled={disabled || sending}
+        className="w-full py-2 px-4 bg-purple-600 hover:bg-purple-500 disabled:bg-zinc-700 disabled:text-zinc-500 rounded-lg text-sm font-medium text-white transition-colors"
+      >
+        {sending ? 'Queuing...' : '📝 Send Agreement'}
+      </button>
+
+      {showOptions && (
+        <div className="absolute bottom-full left-0 right-0 mb-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl overflow-hidden z-10">
+          <button
+            onClick={() => handleSendAgreement('excess_funds')}
+            className="w-full px-4 py-3 text-left text-sm text-white hover:bg-zinc-700 border-b border-zinc-700"
+          >
+            <div className="font-medium">Excess Funds Recovery</div>
+            <div className="text-xs text-zinc-400">25% fee agreement</div>
+          </button>
+          <button
+            onClick={() => handleSendAgreement('wholesale')}
+            className="w-full px-4 py-3 text-left text-sm text-white hover:bg-zinc-700 border-b border-zinc-700"
+          >
+            <div className="font-medium">Wholesale Assignment</div>
+            <div className="text-xs text-zinc-400">10% fee agreement</div>
+          </button>
+          <button
+            onClick={() => handleSendAgreement('dual')}
+            className="w-full px-4 py-3 text-left text-sm text-white hover:bg-zinc-700"
+          >
+            <div className="font-medium">Dual Deal</div>
+            <div className="text-xs text-zinc-400">Combined agreement</div>
+          </button>
+          <button
+            onClick={() => setShowOptions(false)}
+            className="w-full px-4 py-2 text-xs text-zinc-500 hover:text-zinc-300 border-t border-zinc-700"
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ============================================================================
 // LEAD INFO SIDEBAR
 // ============================================================================
 
-function LeadInfoSidebar({ lead }: { lead: Lead | null }) {
+function LeadInfoSidebar({ lead, onAgreementQueued }: { lead: Lead | null; onAgreementQueued?: () => void }) {
   if (!lead) {
     return (
       <div className="p-4 text-center text-zinc-500">
@@ -351,6 +457,13 @@ function LeadInfoSidebar({ lead }: { lead: Lead | null }) {
           )}
         </div>
       </div>
+
+      {/* PHASE 10: Send Agreement via execution_queue */}
+      <SendAgreementButton
+        leadId={lead.id}
+        disabled={false}
+        onSuccess={onAgreementQueued}
+      />
 
       <a
         href={`/leads?id=${lead.id}`}
@@ -760,7 +873,15 @@ export default function MessagingCenter() {
         <div className="p-4 border-b border-zinc-800">
           <h3 className="text-sm font-semibold text-zinc-400">Lead Info</h3>
         </div>
-        <LeadInfoSidebar lead={selectedLead} />
+        <LeadInfoSidebar
+          lead={selectedLead}
+          onAgreementQueued={() => {
+            // Refresh messages to show agreement event in timeline
+            if (selectedConversation) {
+              fetchMessages(selectedConversation, false)
+            }
+          }}
+        />
       </div>
     </div>
   )

@@ -5,6 +5,13 @@ export const runtime = 'nodejs'
 
 /**
  * GET /api/messages - Get all conversations grouped by lead/phone
+ *
+ * PHASE 10 INVARIANTS (NON-NEGOTIABLE):
+ * 1. Conversations are DERIVED, never stored as separate entities
+ * 2. A conversation = sms_messages grouped by lead_id, ordered by created_at
+ * 3. Empty arrays are VALID and must return success=true
+ * 4. Red error banners ONLY appear on network failure or non-200 without success=true
+ *
  * Query params:
  *   - lead_id: Filter by specific lead
  *   - unread_only: Only return unread messages
@@ -268,15 +275,40 @@ export async function PATCH(request: NextRequest) {
 // Helper Functions
 // ============================================================================
 
+/**
+ * PHASE 10 INVARIANT CHECK
+ *
+ * This function determines whether to use the "unified" tables path or the
+ * "legacy" sms_messages derivation path.
+ *
+ * CRITICAL: Per Phase 10 invariants, conversations are DERIVED from sms_messages,
+ * not stored. The unified tables are only used if they have the CORRECT schema.
+ *
+ * If the conversations table exists but has the wrong schema (e.g., missing
+ * contact_name, status, unread_count columns), we MUST fall back to deriving
+ * conversations from sms_messages.
+ *
+ * This prevents the "Failed to fetch conversations" error caused by querying
+ * non-existent columns.
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function checkUnifiedTablesExist(supabase: any): Promise<boolean> {
   try {
-    const { error } = await supabase
+    // Check if conversations table has the CORRECT schema for unified mode
+    // Required columns: contact_name, status, unread_count, last_message_at
+    const { data, error } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, contact_name, status, unread_count, last_message_at')
       .limit(1)
 
-    return !error
+    // If error contains "column does not exist", the schema is wrong
+    if (error) {
+      console.log('[Messages API] Unified tables check failed, using sms_messages derivation:', error.message)
+      return false
+    }
+
+    // Table exists with correct schema
+    return true
   } catch {
     return false
   }
@@ -482,7 +514,14 @@ async function getConversationsList(
     })
   }
 
-  // Fallback to legacy - group sms_messages by lead
+  // ============================================================================
+  // PHASE 10 COMPLIANT: Derive conversations from sms_messages
+  // ============================================================================
+  // This is the CORRECT path per Phase 10 invariants:
+  // - Conversations are DERIVED from sms_messages, not stored
+  // - GROUP BY lead_id, ORDER BY MAX(created_at) DESC
+  // - Empty results return success=true with empty array (NEVER an error)
+  // ============================================================================
   let query = supabase
     .from('sms_messages')
     .select(`
