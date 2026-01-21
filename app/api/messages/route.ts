@@ -535,8 +535,7 @@ async function getConversationsList(
       created_at,
       read_at,
       intent,
-      sentiment,
-      next_action
+      sentiment
     `)
     .order('created_at', { ascending: false })
 
