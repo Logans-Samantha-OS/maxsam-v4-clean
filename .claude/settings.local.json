@@ -28,7 +28,8 @@
       "Bash(vercel whoami:*)",
       "Bash(vercel link:*)",
       "Bash(vercel:*)",
-      "Bash(grep:*)"
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ],
     "deny": [],
     "ask": []
