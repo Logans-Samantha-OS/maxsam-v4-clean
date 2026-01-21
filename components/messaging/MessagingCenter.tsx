@@ -574,23 +574,19 @@ export default function MessagingCenter() {
       const res = await fetch('/api/messages')
       const data = await res.json()
 
-      // API now returns success: true with empty arrays on graceful errors
-      // Only show error banner for actual network/server failures
-      if (!res.ok && !data.success) {
-        throw new Error(data.error || 'Failed to fetch conversations')
-      }
-
       setConversations(data.conversations || [])
       setTotalUnread(data.total_unread || 0)
-      setError(null)
-    } catch (err) {
-      // Only set error for actual failures, not empty results
-      if (err instanceof TypeError && err.message.includes('fetch')) {
-        setError('Network error - please check your connection')
-      } else if (err instanceof Error && err.message !== 'Failed to fetch conversations') {
-        setError(err.message)
+
+      // Phase 10: warnings are NON-fatal
+      // If success:true, always clear banner; only set banner if success:false
+      if (data.success) {
+        setError(null)
+      } else {
+        setError(data.error || 'Failed to fetch conversations')
       }
-      // Don't set error for empty conversations - that's expected
+    } catch (err) {
+      // Network errors only
+      setError('Network error - please check your connection')
     } finally {
       setLoading(false)
     }
@@ -603,14 +599,16 @@ export default function MessagingCenter() {
       const res = await fetch(`/api/messages?lead_id=${leadId}`)
       const data = await res.json()
 
-      // API returns success: true with empty arrays on graceful errors
-      // Only show error for actual failures
-      if (!res.ok && !data.success) {
-        throw new Error(data.error || 'Failed to fetch messages')
-      }
-
       setMessages(data.messages || [])
       setSelectedLead(data.lead || null)
+
+      // Phase 10: warnings are NON-fatal
+      // If success:true, always clear banner; only set banner if success:false
+      if (data.success) {
+        setError(null)
+      } else {
+        setError(data.error || 'Failed to fetch messages')
+      }
 
       // Mark messages as read
       if (markAsRead && data.messages?.length > 0) {
@@ -633,11 +631,8 @@ export default function MessagingCenter() {
         })
       }
     } catch (err) {
-      // Only set error for actual network failures
-      if (err instanceof TypeError && err.message.includes('fetch')) {
-        setError('Network error - please check your connection')
-      }
-      // Don't set error for empty messages - that's expected
+      // Network errors only
+      setError('Network error - please check your connection')
     } finally {
       setLoadingMessages(false)
     }
