@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
+import { sendSMS, normalizePhone as twilioNormalizePhone, isTwilioConfigured } from '@/lib/twilio';
 
 function getSupabase() {
     return createClient(
@@ -89,12 +90,6 @@ function getLeadPhone(lead: Lead): string | null {
     return lead.phone || lead.phone_1 || lead.phone_2 || lead.owner_phone || null;
 }
 
-function normalizePhone(phone: string): string {
-    const digits = phone.replace(/\D/g, '');
-    if (digits.length === 10) return `+1${digits}`;
-    if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-    return `+${digits}`;
-}
 
 // POST - Run SMS campaign by class
 export async function POST(request: NextRequest) {
@@ -177,10 +172,12 @@ export async function POST(request: NextRequest) {
             });
         }
 
-        // Send SMS to each lead
-        const webhookUrl = process.env.N8N_WEBHOOK_BASE_URL
-            ? `${process.env.N8N_WEBHOOK_BASE_URL}/sam-initial-outreach`
-            : 'https://n8n.srv758673.hstgr.cloud/webhook/sam-initial-outreach';
+        // Check if Twilio is configured
+        if (!isTwilioConfigured()) {
+            return NextResponse.json({
+                error: 'Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, TWILIO_PHONE_NUMBER'
+            }, { status: 500 });
+        }
 
         const results = {
             success: 0,
@@ -188,7 +185,7 @@ export async function POST(request: NextRequest) {
             noPhone: 0,
             skipped: 0,
             errors: [] as string[],
-            sent: [] as { id: string; name: string; phone: string; class: string }[]
+            sent: [] as { id: string; name: string; phone: string; class: string; sid?: string }[]
         };
 
         for (const lead of leadsWithPhone) {
@@ -207,25 +204,17 @@ export async function POST(request: NextRequest) {
             const message = template(lead);
 
             try {
-                const response = await fetch(webhookUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        lead_id: lead.id,
-                        owner_name: lead.owner_name,
-                        phone: normalizePhone(phone),
-                        message: message,
-                        template: leadClass
-                    })
-                });
+                // Send SMS directly via Twilio (includes opt-out check and logging)
+                const smsResult = await sendSMS(phone, message, lead.id);
 
-                if (response.ok) {
+                if (smsResult.success) {
                     results.success++;
                     results.sent.push({
                         id: lead.id,
                         name: lead.owner_name,
-                        phone: normalizePhone(phone),
-                        class: leadClass.toUpperCase()
+                        phone: twilioNormalizePhone(phone),
+                        class: leadClass.toUpperCase(),
+                        sid: smsResult.sid
                     });
 
                     // Update lead in database
@@ -242,25 +231,15 @@ export async function POST(request: NextRequest) {
                         })
                         .eq('id', lead.id);
 
-                    // Log to communication_logs
-                    await supabase
-                        .from('communication_logs')
-                        .insert({
-                            lead_id: lead.id,
-                            type: 'sms',
-                            direction: 'outbound',
-                            content: message,
-                            to_number: normalizePhone(phone),
-                            from_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
-                            status: 'sent'
-                        });
-
-                    // Small delay to avoid rate limiting
-                    await new Promise(resolve => setTimeout(resolve, 300));
+                    // Small delay to avoid Twilio rate limiting (1 SMS/sec is safe)
+                    await new Promise(resolve => setTimeout(resolve, 1000));
                 } else {
-                    const errorText = await response.text();
-                    results.failed++;
-                    results.errors.push(`${lead.owner_name}: ${errorText}`);
+                    if (smsResult.error?.includes('opted out')) {
+                        results.skipped++;
+                    } else {
+                        results.failed++;
+                    }
+                    results.errors.push(`${lead.owner_name}: ${smsResult.error}`);
                 }
             } catch (e) {
                 results.failed++;
