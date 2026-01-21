@@ -24,6 +24,9 @@ type Lead = {
   excess_funds_amount: number;
   eleanor_score: number;
   status: string;
+  phone?: string | null;
+  phone_1?: string | null;
+  phone_2?: string | null;
 };
 
 type Conversation = {
@@ -139,13 +142,17 @@ export default function MessagingCenter() {
     setSending(true);
     setError(null);
     try {
+      // Get phone from conversation or lead (conversation has the phone from sms_messages)
+      const selectedConv = conversations.find(c => c.lead_id === selectedLeadId);
+      const toNumber = selectedConv?.phone || selectedLead?.phone || selectedLead?.phone_1 || selectedLead?.phone_2;
+
       const res = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           lead_id: selectedLeadId,
           message: newMessage,
-          to_number: selectedLead?.phone
+          to_number: toNumber
         })
       });
 
