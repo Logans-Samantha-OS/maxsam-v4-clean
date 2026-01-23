@@ -302,6 +302,10 @@ body {
   animation: count-up 0.5s ease-out;
 }
 
+.animate-shimmer {
+  animation: shimmer 1.5s infinite;
+}
+
 /* ===========================================
    GLASSMORPHISM
    =========================================== */

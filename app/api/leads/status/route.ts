@@ -12,7 +12,7 @@ export async function POST(req: Request) {
     const supabase = createClient();
 
     const { error } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .update({
         status,
         updated_at: new Date().toISOString(),

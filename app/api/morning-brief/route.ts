@@ -140,9 +140,10 @@ export async function POST() {
       .select('*', { count: 'exact', head: true })
       .eq('status', 'invoiced');
 
+    // Get all leads with details for Sam's call list and skip trace candidates
     const { data: leads } = await supabase
       .from('maxsam_leads')
-      .select('excess_funds_amount, last_contact_date, contact_attempts, status');
+      .select('id, owner_name, excess_funds_amount, eleanor_score, last_contact_date, contact_attempts, status, phone, phone_1, phone_2, owner_phone, golden_lead, is_golden_lead');
 
     const followUpsToday = leads?.filter(l => {
       if (!l.last_contact_date) return false;
@@ -152,6 +153,38 @@ export async function POST() {
     }).length || 0;
 
     const totalPipeline = leads?.reduce((sum, l) => sum + (Number(l.excess_funds_amount) || 0), 0) || 0;
+
+    // SAM'S CALL LIST - Leads with phone AND amount, ready for outreach
+    const samCallingToday = leads?.filter(l => {
+      const hasPhone = l.phone || l.phone_1 || l.phone_2 || l.owner_phone;
+      const hasAmount = (l.excess_funds_amount || 0) > 0;
+      const isReady = ['new', 'scored', 'ready_for_outreach'].includes(l.status);
+      const notMaxedOut = (l.contact_attempts || 0) < 5;
+      return hasPhone && hasAmount && isReady && notMaxedOut;
+    })
+    .sort((a, b) => (b.eleanor_score || 0) - (a.eleanor_score || 0))
+    .slice(0, 10)
+    .map(l => {
+      const isGolden = l.golden_lead || l.is_golden_lead;
+      const leadClass = isGolden ? 'GOLDEN' :
+                        (l.eleanor_score || 0) >= 75 ? 'A' :
+                        (l.eleanor_score || 0) >= 60 ? 'B' : 'C';
+      return {
+        name: l.owner_name || 'Unknown',
+        amount: l.excess_funds_amount || 0,
+        score: l.eleanor_score || 0,
+        class: leadClass
+      };
+    }) || [];
+
+    // SKIP TRACE CANDIDATES - Leads with amount but NO phone (Class A or B, worth $5K+)
+    const skipTraceCandidates = leads?.filter(l => {
+      const hasPhone = l.phone || l.phone_1 || l.phone_2 || l.owner_phone;
+      const hasAmount = (l.excess_funds_amount || 0) >= 5000; // Worth skip tracing
+      const isClassAorB = (l.eleanor_score || 0) >= 60;
+      const notClosed = !['closed', 'dead', 'contract_signed'].includes(l.status);
+      return !hasPhone && hasAmount && isClassAorB && notClosed;
+    }).length || 0;
 
     // Send notification
     await notifyMorningBrief({
@@ -165,10 +198,16 @@ export async function POST() {
       followUpsToday,
       pendingContracts: pendingContracts || 0,
       pendingInvoices: pendingInvoices || 0,
-      totalPipeline
+      totalPipeline,
+      samCallingToday,
+      skipTraceCandidates
     });
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      samCallingToday,
+      skipTraceCandidates
+    });
 
   } catch (error: unknown) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';

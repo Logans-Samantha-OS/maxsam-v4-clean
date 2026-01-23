@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 
 interface WorkflowConfig {
   id: string;
@@ -368,21 +368,116 @@ const WORKFLOWS: WorkflowConfig[] = [
   },
 ];
 
+// Map workflow IDs to backend config keys
+const WORKFLOW_TO_CONFIG: Record<string, string> = {
+  'lead-import': 'intake_enabled',
+  'sam-outreach': 'outreach_enabled',
+  'docusign': 'contracts_enabled',
+  'stripe': 'payments_enabled',
+};
+
 export default function N8NControlCenter() {
   const [workflows, setWorkflows] = useState(WORKFLOWS);
   const [expandedWorkflow, setExpandedWorkflow] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
-  const toggleWorkflowStatus = (id: string) => {
-    setWorkflows(prev =>
-      prev.map(w =>
-        w.id === id
-          ? { ...w, status: w.status === 'active' ? 'paused' : 'active' }
-          : w
-      )
-    );
+  // Fetch initial state from backend
+  const fetchState = useCallback(async () => {
+    try {
+      const response = await fetch('/api/workflow-control');
+      if (!response.ok) throw new Error('Failed to fetch workflow state');
+
+      const data = await response.json();
+
+      // Update workflows based on backend state
+      setWorkflows(prev => prev.map(w => {
+        const configKey = WORKFLOW_TO_CONFIG[w.id];
+        if (configKey && configKey in data) {
+          return {
+            ...w,
+            status: data[configKey] ? 'active' : 'paused'
+          };
+        }
+        return w;
+      }));
+    } catch (error) {
+      console.error('Failed to fetch workflow state:', error);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    fetchState();
+  }, [fetchState]);
+
+  // Save state to backend and sync with N8N
+  const saveToBackend = async (updates: Record<string, boolean | number | string>) => {
+    setSyncing(true);
+    try {
+      // Save to workflow-control
+      const response = await fetch('/api/workflow-control', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to save');
+      }
+
+      // Sync with N8N
+      await fetch('/api/governance/n8n-sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ source: 'n8n_control_center' }),
+      });
+
+      return true;
+    } catch (error) {
+      console.error('Failed to save workflow state:', error);
+      return false;
+    } finally {
+      setSyncing(false);
+    }
   };
 
-  const updateParameter = (workflowId: string, paramId: string, value: string | number | boolean) => {
+  const toggleWorkflowStatus = async (id: string) => {
+    const workflow = workflows.find(w => w.id === id);
+    if (!workflow) return;
+
+    const newStatus = workflow.status === 'active' ? 'paused' : 'active';
+    const configKey = WORKFLOW_TO_CONFIG[id];
+
+    // Optimistic update
+    setWorkflows(prev =>
+      prev.map(w =>
+        w.id === id ? { ...w, status: newStatus } : w
+      )
+    );
+
+    // If this workflow has a backend mapping, save it
+    if (configKey) {
+      const success = await saveToBackend({ [configKey]: newStatus === 'active' });
+      if (!success) {
+        // Revert on failure
+        setWorkflows(prev =>
+          prev.map(w =>
+            w.id === id ? { ...w, status: workflow.status } : w
+          )
+        );
+      }
+    }
+  };
+
+  const updateParameter = async (workflowId: string, paramId: string, value: string | number | boolean) => {
+    const workflow = workflows.find(w => w.id === workflowId);
+    const param = workflow?.parameters.find(p => p.id === paramId);
+    const oldValue = param?.value;
+
+    // Optimistic update
     setWorkflows(prev =>
       prev.map(w =>
         w.id === workflowId
@@ -395,6 +490,28 @@ export default function N8NControlCenter() {
           : w
       )
     );
+
+    // For specific parameters that map to backend, save them
+    // Could extend this mapping as needed
+    const backendKey = `${workflowId}_${paramId}`;
+    if (['eleanor-ai_min-score', 'sam-outreach_daily-limit'].includes(backendKey)) {
+      const success = await saveToBackend({ [backendKey.replace('-', '_')]: value });
+      if (!success && oldValue !== undefined) {
+        // Revert on failure
+        setWorkflows(prev =>
+          prev.map(w =>
+            w.id === workflowId
+              ? {
+                  ...w,
+                  parameters: w.parameters.map(p =>
+                    p.id === paramId ? { ...p, value: oldValue } : p
+                  ),
+                }
+              : w
+          )
+        );
+      }
+    }
   };
 
   const getStatusColor = (status: string) => {
@@ -421,8 +538,22 @@ export default function N8NControlCenter() {
           <p className="text-zinc-400 text-sm mt-1">Control all automated workflows</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
-          <span className="text-green-400 text-sm">All Systems Online</span>
+          {loading ? (
+            <>
+              <span className="w-2 h-2 bg-yellow-500 rounded-full animate-pulse"></span>
+              <span className="text-yellow-400 text-sm">Loading...</span>
+            </>
+          ) : syncing ? (
+            <>
+              <span className="w-2 h-2 bg-cyan-500 rounded-full animate-pulse"></span>
+              <span className="text-cyan-400 text-sm">Syncing...</span>
+            </>
+          ) : (
+            <>
+              <span className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+              <span className="text-green-400 text-sm">All Systems Online</span>
+            </>
+          )}
         </div>
       </div>
 

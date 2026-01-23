@@ -1,1 +1,12 @@
-{}
+{
+  "crons": [
+    {
+      "path": "/api/cron/sam-campaign",
+      "schedule": "0 15 * * 1-6"
+    },
+    {
+      "path": "/api/cron/morning-brief",
+      "schedule": "0 14 * * 1-6"
+    }
+  ]
+}

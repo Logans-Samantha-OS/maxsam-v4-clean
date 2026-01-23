@@ -171,7 +171,34 @@ export async function notifyMorningBrief(brief: {
   pendingContracts: number;
   pendingInvoices: number;
   totalPipeline: number;
+  samCallingToday?: Array<{
+    name: string;
+    amount: number;
+    score: number;
+    class: string;
+  }>;
+  skipTraceCandidates?: number;
 }): Promise<void> {
+  let samSection = '';
+  if (brief.samCallingToday && brief.samCallingToday.length > 0) {
+    const leadsList = brief.samCallingToday
+      .slice(0, 5)
+      .map((l, i) => `${i + 1}. ${l.name} - ${formatMoney(l.amount)} (${l.class})`)
+      .join('\n');
+    samSection = `
+📱 <b>SAM'S CALL LIST (9AM):</b>
+${leadsList}
+${brief.samCallingToday.length > 5 ? `... +${brief.samCallingToday.length - 5} more` : ''}
+`;
+  }
+
+  let skipTraceSection = '';
+  if (brief.skipTraceCandidates && brief.skipTraceCandidates > 0) {
+    skipTraceSection = `
+🔍 Skip Trace Needed: <b>${brief.skipTraceCandidates}</b> leads
+`;
+  }
+
   const message = `☀️ <b>Good Morning, Logan!</b>
 ${brief.date}
 
@@ -184,7 +211,7 @@ ${brief.date}
 💳 Invoices Pending: <b>${brief.pendingInvoices}</b>
 
 💰 <b>Pipeline Value:</b> ${formatMoney(brief.totalPipeline)}
-
+${samSection}${skipTraceSection}
 Time to make money! 🚀`;
 
   await sendTelegramMessage(message);

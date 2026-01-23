@@ -22,9 +22,9 @@ export default function CriticalAlertsPanel() {
   useEffect(() => {
     async function fetchAlerts() {
       try {
-        // Get expiring leads
+        // Get expiring leads - use maxsam_leads (canonical table)
         const { data: expiringLeads } = await supabase
-          .from('leads')
+          .from('maxsam_leads')
           .select('*')
           .lt('expiration_date', new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString())
           .eq('status', 'new')
