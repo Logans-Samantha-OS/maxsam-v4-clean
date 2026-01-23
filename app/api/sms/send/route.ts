@@ -7,7 +7,7 @@ export async function POST(request: NextRequest) {
     
     // Get lead
     const { data: lead, error: leadError } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .select('*')
       .eq('id', lead_id)
       .single();
@@ -54,7 +54,7 @@ export async function POST(request: NextRequest) {
     
     // Update lead contact info
     await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .update({
         contact_count: (lead.contact_count || 0) + 1,
         last_contacted_at: new Date().toISOString(),

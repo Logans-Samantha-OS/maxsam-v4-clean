@@ -42,8 +42,8 @@ export async function GET() {
     // Try to fetch from system_config table
     const { data, error } = await supabase
       .from('system_config')
-      .select('config_key, config_value')
-      .in('config_key', [
+      .select('key, value')
+      .in('key', [
         'intake_enabled',
         'outreach_enabled',
         'contracts_enabled',
@@ -66,7 +66,7 @@ export async function GET() {
     // Parse config values into state object
     const configMap: Record<string, string> = {};
     for (const row of data || []) {
-      configMap[row.config_key] = row.config_value;
+      configMap[row.key] = row.value;
     }
 
     const state: WorkflowState = {
@@ -105,13 +105,13 @@ export async function POST(request: NextRequest) {
       'ralph_enabled',
     ];
 
-    const updates: { config_key: string; config_value: string }[] = [];
+    const updates: { key: string; value: string }[] = [];
 
-    for (const key of allowedKeys) {
-      if (key in body) {
+    for (const configKey of allowedKeys) {
+      if (configKey in body) {
         updates.push({
-          config_key: key,
-          config_value: String(body[key]),
+          key: configKey,
+          value: String(body[configKey]),
         });
       }
     }
@@ -125,20 +125,20 @@ export async function POST(request: NextRequest) {
 
     // Add metadata
     updates.push(
-      { config_key: 'workflow_last_updated', config_value: new Date().toISOString() },
-      { config_key: 'workflow_updated_by', config_value: 'ceo_dashboard' }
+      { key: 'workflow_last_updated', value: new Date().toISOString() },
+      { key: 'workflow_updated_by', value: 'ceo_dashboard' }
     );
 
     // Upsert each config value
     for (const update of updates) {
       const { error } = await supabase
         .from('system_config')
-        .upsert(update, { onConflict: 'config_key' });
+        .upsert(update, { onConflict: 'key' });
 
       if (error) {
-        console.error(`Failed to update ${update.config_key}:`, error.message);
+        console.error(`Failed to update ${update.key}:`, error.message);
         return NextResponse.json(
-          { success: false, error: `Failed to update ${update.config_key}` },
+          { success: false, error: `Failed to update ${update.key}` },
           { status: 500 }
         );
       }
@@ -164,23 +164,23 @@ export async function PUT() {
     const supabase = createClient();
 
     const emergencyUpdates = [
-      { config_key: 'intake_enabled', config_value: 'false' },
-      { config_key: 'outreach_enabled', config_value: 'false' },
-      { config_key: 'contracts_enabled', config_value: 'false' },
-      { config_key: 'payments_enabled', config_value: 'false' },
-      { config_key: 'ralph_enabled', config_value: 'false' },
-      { config_key: 'autonomy_level', config_value: '0' },
-      { config_key: 'workflow_last_updated', config_value: new Date().toISOString() },
-      { config_key: 'workflow_updated_by', config_value: 'emergency_stop' },
+      { key: 'intake_enabled', value: 'false' },
+      { key: 'outreach_enabled', value: 'false' },
+      { key: 'contracts_enabled', value: 'false' },
+      { key: 'payments_enabled', value: 'false' },
+      { key: 'ralph_enabled', value: 'false' },
+      { key: 'autonomy_level', value: '0' },
+      { key: 'workflow_last_updated', value: new Date().toISOString() },
+      { key: 'workflow_updated_by', value: 'emergency_stop' },
     ];
 
     for (const update of emergencyUpdates) {
       const { error } = await supabase
         .from('system_config')
-        .upsert(update, { onConflict: 'config_key' });
+        .upsert(update, { onConflict: 'key' });
 
       if (error) {
-        console.error(`Emergency stop failed for ${update.config_key}:`, error.message);
+        console.error(`Emergency stop failed for ${update.key}:`, error.message);
       }
     }
 

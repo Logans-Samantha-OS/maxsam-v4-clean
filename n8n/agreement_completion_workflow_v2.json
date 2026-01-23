@@ -1,0 +1,511 @@
+{
+  "name": "Agreement Completion Workflow V2 (Provider-Agnostic)",
+  "description": "Handles completion webhooks forwarded from /api/signing/webhook. Downloads and stores signed PDFs.",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-completion-v2",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Parse webhook payload from API\nconst input = $input.all()[0].json;\n\n// Expected payload from /api/signing/webhook forward\nconst packetId = input.packet_id;\nconst eventType = input.event_type;\nconst provider = input.provider;\n\nif (!packetId) {\n  throw new Error('packet_id not found in webhook payload');\n}\n\nreturn [{\n  json: {\n    packet_id: packetId,\n    event_type: eventType || 'signed',\n    provider: provider || 'unknown'\n  }\n}];"
+      },
+      "id": "parse-webhook",
+      "name": "Parse Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT ap.*, ml.owner_name, ml.email, ml.phone FROM agreement_packets ap LEFT JOIN maxsam_leads ml ON ap.lead_id = ml.id WHERE ap.id = '{{ $json.packet_id }}'"
+      },
+      "id": "fetch-packet",
+      "name": "Fetch Packet",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [650, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "string": [
+            {
+              "value1": "={{ $('Parse Webhook').first().json.event_type }}",
+              "operation": "equals",
+              "value2": "SIGNED"
+            }
+          ]
+        }
+      },
+      "id": "is-signed",
+      "name": "Is Signed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/status/{{ $json.id }}",
+        "authentication": "none",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "get-status",
+      "name": "Get Current Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Determine provider-specific PDF download URL\nconst packet = $('Fetch Packet').first().json;\nconst provider = $('Parse Webhook').first().json.provider;\n\nlet downloadUrl = null;\nlet headers = {};\n\nswitch (provider) {\n  case 'jotform_sign':\n    // JotForm API endpoint for submission PDF\n    const submissionId = packet.provider_document_id?.split('_')[1];\n    if (submissionId) {\n      downloadUrl = `https://api.jotform.com/submission/${submissionId}?apiKey=${$env.JOTFORM_API_KEY}`;\n    }\n    break;\n  \n  case 'signwell':\n    // SignWell API endpoint\n    if (packet.provider_packet_id) {\n      downloadUrl = `https://www.signwell.com/api/v1/documents/${packet.provider_packet_id}/completed_pdf`;\n      headers = {\n        'X-Api-Key': $env.SIGNWELL_API_KEY\n      };\n    }\n    break;\n\n  default:\n    // Check if we have a direct PDF URL stored\n    downloadUrl = packet.signed_pdf_url;\n}\n\nreturn [{\n  json: {\n    ...packet,\n    download_url: downloadUrl,\n    download_headers: headers,\n    provider: provider\n  }\n}];"
+      },
+      "id": "prepare-download",
+      "name": "Prepare PDF Download",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.download_url }}",
+              "operation": "isNotEmpty"
+            }
+          ]
+        }
+      },
+      "id": "has-download-url",
+      "name": "Has Download URL?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1450, 200]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.download_url }}",
+        "authentication": "none",
+        "method": "GET",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": false,
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "id": "fetch-signed-pdf",
+      "name": "Fetch Signed PDF",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 100]
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "path": "/MAXSAM V4/Signed/{{ $('Fetch Packet').first().json.client_name }}/{{ DateTime.now().toFormat('yyyy-MM-dd') }}_{{ $('Fetch Packet').first().json.selection_code === 1 ? 'Excess_Funds' : $('Fetch Packet').first().json.selection_code === 2 ? 'Wholesale' : 'Dual_Deal' }}_Agreement.pdf",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-dropbox",
+      "name": "Upload to Dropbox",
+      "type": "n8n-nodes-base.dropbox",
+      "typeVersion": 1,
+      "position": [1850, 0],
+      "credentials": {
+        "dropboxOAuth2Api": {
+          "id": "dropbox-cred",
+          "name": "Dropbox"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "file",
+        "operation": "upload",
+        "driveId": "root",
+        "folderId": "NotebookLM/Clients",
+        "name": "={{ $('Fetch Packet').first().json.client_name }}/Agreements/{{ DateTime.now().toFormat('yyyy-MM-dd') }}_Agreement.pdf",
+        "binaryPropertyName": "data"
+      },
+      "id": "upload-gdrive",
+      "name": "Upload to Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [1850, 200],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "gdrive-cred",
+          "name": "Google Drive"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $('Fetch Packet').first().json.id }}"
+            }
+          ]
+        },
+        "columns": "signed_pdf_dropbox_url,signed_pdf_gdrive_url,signed_pdf_gdrive_file_id"
+      },
+      "id": "update-pdf-urls",
+      "name": "Update PDF URLs",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2050, 100],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "✅ AGREEMENT SIGNED!\n\n🎉 {{ $('Fetch Packet').first().json.client_name }} signed!\n\n{{ $('Fetch Packet').first().json.selection_code === 1 ? '📋 Excess Funds' : $('Fetch Packet').first().json.selection_code === 2 ? '🏠 Wholesale' : '⭐ DUAL DEAL' }}\n\n🏠 {{ $('Fetch Packet').first().json.property_address }}\n💰 Total Fee: ${{ $('Fetch Packet').first().json.total_fee?.toLocaleString() || 'N/A' }}\n🔌 Provider: {{ $('Parse Webhook').first().json.provider }}\n\n📁 PDFs uploaded to Dropbox & Drive\n\nSam can proceed to next phase!",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-signed",
+      "name": "Notify Telegram - Signed",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [2250, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_PHONE_NUMBER }}",
+        "to": "={{ $('Fetch Packet').first().json.client_phone }}",
+        "body": "{{ $('Fetch Packet').first().json.client_name.split(' ')[0] }}, thank you for signing! 🎉 We'll start processing your claim right away. Most claims complete within 30-60 days. We'll keep you updated! -MaxSam"
+      },
+      "id": "send-confirmation-sms",
+      "name": "Send Confirmation SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [2450, 100],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-cred",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'signed', packet_id: $('Parse Webhook').first().json.packet_id, pdfs_uploaded: true }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2650, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Agreement {{ $('Parse Webhook').first().json.event_type }}\n\nPacket: {{ $('Parse Webhook').first().json.packet_id }}\nEvent: {{ $('Parse Webhook').first().json.event_type }}\nProvider: {{ $('Parse Webhook').first().json.provider }}\n\nNo action required for non-signed events.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-other",
+      "name": "Notify Other Event",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1050, 400],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: $('Parse Webhook').first().json.event_type, packet_id: $('Parse Webhook').first().json.packet_id }) }}"
+      },
+      "id": "respond-other",
+      "name": "Respond Other Event",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1250, 400]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Could not download signed PDF\n\nPacket: {{ $('Fetch Packet').first().json.id }}\nClient: {{ $('Fetch Packet').first().json.client_name }}\nProvider: {{ $('Parse Webhook').first().json.provider }}\n\nManual PDF retrieval may be needed.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-no-pdf",
+      "name": "Notify - No PDF URL",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1650, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, action: 'signed', packet_id: $('Parse Webhook').first().json.packet_id, pdfs_uploaded: false, reason: 'No download URL available' }) }}"
+      },
+      "id": "respond-no-pdf",
+      "name": "Respond No PDF",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1850, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Parse Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Packet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Packet": {
+      "main": [
+        [
+          {
+            "node": "Is Signed?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Signed?": {
+      "main": [
+        [
+          {
+            "node": "Get Current Status",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Other Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get Current Status": {
+      "main": [
+        [
+          {
+            "node": "Prepare PDF Download",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare PDF Download": {
+      "main": [
+        [
+          {
+            "node": "Has Download URL?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Download URL?": {
+      "main": [
+        [
+          {
+            "node": "Fetch Signed PDF",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify - No PDF URL",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Signed PDF": {
+      "main": [
+        [
+          {
+            "node": "Upload to Dropbox",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Upload to Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Dropbox": {
+      "main": [
+        [
+          {
+            "node": "Update PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upload to Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Update PDF URLs",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update PDF URLs": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram - Signed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram - Signed": {
+      "main": [
+        [
+          {
+            "node": "Send Confirmation SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Confirmation SMS": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Other Event": {
+      "main": [
+        [
+          {
+            "node": "Respond Other Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify - No PDF URL": {
+      "main": [
+        [
+          {
+            "node": "Respond No PDF",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "2",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-completion-workflow-v2",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "provider-agnostic",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

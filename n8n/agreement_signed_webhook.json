@@ -1,0 +1,224 @@
+{
+  "name": "Agreement Signed Webhook Handler",
+  "description": "Handles webhook from /api/sign/[packetId]/submit when client signs agreement. Logs to timeline, updates lead, notifies via Telegram.",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-signed",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate signed webhook payload\nconst input = $input.all()[0].json;\n\nif (input.event !== 'agreement_signed') {\n  throw new Error('Invalid event type: ' + input.event);\n}\n\nif (!input.packet_id || !input.lead_id) {\n  throw new Error('Missing packet_id or lead_id');\n}\n\nreturn [{\n  json: {\n    packet_id: input.packet_id,\n    lead_id: input.lead_id,\n    typed_name: input.signature_data?.typed_name || 'Unknown',\n    ip_address: input.signature_data?.ip_address || 'Unknown',\n    signed_at: input.signature_data?.signed_at || input.timestamp,\n    timestamp: input.timestamp\n  }\n}];"
+      },
+      "id": "validate-webhook",
+      "name": "Validate Webhook",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/status/{{ $json.packet_id }}",
+        "authentication": "none",
+        "method": "GET",
+        "options": {}
+      },
+      "id": "fetch-packet-details",
+      "name": "Fetch Packet Details",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Prepare timeline entry for signed agreement\nconst webhook = $('Validate Webhook').first().json;\nconst packet = $input.all()[0].json;\n\nreturn [{\n  json: {\n    lead_id: webhook.lead_id,\n    direction: 'system',\n    channel: 'agreement',\n    content: `✅ Agreement SIGNED by ${webhook.typed_name}`,\n    agreement_packet_id: webhook.packet_id,\n    agreement_event_type: 'signed',\n    metadata: {\n      typed_name: webhook.typed_name,\n      ip_address: webhook.ip_address,\n      signed_at: webhook.signed_at,\n      client_name: packet.packet?.client_name,\n      property_address: packet.packet?.property_address,\n      total_fee: packet.packet?.total_fee\n    }\n  }\n}];"
+      },
+      "id": "prepare-timeline",
+      "name": "Prepare Timeline Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/messages/timeline",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "log-to-timeline",
+      "name": "Log to Timeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/leads/{{ $('Validate Webhook').first().json.lead_id }}",
+        "authentication": "none",
+        "method": "PATCH",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "status",
+              "value": "contract_signed"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "update-lead-status",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1250, 300],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "🎉 AGREEMENT SIGNED!\n\n✅ {{ $('Validate Webhook').first().json.typed_name }} has signed!\n\n📋 Packet: {{ $('Validate Webhook').first().json.packet_id }}\n🏠 Property: {{ $('Fetch Packet Details').first().json.packet?.property_address || 'N/A' }}\n💰 Fee: ${{ $('Fetch Packet Details').first().json.packet?.total_fee?.toLocaleString() || '0' }}\n\n🌐 IP: {{ $('Validate Webhook').first().json.ip_address }}\n🕐 Signed: {{ $('Validate Webhook').first().json.signed_at }}\n\n🚀 Ready to proceed to next phase!",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, message: 'Signature processed', packet_id: $('Validate Webhook').first().json.packet_id }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Webhook": {
+      "main": [
+        [
+          {
+            "node": "Fetch Packet Details",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Packet Details": {
+      "main": [
+        [
+          {
+            "node": "Prepare Timeline Entry",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Timeline Entry": {
+      "main": [
+        [
+          {
+            "node": "Log to Timeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Timeline": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-signed-webhook",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "webhooks",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

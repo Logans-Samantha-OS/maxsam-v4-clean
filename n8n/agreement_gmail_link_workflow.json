@@ -1,0 +1,379 @@
+{
+  "name": "Agreement Gmail-Link Workflow (MVP)",
+  "description": "Creates and sends agreement packets using Gmail-Link provider. Works without external e-sign services.",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "agreement-gmail-link",
+        "authentication": "none",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook Trigger",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate incoming request from SMS selection (1/2/3)\nconst input = $input.all()[0].json;\n\nif (!input.lead_id) {\n  throw new Error('lead_id is required');\n}\n\n// Selection code from SMS reply\nconst selectionCode = parseInt(input.selection_code);\nif (![1, 2, 3].includes(selectionCode)) {\n  throw new Error('selection_code must be 1, 2, or 3');\n}\n\n// Map selection to agreement type\nconst agreementTypes = {\n  1: 'Excess Funds Recovery',\n  2: 'Wholesale Assignment',\n  3: 'Combined Services'\n};\n\nreturn [{\n  json: {\n    lead_id: input.lead_id,\n    selection_code: selectionCode,\n    agreement_type: agreementTypes[selectionCode],\n    triggered_by: input.triggered_by || 'sms',\n    source_message_sid: input.source_message_sid || null,\n    delivery_method: input.delivery_method || 'both'\n  }\n}];"
+      },
+      "id": "validate-input",
+      "name": "Validate Selection",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [450, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/create",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "lead_id",
+              "value": "={{ $json.lead_id }}"
+            },
+            {
+              "name": "selection_code",
+              "value": "={{ $json.selection_code }}"
+            },
+            {
+              "name": "triggered_by",
+              "value": "={{ $json.triggered_by }}"
+            },
+            {
+              "name": "source_message_sid",
+              "value": "={{ $json.source_message_sid }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "create-packet",
+      "name": "Create Agreement Packet",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-create-success",
+      "name": "Created OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/signing/send",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "packet_id",
+              "value": "={{ $json.packetId }}"
+            },
+            {
+              "name": "delivery_method",
+              "value": "={{ $('Validate Selection').first().json.delivery_method }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "send-packet",
+      "name": "Send Agreement Link",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1050, 200]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.success }}",
+              "operation": "equals",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "id": "check-send-success",
+      "name": "Sent OK?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1250, 200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log message to unified timeline\nconst input = $('Send Agreement Link').first().json;\nconst selection = $('Validate Selection').first().json;\n\nreturn [{\n  json: {\n    lead_id: selection.lead_id,\n    direction: 'outbound',\n    channel: 'agreement',\n    content: `Agreement sent: ${selection.agreement_type}`,\n    metadata: {\n      packet_id: input.packet_id,\n      signing_link: input.signing_link,\n      sms_sent: input.sms_sent,\n      email_sent: input.email_sent\n    }\n  }\n}];"
+      },
+      "id": "prepare-timeline",
+      "name": "Prepare Timeline Entry",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1450, 100]
+    },
+    {
+      "parameters": {
+        "url": "={{ $env.APP_URL || 'http://localhost:3000' }}/api/messages/timeline",
+        "authentication": "none",
+        "method": "POST",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "log-to-timeline",
+      "name": "Log to Timeline",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1650, 100],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "📝 AGREEMENT SENT!\n\n{{ $('Validate Selection').first().json.selection_code === 1 ? '📋 Excess Funds' : $('Validate Selection').first().json.selection_code === 2 ? '🏠 Wholesale' : '⭐ DUAL DEAL' }}\n\n📱 SMS: {{ $('Send Agreement Link').first().json.sms_sent ? '✅' : '❌' }}\n📧 Email: {{ $('Send Agreement Link').first().json.email_sent ? '✅' : '❌' }}\n\n🔗 Signing Link:\n{{ $('Send Agreement Link').first().json.signing_link }}\n\nPacket ID: {{ $('Send Agreement Link').first().json.packet_id }}\n\n⏳ Waiting for signature...",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-success",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1850, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: true, packet_id: $('Send Agreement Link').first().json.packet_id, signing_link: $('Send Agreement Link').first().json.signing_link, sms_sent: $('Send Agreement Link').first().json.sms_sent, email_sent: $('Send Agreement Link').first().json.email_sent }) }}"
+      },
+      "id": "respond-success",
+      "name": "Respond Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [2050, 100]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ Agreement Send Failed!\n\nLead: {{ $('Validate Selection').first().json.lead_id }}\nError: {{ $json.error || 'Unknown error' }}\n\nCheck logs for details.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-notify-send-fail",
+      "name": "Notify Send Failure",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Failed to send agreement' }) }}",
+        "options": {
+          "responseCode": 500
+        }
+      },
+      "id": "respond-send-fail",
+      "name": "Respond Send Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ success: false, error: $json.error || 'Failed to create agreement packet' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-create-fail",
+      "name": "Respond Create Failure",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1050, 400]
+    }
+  ],
+  "connections": {
+    "Webhook Trigger": {
+      "main": [
+        [
+          {
+            "node": "Validate Selection",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Selection": {
+      "main": [
+        [
+          {
+            "node": "Create Agreement Packet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create Agreement Packet": {
+      "main": [
+        [
+          {
+            "node": "Created OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Created OK?": {
+      "main": [
+        [
+          {
+            "node": "Send Agreement Link",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Create Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Agreement Link": {
+      "main": [
+        [
+          {
+            "node": "Sent OK?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Sent OK?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Timeline Entry",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Timeline Entry": {
+      "main": [
+        [
+          {
+            "node": "Log to Timeline",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log to Timeline": {
+      "main": [
+        [
+          {
+            "node": "Notify Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Telegram": {
+      "main": [
+        [
+          {
+            "node": "Respond Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Send Failure": {
+      "main": [
+        [
+          {
+            "node": "Respond Send Failure",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-gmail-link-workflow",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "mvp",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

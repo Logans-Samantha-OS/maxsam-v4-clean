@@ -1,0 +1,339 @@
+{
+  "name": "Agreement Follow-Up Workflow",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 1
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Hourly Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.1,
+      "position": [250, 300]
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT * FROM agreement_packets WHERE status = 'sent' AND next_reminder_at <= NOW() AND reminder_count < 3 AND escalated_at IS NULL ORDER BY next_reminder_at ASC LIMIT 20"
+      },
+      "id": "fetch-due-reminders",
+      "name": "Fetch Due Reminders",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "id": "split-packets",
+      "name": "Split Into Batches",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [650, 300]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Build reminder message based on attempt number\nconst packet = $input.all()[0].json;\nconst reminderCount = packet.reminder_count || 0;\nconst firstName = packet.client_name?.split(' ')[0] || 'there';\nconst totalFee = packet.total_fee || 0;\n\nconst reminderMessages = [\n  // Reminder 1 (+2h) - Friendly nudge\n  `Hi ${firstName}! Just a reminder - your agreement is ready to sign. Takes 60 seconds: ${packet.signing_link}`,\n  \n  // Reminder 2 (+24h) - Add urgency\n  `${firstName}, we haven't heard back yet. Your $${totalFee.toLocaleString()} recovery is waiting. Sign here: ${packet.signing_link}`,\n  \n  // Reminder 3 (+72h) - Final notice\n  `Final reminder: Your agreement expires soon. Don't miss out on $${totalFee.toLocaleString()}. Sign now: ${packet.signing_link}`\n];\n\nconst message = reminderMessages[reminderCount] || reminderMessages[2];\n\n// Calculate next reminder interval\nlet nextIntervalHours = null;\nif (reminderCount === 0) {\n  nextIntervalHours = 22; // 2h -> 24h\n} else if (reminderCount === 1) {\n  nextIntervalHours = 48; // 24h -> 72h\n}\n// No more reminders after 3\n\nreturn [{\n  json: {\n    ...packet,\n    reminder_message: message,\n    reminder_number: reminderCount + 1,\n    next_interval_hours: nextIntervalHours,\n    should_escalate: reminderCount >= 2\n  }\n}];"
+      },
+      "id": "build-reminder",
+      "name": "Build Reminder Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [850, 300]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "send",
+        "from": "={{ $env.TWILIO_PHONE_NUMBER }}",
+        "to": "={{ $json.client_phone }}",
+        "body": "={{ $json.reminder_message }}"
+      },
+      "id": "send-reminder-sms",
+      "name": "Send Reminder SMS",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1050, 300],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-cred",
+          "name": "Twilio"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "update",
+        "table": "agreement_packets",
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "id",
+              "keyValue": "={{ $json.id }}"
+            }
+          ]
+        },
+        "columns": "reminder_count,last_reminder_at,next_reminder_at,escalated_at,escalation_reason,updated_at"
+      },
+      "id": "update-reminder-status",
+      "name": "Update Reminder Status",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1250, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "agreement_events",
+        "columns": "packet_id,event_type,source,event_data"
+      },
+      "id": "log-reminder-event",
+      "name": "Log Reminder Event",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1450, 300],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json.should_escalate }}",
+              "operation": "true"
+            }
+          ]
+        }
+      },
+      "id": "should-escalate",
+      "name": "Should Escalate?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1650, 300]
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "⚠️ ESCALATION: Agreement unsigned after 3 reminders\n\n👤 {{ $json.client_name }}\n🏠 {{ $json.property_address }}\n💰 ${{ $json.total_fee?.toLocaleString() }}\n📱 {{ $json.client_phone }}\n\nPacket: {{ $json.id }}\n\nManual follow-up recommended.",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "telegram-escalation",
+      "name": "Notify Escalation",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1,
+      "position": [1850, 200],
+      "credentials": {
+        "telegramApi": {
+          "id": "telegram-cred",
+          "name": "Telegram"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "insert",
+        "table": "agreement_events",
+        "columns": "packet_id,event_type,source,event_data"
+      },
+      "id": "log-escalation",
+      "name": "Log Escalation",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [2050, 200],
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase"
+        }
+      }
+    },
+    {
+      "parameters": {},
+      "id": "continue-loop",
+      "name": "Continue Loop",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1850, 400]
+    }
+  ],
+  "connections": {
+    "Hourly Schedule": {
+      "main": [
+        [
+          {
+            "node": "Fetch Due Reminders",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Due Reminders": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Batches": {
+      "main": [
+        [
+          {
+            "node": "Build Reminder Message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Build Reminder Message": {
+      "main": [
+        [
+          {
+            "node": "Send Reminder SMS",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Reminder SMS": {
+      "main": [
+        [
+          {
+            "node": "Update Reminder Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Reminder Status": {
+      "main": [
+        [
+          {
+            "node": "Log Reminder Event",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Reminder Event": {
+      "main": [
+        [
+          {
+            "node": "Should Escalate?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Should Escalate?": {
+      "main": [
+        [
+          {
+            "node": "Notify Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Continue Loop",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify Escalation": {
+      "main": [
+        [
+          {
+            "node": "Log Escalation",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Escalation": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Continue Loop": {
+      "main": [
+        [
+          {
+            "node": "Split Into Batches",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "1",
+  "meta": {
+    "templateCredsSetupCompleted": true
+  },
+  "id": "agreement-followup-workflow",
+  "tags": [
+    {
+      "name": "agreements",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    },
+    {
+      "name": "cron",
+      "createdAt": "2025-01-20T00:00:00.000Z",
+      "updatedAt": "2025-01-20T00:00:00.000Z"
+    }
+  ]
+}

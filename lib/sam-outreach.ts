@@ -240,13 +240,14 @@ export async function runOutreachBatch(limit: number = 20): Promise<BatchResult>
  */
 export async function processInboundSMS(
   from: string,
-  body: string
+  body: string,
+  messageSid?: string
 ): Promise<{ response: string; action: string }> {
   const supabase = createClient();
   const normalizedPhone = normalizePhone(from);
   const lowerBody = body.toLowerCase().trim();
 
-  // Check for opt-out keywords
+  // Check for opt-out keywords FIRST
   const optOutKeywords = ['stop', 'unsubscribe', 'cancel', 'quit', 'end', 'remove', 'optout', 'opt out'];
   if (optOutKeywords.some(keyword => lowerBody.includes(keyword))) {
     // Add to opt-out list
@@ -267,7 +268,18 @@ export async function processInboundSMS(
     };
   }
 
-  // Check for positive response
+  // Check for agreement selection (1, 2, or 3)
+  const { processAgreementSelection, getAgreementSelectionPrompt } = await import('./agreement-sms-handler');
+  const agreementResult = await processAgreementSelection(from, body, messageSid);
+
+  if (agreementResult.handled) {
+    return {
+      response: agreementResult.response,
+      action: agreementResult.action
+    };
+  }
+
+  // Check for positive response (YES, interested, etc.)
   const positiveKeywords = ['yes', 'yeah', 'yep', 'yup', 'sure', 'ok', 'okay', 'interested', 'help', 'tell me more', 'info'];
   if (positiveKeywords.some(keyword => lowerBody.includes(keyword))) {
     // Find lead by phone and update to qualified
@@ -308,12 +320,12 @@ export async function processInboundSMS(
       // Send Telegram notification
       await sendTelegramNotification(lead, body);
 
-      const templateData = buildTemplateData(lead);
-      const response = SMS_TEMPLATES.qualified(templateData);
+      // NEW: Send agreement selection prompt instead of generic qualified response
+      const selectionPrompt = getAgreementSelectionPrompt(lead);
 
       return {
-        response,
-        action: 'qualified'
+        response: selectionPrompt,
+        action: 'qualified_awaiting_selection'
       };
     }
   }
