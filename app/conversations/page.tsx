@@ -1,8 +1,6 @@
+import { redirect } from 'next/navigation';
+
+// Redirect old conversations route to canonical messages location
 export default function ConversationsPage() {
-  return (
-    <main style={{ padding: 32 }}>
-      <h1>Conversations</h1>
-      <p>No conversations yet.</p>
-    </main>
-  )
+  redirect('/dashboard/messages');
 }

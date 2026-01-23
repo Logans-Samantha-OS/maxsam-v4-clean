@@ -1,8 +1,179 @@
-# CLAUDE.md - MaxSam V4 Quick Reference
+# CLAUDE.md - MaxSam V4 System Reference
 
-## Project Overview
+---
 
-MaxSam V4 is an automated real estate money machine that:
+## 🎮 OPERATOR MODE (ACTIVE)
+
+**You are Claude Desktop operating MaxSam V4.**
+
+### YOU DO NOT:
+- Create MCP connectors
+- Modify MCP configuration files  
+- Remove, rename, or disable MCPs
+- Hallucinate capabilities
+
+### YOU ONLY:
+- Use existing MCPs listed below
+- Trigger n8n workflows via `maxsam` MCP
+- Read/write via Supabase
+- Use Apify for large-scale crawling
+- Use NotebookLM/RAG for long-term memory
+- Delegate build tasks to Claude Code when required
+
+---
+
+## 📋 MCP INVENTORY (ACTIVE)
+
+### Tier 1 — CORE
+| MCP | Tools | Purpose |
+|-----|-------|---------|
+| `maxsam` | 32 tools | N8N, leads, calculations, agreements, telegram, agent memory |
+| `filesystem` | Standard | Local file operations |
+| `supabase` | Standard | Direct database access |
+| `memory` | Standard | Session memory |
+
+### Tier 2 — EXECUTION
+| MCP | Purpose |
+|-----|---------|
+| `serpapi` | Google search for discovery |
+| `playwright` | Browser automation (login-required) |
+| `browserless` | JS-heavy sites (Zillow, hostile portals) |
+| `github` | Repository management |
+
+### Tier 3 — SCALE & MEMORY
+| MCP | Purpose |
+|-----|---------|
+| `apify` | High-volume crawling, pagination |
+| `alex-knowledge` | NotebookLM-backed RAG memory |
+| `sequential-thinking` | Complex reasoning chains |
+
+---
+
+## 🔒 CAPABILITY BINDINGS
+
+| Task | Use This |
+|------|----------|
+| County portal discovery | `serpapi` |
+| Login-required scraping | `playwright` |
+| Zillow / JS-heavy pages | `browserless` |
+| Bulk crawling | `apify` |
+| PDF extraction | `pdf` MCP or vision |
+| Lead storage | `supabase` or `maxsam` |
+| Workflow execution | `maxsam.n8n_execute_workflow` |
+| SMS/Email logging | `maxsam.log_sms`, `maxsam.log_agent_action` |
+| County knowledge | `alex-knowledge.query_knowledge` |
+
+---
+
+## 🎯 MAXSAM MCP QUICK REFERENCE (32 TOOLS)
+
+### N8N Workflows (12)
+```
+maxsam.n8n_list_workflows
+maxsam.n8n_get_workflow {id}
+maxsam.n8n_create_workflow {name, nodes, connections}
+maxsam.n8n_update_workflow {id, name, nodes, active}
+maxsam.n8n_delete_workflow {id}
+maxsam.n8n_activate_workflow {id, active}
+maxsam.n8n_execute_workflow {id, data}
+maxsam.n8n_get_executions {workflowId, status, limit}
+maxsam.n8n_get_execution_data {executionId}
+maxsam.n8n_duplicate_workflow {id, newName}
+maxsam.n8n_get_credentials
+maxsam.n8n_test_webhook {id}
+```
+
+### Lead Management (10)
+```
+maxsam.get_leads {status, priority, limit}
+maxsam.get_golden_leads {limit}
+maxsam.search_leads {query}
+maxsam.update_lead_status {lead_id, status, notes}
+maxsam.add_lead {owner_name, property_address, phone, excess_amount}
+maxsam.get_expiring_leads {days}
+maxsam.get_morning_brief
+maxsam.get_stats
+maxsam.calculate_fee {amount, fee_percent}
+maxsam.log_sms {lead_id, message, direction}
+```
+
+### Property Calculations (4)
+```
+maxsam.calculate_offer_price {arv, repair_estimate}
+maxsam.calculate_buybox_price {arv, offer_price}
+maxsam.get_leads_missing_arv {limit}
+maxsam.update_lead_arv {lead_id, arv, repair_estimate}
+```
+
+### Agreements (4)
+```
+maxsam.generate_agreement_data {lead_id, purchasePrice, earnestMoney, closingDays}
+maxsam.mark_agreement_sent {lead_id, agreement_url}
+maxsam.mark_agreement_signed {lead_id}
+maxsam.get_leads_ready_for_agreement {limit}
+```
+
+### Agent Memory (2)
+```
+maxsam.log_agent_action {agent_name, action_type, content, lead_id}
+maxsam.get_agent_logs {agent_name, hours, limit}
+```
+
+---
+
+## 🔄 ONE DEAL FLOW
+
+```
+1. serpapi → Discover county URLs
+2. apify → Bulk crawl portal
+3. playwright → Login & scrape details
+4. browserless → Zillow ARV lookup
+5. Claude → Normalize + legal logic
+6. supabase → Store lead → Eleanor scores
+7. maxsam.n8n_execute_workflow → Queue processing
+8. Sam → SMS/email → Log everything
+9. alex-knowledge → Persist patterns
+```
+
+---
+
+## 🎮 OPERATOR COMMANDS
+
+| Say This | Claude Does This |
+|----------|------------------|
+| "Run county ingestion for Dallas, TX" | serpapi → apify → supabase pipeline |
+| "Show lead status for [name]" | `maxsam.search_leads` |
+| "Send daily Telegram summary" | `maxsam.send_morning_brief_telegram` |
+| "Show failed jobs" | `maxsam.n8n_get_executions {status: 'error'}` |
+| "Query county notebook for [topic]" | `alex-knowledge.query_knowledge` |
+| "Calculate offer for ARV $350k, repairs $30k" | `maxsam.calculate_offer_price` |
+
+---
+
+## 🔀 DELEGATION RULE
+
+If request requires NEW:
+- MCPs, Apify actors, n8n workflows, schema changes, scoring logic
+
+**Respond:**
+> "This requires Claude Code. Here is the exact build request:"
+
+---
+
+## 🚨 ABSOLUTE RULES
+
+1. ❌ Do NOT hallucinate MCPs
+2. ❌ Do NOT modify MCP config
+3. ❌ Do NOT bypass Supabase
+4. ❌ Do NOT bypass n8n
+5. ❌ Do NOT skip logging
+6. ❌ Do NOT explain theory unless asked
+
+---
+
+## 📊 Project Overview
+
+MaxSam V4 is an automated real estate money machine:
 1. Ingests Dallas County foreclosure excess funds data
 2. Scores leads with Eleanor AI
 3. Contacts owners via Sam AI (Twilio SMS)
@@ -10,171 +181,60 @@ MaxSam V4 is an automated real estate money machine that:
 5. Collects payments via Stripe
 6. Notifies Logan via Telegram
 
-**Owner:** Logan Toups, Richardson, TX
-**Revenue Model:** 25% excess funds recovery fee, 10% wholesale fee
-**All revenue → 100% to Logan (configurable for future partners)**
+**Owner:** Logan Toups, Richardson, TX  
+**Revenue:** 25% excess funds fee, 10% wholesale fee
 
-## Tech Stack
+---
 
-- **Frontend:** Next.js 14 (App Router), React 19, Tailwind CSS
-- **Database:** Supabase PostgreSQL
-- **Deployment:** Vercel
-- **Integrations:** DocuSign, Twilio, Stripe, Telegram, ElevenLabs
-
-## Key Files
+## 🗂️ Key Files
 
 ```
 lib/
-  eleanor.ts          # Lead scoring engine (0-100 score)
-  docusign.ts         # DocuSign JWT auth & envelope creation
-  contract-generator.ts  # Generate contracts from templates
-  twilio.ts           # SMS/voice via Twilio
-  sam-outreach.ts     # Autonomous outreach engine
-  stripe.ts           # Invoice creation & payment
-  skip-tracing.ts     # Contact info lookup
-  telegram.ts         # Notification system
-  supabase/server.ts  # Server-side Supabase client
+  eleanor.ts            # Lead scoring (0-100)
+  docusign.ts           # Contract signing
+  twilio.ts             # SMS
+  telegram.ts           # Notifications
+  supabase/server.ts    # Database client
 
-app/
-  page.tsx            # Main dashboard
-  settings/page.tsx   # Configuration UI
-  morning-brief/page.tsx  # Daily summary
-  sellers/page.jsx    # Lead management
-  api/                # All API routes
+maxsam-n8n-mcp/
+  src/index.ts          # 32-tool MCP server
+  src/services/         # API clients
 
-templates/
-  excess-funds-recovery.html   # 25% fee contract
-  wholesale-assignment.html    # 10% fee contract
-  dual-deal.html              # Combined contract
-
-supabase/migrations/
-  001_complete_schema.sql     # Database schema
+n8n/workflows/          # N8N workflow JSON
+templates/              # Contract HTML templates
 ```
 
-## Database Tables
+---
 
-- `maxsam_leads` - Lead data with Eleanor scores
-- `contracts` - DocuSign contracts
-- `buyers` - Investor/buyer network
-- `revenue` - Payment tracking
-- `opt_outs` - TCPA compliance
-- `status_history` - Audit trail
-- `system_config` - Settings
-- `communication_logs` - SMS/call history
+## 📊 Database Tables
 
-## API Routes
+| Table | Purpose |
+|-------|---------|
+| `leads` | All lead data + Eleanor scores |
+| `agent_memories` | ALEX/ELEANOR/SAM action logs |
+| `sms_logs` | All SMS messages |
+| `contracts` | DocuSign contracts |
+| `buyers` | Investor network |
 
-```
-GET/POST  /api/leads              # List/create leads
-GET/PUT   /api/leads/[id]         # Get/update lead
-POST      /api/leads/[id]         # Actions: score, skip-trace, send-sms, generate-contract
+---
 
-POST      /api/eleanor/score      # Score single lead
-POST      /api/eleanor/score-all  # Batch score
-GET       /api/eleanor/explain/[id]  # Scoring breakdown
-
-GET/POST  /api/contracts          # List/create contracts
-POST      /api/contracts/[id]     # Actions: resend, create-invoice, void
-
-POST      /api/docusign/webhook   # DocuSign events
-POST      /api/twilio/inbound-sms # Incoming SMS
-POST      /api/stripe/webhook     # Payment events
-
-POST      /api/sam/run-batch      # Run outreach
-GET/PUT   /api/settings           # System config
-GET/POST  /api/morning-brief      # Daily summary
-POST      /api/telegram/notify    # Send notification
-
-POST      /api/cron/import-leads  # Daily import (5:30 AM)
-POST      /api/cron/score-leads   # Daily scoring (6:00 AM)
-POST      /api/cron/outreach      # Hourly outreach (9 AM - 8 PM)
-```
-
-## Eleanor Scoring Formula
+## 💰 Eleanor Scoring
 
 ```
-Base: 0 points
-+ Excess Funds:
-  - $50K+: 40 pts
-  - $30K+: 35 pts
-  - $20K+: 30 pts
-  - $15K+: 25 pts
-  - $10K+: 20 pts
-  - $5K+:  10 pts
+Excess Funds: $50K+ = 40pts, $30K+ = 35pts, $20K+ = 30pts...
+Wholesale: $50K+ equity = 25pts...
+Contact: Phone = 10pts, Email = 5pts, Name = 5pts
+Location: Hot zip = 10pts, Warm = 7pts
 
-+ Wholesale Potential (equity):
-  - $50K+: 25 pts
-  - $30K+: 20 pts
-  - $20K+: 15 pts
-  - $10K+: 10 pts
-  - $5K+:   5 pts
-
-+ Contact Quality:
-  - Phone: 10 pts
-  - Email: 5 pts
-  - Full name: 5 pts
-
-+ Location (Dallas zips):
-  - Hot: 10 pts
-  - Warm: 7 pts
-  - Standard: 3 pts
-
-+ Risk (subtract for issues)
-
-= Score (0-100)
-Grade: A+ (85+), A (75+), B (60+), C (45+), D (<45)
-Priority: Hot (A+/A), Warm (B), Cold (C/D)
+Score 0-100 → Grade A+/A/B/C/D → Priority Hot/Warm/Cold
 ```
 
-## Commands for Development
+---
 
-```bash
-# Development
-npm run dev
+## 🟢 OPERATOR MODE ACTIVE
 
-# Build
-npm run build
+**Apify:** ✅ ENABLED  
+**NotebookLM:** ✅ ENABLED  
+**All MCPs:** ✅ ACTIVE  
 
-# Test API
-curl -X POST http://localhost:3000/api/eleanor/score-all
-
-# Deploy
-vercel
-
-# View logs
-vercel logs
-```
-
-## Revenue Flow
-
-1. Lead ingested → Scored by Eleanor
-2. Sam contacts via SMS
-3. Owner responds YES → Status: Qualified
-4. Contract generated → Sent via DocuSign
-5. Owner signs → Telegram notification
-6. Invoice sent via Stripe
-7. Payment received → MONEY IN ACCOUNT
-
-## Key Configuration
-
-Settings are stored in `system_config` table and editable via `/settings`:
-- Legal entity name
-- Fee percentages (25% excess, 10% wholesale)
-- Owner/partner split (default: 100% owner)
-- Outreach settings
-- Dallas County PDF URL
-
-## TCPA Compliance
-
-- All outreach respects opt-out list
-- Keywords: STOP, UNSUBSCRIBE, CANCEL → Auto opt-out
-- Max 5 contact attempts per lead
-- Business hours only (9 AM - 8 PM)
-
-## Next Development
-
-1. Voice AI integration (ElevenLabs)
-2. Buyer network notifications
-3. Multi-county support
-4. Partner portal (when Max joins)
-5. Advanced analytics
+Awaiting command...
