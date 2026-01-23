@@ -1,0 +1,353 @@
+{
+  "name": "Gemini Lead Sync",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "gemini-lead-sync",
+        "responseMode": "responseNode",
+        "options": {
+          "rawBody": false
+        }
+      },
+      "id": "webhook-trigger",
+      "name": "Webhook - Gemini Lead Sync",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [100, 300],
+      "webhookId": "gemini-lead-sync",
+      "notes": "Receives lead data from Gemini canvas. Expected body: { owner_name, case_number, excess_funds, sale_date, claim_deadline, address, city, zip, outreach_script }"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Validate and prepare lead data\nconst input = $input.first().json.body || $input.first().json;\n\n// Validate required fields\nconst requiredFields = ['owner_name'];\nconst errors = [];\n\nfor (const field of requiredFields) {\n  if (!input[field]) {\n    errors.push(`Missing required field: ${field}`);\n  }\n}\n\nif (errors.length > 0) {\n  return {\n    json: {\n      valid: false,\n      errors: errors,\n      original_data: input\n    }\n  };\n}\n\n// Prepare data for upsert\nconst leadData = {\n  owner_name: input.owner_name?.trim(),\n  case_number: input.case_number?.trim() || null,\n  excess_funds_amount: parseFloat(input.excess_funds) || null,\n  sale_date: input.sale_date || null,\n  claim_deadline: input.claim_deadline || null,\n  property_address: input.address?.trim() || null,\n  property_city: input.city?.trim() || null,\n  property_zip: input.zip?.trim() || null,\n  outreach_script: input.outreach_script || null,\n  source: 'gemini_canvas',\n  synced_at: new Date().toISOString()\n};\n\nreturn {\n  json: {\n    valid: true,\n    lead_data: leadData,\n    original_data: input\n  }\n};"
+      },
+      "id": "validate-data",
+      "name": "Validate Lead Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [300, 300],
+      "notes": "Validate incoming data and prepare for database upsert"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-valid",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "is-valid",
+      "name": "Data Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "notes": "Check if validation passed"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=WITH upsert_result AS (\n  INSERT INTO maxsam_leads (\n    owner_name,\n    case_number,\n    excess_funds_amount,\n    excess_funds_expiration,\n    property_address,\n    property_city,\n    property_zip,\n    source,\n    notes,\n    status,\n    created_at,\n    updated_at\n  ) VALUES (\n    '{{ $json.lead_data.owner_name.replace(/'/g, \"''\") }}',\n    {{ $json.lead_data.case_number ? \"'\" + $json.lead_data.case_number.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lead_data.excess_funds_amount || 'NULL' }},\n    {{ $json.lead_data.claim_deadline ? \"'\" + $json.lead_data.claim_deadline + \"'::date\" : 'NULL' }},\n    {{ $json.lead_data.property_address ? \"'\" + $json.lead_data.property_address.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lead_data.property_city ? \"'\" + $json.lead_data.property_city.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    {{ $json.lead_data.property_zip ? \"'\" + $json.lead_data.property_zip + \"'\" : 'NULL' }},\n    'gemini_canvas',\n    {{ $json.lead_data.outreach_script ? \"'\" + $json.lead_data.outreach_script.replace(/'/g, \"''\") + \"'\" : 'NULL' }},\n    'scored',\n    NOW(),\n    NOW()\n  )\n  ON CONFLICT (owner_name) WHERE case_number IS NULL\n  DO UPDATE SET\n    excess_funds_amount = COALESCE(EXCLUDED.excess_funds_amount, maxsam_leads.excess_funds_amount),\n    excess_funds_expiration = COALESCE(EXCLUDED.excess_funds_expiration, maxsam_leads.excess_funds_expiration),\n    property_address = COALESCE(EXCLUDED.property_address, maxsam_leads.property_address),\n    property_city = COALESCE(EXCLUDED.property_city, maxsam_leads.property_city),\n    property_zip = COALESCE(EXCLUDED.property_zip, maxsam_leads.property_zip),\n    notes = COALESCE(EXCLUDED.notes, maxsam_leads.notes),\n    updated_at = NOW()\n  RETURNING id, owner_name, CASE WHEN xmax = 0 THEN 'inserted' ELSE 'updated' END as operation\n)\nSELECT * FROM upsert_result;",
+        "options": {}
+      },
+      "id": "upsert-lead",
+      "name": "Upsert to maxsam_leads",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [700, 200],
+      "credentials": {
+        "postgres": {
+          "id": "QIXalm1aLdF2HOpo",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Upsert lead - insert new or update existing based on owner_name/case_number match"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Check if lead needs skip trace\nconst lead = $input.first().json;\nconst prevData = $('Validate Lead Data').first().json;\n\n// Query to check if lead has phone\nconst needsSkipTrace = !prevData.original_data.phone && !prevData.original_data.phone_number;\n\nreturn {\n  json: {\n    lead_id: lead.id,\n    owner_name: lead.owner_name,\n    operation: lead.operation,\n    needs_skip_trace: needsSkipTrace,\n    excess_funds: prevData.lead_data.excess_funds_amount\n  }\n};"
+      },
+      "id": "check-skip-trace",
+      "name": "Check Skip Trace Needed",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [900, 200],
+      "notes": "Check if lead has phone fields - if not, flag for skip trace queue"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "needs-skip-trace",
+              "leftValue": "={{ $json.needs_skip_trace }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "skip-trace-needed",
+      "name": "Needs Skip Trace?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1100, 200],
+      "notes": "Route based on whether skip trace is needed"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=INSERT INTO skip_trace_queue (lead_id, owner_name, status, created_at)\nVALUES ('{{ $json.lead_id }}'::uuid, '{{ $json.owner_name.replace(/'/g, \"''\") }}', 'pending', NOW())\nON CONFLICT (lead_id) DO NOTHING\nRETURNING id, lead_id, status;",
+        "options": {}
+      },
+      "id": "add-to-skip-trace-queue",
+      "name": "Add to Skip Trace Queue",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.4,
+      "position": [1300, 100],
+      "credentials": {
+        "postgres": {
+          "id": "QIXalm1aLdF2HOpo",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Add lead to skip trace queue for phone number lookup"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"📥 Gemini lead synced: {{ $('Check Skip Trace Needed').first().json.owner_name }} - ${{ ($('Check Skip Trace Needed').first().json.excess_funds || 0).toLocaleString() }}{{ $('Check Skip Trace Needed').first().json.needs_skip_trace ? '\\n\\n🔍 Added to skip trace queue' : '' }}\",\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {}
+      },
+      "id": "notify-telegram",
+      "name": "Notify - Lead Synced",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1500, 200],
+      "notes": "Send Telegram notification that lead was synced"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": true,\n  \"message\": \"Lead synced successfully\",\n  \"lead_id\": \"{{ $('Upsert to maxsam_leads').first().json.id }}\",\n  \"operation\": \"{{ $('Upsert to maxsam_leads').first().json.operation }}\",\n  \"needs_skip_trace\": {{ $('Check Skip Trace Needed').first().json.needs_skip_trace }}\n}",
+        "options": {}
+      },
+      "id": "respond-success",
+      "name": "Respond - Success",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [1700, 200],
+      "notes": "Return success response to Gemini canvas"
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={\n  \"success\": false,\n  \"message\": \"Validation failed\",\n  \"errors\": {{ JSON.stringify($('Validate Lead Data').first().json.errors) }}\n}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "respond-error",
+      "name": "Respond - Validation Error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [700, 400],
+      "notes": "Return 400 error with validation errors"
+    },
+    {
+      "parameters": {},
+      "id": "skip-trace-not-needed",
+      "name": "Has Phone - Skip",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [1300, 300],
+      "notes": "Lead already has phone - no skip trace needed"
+    }
+  ],
+  "connections": {
+    "Webhook - Gemini Lead Sync": {
+      "main": [
+        [
+          {
+            "node": "Validate Lead Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate Lead Data": {
+      "main": [
+        [
+          {
+            "node": "Data Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Data Valid?": {
+      "main": [
+        [
+          {
+            "node": "Upsert to maxsam_leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond - Validation Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Upsert to maxsam_leads": {
+      "main": [
+        [
+          {
+            "node": "Check Skip Trace Needed",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check Skip Trace Needed": {
+      "main": [
+        [
+          {
+            "node": "Needs Skip Trace?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Needs Skip Trace?": {
+      "main": [
+        [
+          {
+            "node": "Add to Skip Trace Queue",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Has Phone - Skip",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Skip Trace Queue": {
+      "main": [
+        [
+          {
+            "node": "Notify - Lead Synced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Phone - Skip": {
+      "main": [
+        [
+          {
+            "node": "Notify - Lead Synced",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Notify - Lead Synced": {
+      "main": [
+        [
+          {
+            "node": "Respond - Success",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "gemini",
+      "id": "gemini-tag"
+    },
+    {
+      "name": "lead-sync",
+      "id": "lead-sync-tag"
+    },
+    {
+      "name": "maxsam",
+      "id": "maxsam-tag"
+    },
+    {
+      "name": "alex",
+      "id": "alex-tag"
+    }
+  ],
+  "triggerCount": 1,
+  "updatedAt": "2026-01-20T00:00:00.000Z",
+  "versionId": "1.0.0",
+  "active": true,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "maxsam-v4"
+  }
+}

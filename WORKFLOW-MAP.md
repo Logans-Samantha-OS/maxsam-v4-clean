@@ -1,5 +1,5 @@
 # MaxSam V4 - N8N Workflow Map
-> Generated: January 10, 2026
+> Updated: January 20, 2026
 > All workflows use `maxsam_leads` and `maxsam_buyers` tables
 
 ---
@@ -14,6 +14,13 @@
 │  │ Webhook: POST /ingest-pdf                                        │   │
 │  │ → Parses PDF → Inserts to maxsam_leads                          │   │
 │  │ → Triggers: [2.1] Eleanor via webhook                            │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ [NEW] Gemini Lead Sync                                           │   │
+│  │ Webhook: POST /gemini-lead-sync                                  │   │
+│  │ → Syncs leads from Gemini canvas                                │   │
+│  │ → Upserts to maxsam_leads, queues for skip trace                │   │
 │  └─────────────────────────────────────────────────────────────────┘   │
 └────────────────────────────────────┬────────────────────────────────────┘
                                      │
@@ -49,6 +56,13 @@
                                      ▼
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                           OUTREACH                                       │
+│  ┌─────────────────────────────────────────────────────────────────┐   │
+│  │ [NEW] SAM • Morning Campaign (9AM CT)                            │   │
+│  │ Schedule: 9AM CT Daily (Mon-Sat)                                 │   │
+│  │ → Calls /api/sam/campaign with high_value leads                 │   │
+│  │ → Sends 20 SMS, Telegram notification                           │   │
+│  └─────────────────────────────────────────────────────────────────┘   │
+│                                                                          │
 │  ┌─────────────────────────────────────────────────────────────────┐   │
 │  │ [3.0] Sam Initial SMS                                            │   │
 │  │ Webhook: POST /sam-initial-outreach                              │   │
@@ -124,6 +138,68 @@
 
 ---
 
+## 🆕 NEW WORKFLOWS (January 2026)
+
+### SAM • Morning Campaign (9AM CT)
+**File**: `n8n/workflows/sam_morning_campaign.json`
+**Trigger**: Schedule - 9:00 AM CT (15:00 UTC) Monday-Saturday
+**Cron**: `0 15 * * 1-6`
+
+```
+9AM CT → Skip Sunday? → POST /api/sam/campaign → Check Success
+                                                       ↓
+                                              ✅ Telegram: Success
+                                              ❌ Telegram: Error Alert
+```
+
+**Purpose**: Daily automated outreach campaign targeting high-value leads (limit 20). Redundancy layer - Vercel endpoint already sends detailed Telegram notifications.
+
+**API Call**:
+```json
+POST https://maxsam-v4-clean-logans-projects-4cd3e4e9.vercel.app/api/sam/campaign
+{
+  "target_class": "high_value",
+  "limit": 20,
+  "dry_run": false
+}
+```
+
+---
+
+### Gemini Lead Sync
+**File**: `n8n/workflows/gemini_lead_sync.json`
+**Trigger**: Webhook - POST `/gemini-lead-sync`
+**Credential**: Postgres `QIXalm1aLdF2HOpo`
+
+```
+Webhook → Validate Data → Upsert maxsam_leads → Check Skip Trace
+                              ↓                        ↓
+                        Match: owner_name        No phone? → skip_trace_queue
+                        Set: status='scored'            ↓
+                              ↓                   Telegram Notify
+                         Respond JSON                   ↓
+                                                  Return Success
+```
+
+**Expected Webhook Body**:
+```json
+{
+  "owner_name": "John Doe",
+  "case_number": "2024-EF-12345",
+  "excess_funds": 15000,
+  "sale_date": "2024-12-15",
+  "claim_deadline": "2026-06-15",
+  "address": "123 Main St",
+  "city": "Dallas",
+  "zip": "75201",
+  "outreach_script": "Custom script for this lead..."
+}
+```
+
+**Webhook URL**: `https://skooki.app.n8n.cloud/webhook/gemini-lead-sync`
+
+---
+
 ## 📋 WEBHOOK REFERENCE
 
 | Path | Workflow | Method | Purpose |
@@ -134,6 +210,7 @@
 | `/zillow-scan` | [2.9] Golden Detector | POST | Manual golden scan |
 | `/sam-initial-outreach` | [3.0] Sam SMS | POST | Start outreach |
 | `/prime/gather` | [0.1] Prime Agent | POST | Context gathering |
+| `/gemini-lead-sync` | Gemini Lead Sync | POST | **NEW** - Sync from Gemini canvas |
 
 **Base URL**: `https://skooki.app.n8n.cloud/webhook/`
 
@@ -143,6 +220,7 @@
 
 | Workflow | Schedule | Purpose |
 |----------|----------|---------|
+| SAM Morning Campaign | 9AM CT Mon-Sat | Daily outreach campaign |
 | [2.1] Eleanor | Every 15 min | Score new leads |
 | [2.2] Skip Trace | Every 30 min | Find phone numbers |
 | [2.9] Golden | Every 2 hours | Detect dual-opportunity leads |
@@ -157,6 +235,7 @@
 - [1.2] → [2.1]: PDF done → Score leads
 - [2.1] → [2.2]: Scores done → Find phones  
 - [2.2] → [3.0]: Phones found → Start outreach
+- Gemini Lead Sync → skip_trace_queue: New leads without phones
 
 **Why webhooks instead of "Execute Workflow" node?**
 - Decoupling: Each workflow can run independently
@@ -170,6 +249,7 @@
 
 ```
 County PDF → [1.2] → maxsam_leads (new)
+Gemini Canvas → Gemini Lead Sync → maxsam_leads (scored)
                            ↓
                      [2.1] Eleanor
                            ↓
@@ -179,6 +259,7 @@ County PDF → [1.2] → maxsam_leads (new)
                            ↓
                    maxsam_leads (enriched)
                            ↓
+                 SAM Morning Campaign (9AM)
                      [3.0] Sam SMS
                            ↓
                    maxsam_leads (contacted)

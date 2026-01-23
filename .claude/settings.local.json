@@ -27,7 +27,21 @@
       "Skill(superpowers:brainstorming:*)",
       "Bash(vercel whoami:*)",
       "Bash(vercel link:*)",
-      "Bash(vercel:*)"
+      "Bash(vercel:*)",
+      "WebSearch",
+      "WebFetch(domain:www.dallascounty.org)",
+      "WebFetch(domain:www.hcdistrictclerk.com)",
+      "WebFetch(domain:guides.sll.texas.gov)",
+      "WebFetch(domain:www.traviscountytx.gov)",
+      "WebFetch(domain:codes.findlaw.com)",
+      "WebFetch(domain:www.tarrantcountytx.gov)",
+      "WebFetch(domain:www.bexar.org)",
+      "WebFetch(domain:www.galvestoncountytx.gov)",
+      "WebFetch(domain:www.fortbendcountytx.gov)",
+      "WebFetch(domain:www.manfredlaw.com)",
+      "WebFetch(domain:duffleylaw.com)",
+      "WebFetch(domain:www.abiilegal.com)",
+      "Bash(npx tsx:*)"
     ],
     "deny": [],
     "ask": []
