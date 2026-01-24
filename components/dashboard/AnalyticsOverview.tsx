@@ -1,3 +1,5 @@
+'use client';
+
 type LeadLike = {
   excess_funds_amount?: number | string | null
   status?: string | null
