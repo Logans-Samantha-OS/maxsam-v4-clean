@@ -385,6 +385,7 @@ export default function MessagesPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-zinc-600 text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100"
                   onClick={() => setNewMessage("Hi! Just following up on the excess funds we found. Would you like help recovering them?")}
                 >
                   Follow Up
@@ -392,6 +393,7 @@ export default function MessagesPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-zinc-600 text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100"
                   onClick={() => setNewMessage("Great! I'll send over the agreement for you to review. It only takes a few minutes to complete.")}
                 >
                   Send Agreement
@@ -399,6 +401,7 @@ export default function MessagesPage() {
                 <Button
                   variant="outline"
                   size="sm"
+                  className="border-zinc-600 text-zinc-200 hover:bg-zinc-800 hover:text-zinc-100"
                   onClick={() => setNewMessage("No problem! Let me know if you have any questions. We're here to help.")}
                 >
                   Friendly Close
