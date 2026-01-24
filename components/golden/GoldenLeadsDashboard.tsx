@@ -11,42 +11,24 @@ interface GoldenLead {
   id: string;
   owner_name: string;
   property_address: string;
-  city: string;
-  state: string;
-  zip_code: string;
+  city: string | null;
+  state: string | null;
+  zip_code: string | null;
   excess_funds_amount: number;
-  golden_score: number;
-  zillow_status: string;
-  zillow_url: string | null;
-  zillow_price: number | null;
-  combined_value: number;
+  is_golden: boolean;
   eleanor_score: number;
-  deal_grade: string;
-  potential_revenue: number;
+  status: string;
   phone: string | null;
-  zillow_match?: {
-    list_price: number;
-    days_on_market: number;
-    match_confidence: number;
-    match_type: string;
-    beds: number;
-    baths: number;
-    sqft: number;
-  };
+  phone_1: string | null;
+  phone_2: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 interface GoldenStats {
   total: number;
-  by_status: {
-    active: number;
-    pending: number;
-    sold: number;
-    off_market: number;
-    unknown: number;
-  };
   total_excess: number;
-  total_combined_value: number;
-  avg_golden_score: number;
+  avg_eleanor_score: number;
 }
 
 interface HuntRun {
@@ -153,7 +135,7 @@ function LeadRow({
       <td className="px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-yellow-500">⭐</span>
-          <span className="font-medium text-white">{lead.golden_score}</span>
+          <span className="font-medium text-white">{lead.eleanor_score}</span>
         </div>
       </td>
       <td className="px-4 py-3">
@@ -168,34 +150,20 @@ function LeadRow({
         </span>
       </td>
       <td className="px-4 py-3">
-        <StatusBadge status={lead.zillow_status} />
+        <StatusBadge status={lead.status || 'unknown'} />
       </td>
       <td className="px-4 py-3">
-        {lead.zillow_price ? (
-          <span className="text-cyan-400">${lead.zillow_price.toLocaleString()}</span>
-        ) : (
-          <span className="text-zinc-600">-</span>
-        )}
+        <span className="text-cyan-400">{lead.phone || '-'}</span>
       </td>
       <td className="px-4 py-3">
         <span className="text-purple-400 font-semibold">
-          ${(lead.combined_value || 0).toLocaleString()}
+          ${((lead.excess_funds_amount || 0) * 0.25).toLocaleString()}
         </span>
       </td>
       <td className="px-4 py-3">
-        {lead.zillow_url ? (
-          <a
-            href={lead.zillow_url}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={(e) => e.stopPropagation()}
-            className="text-blue-400 hover:text-blue-300 text-sm"
-          >
-            View →
-          </a>
-        ) : (
-          <span className="text-zinc-600 text-sm">-</span>
-        )}
+        <span className="text-zinc-500 text-xs">
+          {new Date(lead.created_at).toLocaleDateString()}
+        </span>
       </td>
     </tr>
   );
@@ -212,6 +180,8 @@ function LeadDetailPanel({
   lead: GoldenLead;
   onClose: () => void;
 }) {
+  const getPhone = () => lead.phone || lead.phone_1 || lead.phone_2;
+
   return (
     <div className="fixed inset-y-0 right-0 w-96 bg-zinc-900 border-l border-zinc-800 shadow-2xl z-50 overflow-y-auto">
       <div className="p-6">
@@ -230,22 +200,22 @@ function LeadDetailPanel({
         <div className="mb-6">
           <h3 className="text-lg font-semibold text-white mb-3">{lead.owner_name}</h3>
           <p className="text-zinc-400 text-sm">{lead.property_address}</p>
-          <p className="text-zinc-500 text-sm">{lead.city}, {lead.state} {lead.zip_code}</p>
-          {lead.phone && (
-            <p className="text-cyan-400 text-sm mt-2">📞 {lead.phone}</p>
+          <p className="text-zinc-500 text-sm">{lead.city || ''}{lead.city && lead.state ? ', ' : ''}{lead.state || ''} {lead.zip_code || ''}</p>
+          {getPhone() && (
+            <p className="text-cyan-400 text-sm mt-2">📞 {getPhone()}</p>
           )}
         </div>
 
-        {/* Golden Score */}
+        {/* Eleanor Score */}
         <div className="mb-6 p-4 bg-yellow-500/10 border border-yellow-500/30 rounded-xl">
           <div className="flex items-center justify-between">
-            <span className="text-yellow-400 font-medium">Golden Score</span>
-            <span className="text-3xl font-bold text-yellow-400">{lead.golden_score}</span>
+            <span className="text-yellow-400 font-medium">Eleanor Score</span>
+            <span className="text-3xl font-bold text-yellow-400">{lead.eleanor_score}</span>
           </div>
           <div className="mt-2 h-2 bg-zinc-800 rounded-full overflow-hidden">
             <div
               className="h-full bg-gradient-to-r from-yellow-500 to-orange-500"
-              style={{ width: `${lead.golden_score}%` }}
+              style={{ width: `${lead.eleanor_score}%` }}
             />
           </div>
         </div>
@@ -261,83 +231,35 @@ function LeadDetailPanel({
           </p>
         </div>
 
-        {/* Zillow Section */}
+        {/* Status Section */}
         <div className="mb-6 p-4 bg-cyan-500/10 border border-cyan-500/30 rounded-xl">
-          <h4 className="text-cyan-400 font-medium mb-2">🏠 Zillow Listing</h4>
+          <h4 className="text-cyan-400 font-medium mb-2">📋 Lead Status</h4>
           <div className="space-y-2">
             <div className="flex justify-between">
-              <span className="text-zinc-400">Status</span>
-              <StatusBadge status={lead.zillow_status} />
+              <span className="text-zinc-400">Current Status</span>
+              <StatusBadge status={lead.status || 'new'} />
             </div>
-            {lead.zillow_price && (
-              <div className="flex justify-between">
-                <span className="text-zinc-400">List Price</span>
-                <span className="text-cyan-400">${lead.zillow_price.toLocaleString()}</span>
-              </div>
-            )}
-            {lead.zillow_match && (
-              <>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400">Match Confidence</span>
-                  <span className="text-white">{lead.zillow_match.match_confidence}%</span>
-                </div>
-                <div className="flex justify-between">
-                  <span className="text-zinc-400">Match Type</span>
-                  <span className="text-white capitalize">{lead.zillow_match.match_type.replace('_', ' ')}</span>
-                </div>
-                {lead.zillow_match.days_on_market && (
-                  <div className="flex justify-between">
-                    <span className="text-zinc-400">Days on Market</span>
-                    <span className="text-white">{lead.zillow_match.days_on_market}</span>
-                  </div>
-                )}
-              </>
-            )}
-            {lead.zillow_url && (
-              <a
-                href={lead.zillow_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="block mt-3 py-2 bg-blue-500 hover:bg-blue-400 text-white text-center rounded-lg transition-colors"
-              >
-                View on Zillow →
-              </a>
-            )}
-          </div>
-        </div>
-
-        {/* Combined Value */}
-        <div className="mb-6 p-4 bg-purple-500/10 border border-purple-500/30 rounded-xl">
-          <h4 className="text-purple-400 font-medium mb-2">💎 Combined Value</h4>
-          <p className="text-2xl font-bold text-purple-400">
-            ${(lead.combined_value || 0).toLocaleString()}
-          </p>
-          <p className="text-xs text-zinc-500 mt-1">
-            Excess Fee + Equity Potential
-          </p>
-        </div>
-
-        {/* Eleanor Score */}
-        <div className="mb-6 p-4 bg-zinc-800 rounded-xl">
-          <div className="flex justify-between items-center">
-            <span className="text-zinc-400">Eleanor Score</span>
-            <span className="text-white font-medium">{lead.eleanor_score}</span>
-          </div>
-          <div className="flex justify-between items-center mt-2">
-            <span className="text-zinc-400">Deal Grade</span>
-            <span className={`font-bold ${
-              lead.deal_grade === 'A+' || lead.deal_grade === 'A' ? 'text-green-400' :
-              lead.deal_grade === 'B' ? 'text-blue-400' :
-              lead.deal_grade === 'C' ? 'text-yellow-400' : 'text-zinc-400'
-            }`}>{lead.deal_grade}</span>
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Added</span>
+              <span className="text-white">{new Date(lead.created_at).toLocaleDateString()}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-zinc-400">Updated</span>
+              <span className="text-white">{new Date(lead.updated_at).toLocaleDateString()}</span>
+            </div>
           </div>
         </div>
 
         {/* Actions */}
         <div className="space-y-2">
-          <button className="w-full py-3 bg-green-500 hover:bg-green-400 text-white font-semibold rounded-lg transition-colors">
-            📞 Call Now
-          </button>
+          {getPhone() && (
+            <a
+              href={`tel:${getPhone()}`}
+              className="block w-full py-3 bg-green-500 hover:bg-green-400 text-white font-semibold rounded-lg transition-colors text-center"
+            >
+              📞 Call Now
+            </a>
+          )}
           <button className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-semibold rounded-lg transition-colors">
             ✉️ Send SMS
           </button>
@@ -361,13 +283,12 @@ export default function GoldenLeadsDashboard() {
   const [loading, setLoading] = useState(true);
   const [hunting, setHunting] = useState(false);
   const [selectedLead, setSelectedLead] = useState<GoldenLead | null>(null);
-  const [statusFilter, setStatusFilter] = useState<string>('all');
   const { addToast } = useToast();
 
   const fetchData = useCallback(async () => {
     try {
       const [leadsRes, cronRes] = await Promise.all([
-        fetch(`/api/golden-leads?status=${statusFilter}`),
+        fetch('/api/golden-leads'),
         fetch('/api/golden-leads/cron'),
       ]);
 
@@ -386,7 +307,7 @@ export default function GoldenLeadsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter]);
+  }, []);
 
   useEffect(() => {
     fetchData();
@@ -460,54 +381,39 @@ export default function GoldenLeadsDashboard() {
           <StatsCard
             label="Golden Leads"
             value={stats.total}
-            subValue={`Avg score: ${stats.avg_golden_score}`}
+            subValue={`Avg score: ${stats.avg_eleanor_score}`}
             color="yellow"
             icon="⭐"
           />
           <StatsCard
-            label="Active Listings"
-            value={stats.by_status.active}
-            subValue={`${stats.by_status.pending} pending`}
-            color="green"
-            icon="🏠"
-          />
-          <StatsCard
-            label="Total Excess"
+            label="Total Excess Funds"
             value={`$${(stats.total_excess / 1000).toFixed(0)}K`}
-            subValue="Available funds"
-            color="cyan"
+            subValue="Available to recover"
+            color="green"
             icon="💰"
           />
           <StatsCard
-            label="Combined Value"
-            value={`$${(stats.total_combined_value / 1000).toFixed(0)}K`}
-            subValue="Potential revenue"
+            label="Potential Fee (25%)"
+            value={`$${((stats.total_excess * 0.25) / 1000).toFixed(0)}K`}
+            subValue="Revenue opportunity"
+            color="cyan"
+            icon="💵"
+          />
+          <StatsCard
+            label="Avg Eleanor Score"
+            value={stats.avg_eleanor_score}
+            subValue="Lead quality"
             color="purple"
-            icon="💎"
+            icon="⭐"
           />
         </div>
       )}
 
-      {/* Filter Tabs */}
-      <div className="flex gap-2">
-        {['all', 'active', 'pending', 'sold', 'unknown'].map((status) => (
-          <button
-            key={status}
-            onClick={() => setStatusFilter(status)}
-            className={`px-4 py-2 rounded-lg font-medium transition-colors ${
-              statusFilter === status
-                ? 'bg-yellow-500 text-black'
-                : 'bg-zinc-800 text-zinc-400 hover:bg-zinc-700'
-            }`}
-          >
-            {status.charAt(0).toUpperCase() + status.slice(1)}
-            {stats && status !== 'all' && (
-              <span className="ml-1 text-xs">
-                ({stats.by_status[status as keyof typeof stats.by_status] || 0})
-              </span>
-            )}
-          </button>
-        ))}
+      {/* Info Banner */}
+      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
+        <p className="text-yellow-400 text-sm">
+          <span className="font-semibold">Golden Leads</span> are high-value leads with Eleanor scores of 80+ that are ready for outreach.
+        </p>
       </div>
 
       {/* Leads Table */}
@@ -517,11 +423,11 @@ export default function GoldenLeadsDashboard() {
             <tr className="border-b border-zinc-800 bg-zinc-900">
               <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Score</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Owner / Property</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Excess $</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Zillow Status</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">List Price</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Combined Value</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Zillow</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Excess Funds</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Phone</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Potential Fee</th>
+              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Added</th>
             </tr>
           </thead>
           <tbody>
