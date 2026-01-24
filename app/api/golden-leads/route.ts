@@ -14,7 +14,7 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status'); // active, pending, sold, all
 
   try {
-    // Build query
+    // Build query - use is_golden column (the actual column name in database)
     let query = supabase
       .from('maxsam_leads')
       .select(`
@@ -25,14 +25,13 @@ export async function GET(request: NextRequest) {
         state,
         zip_code,
         excess_funds_amount,
-        golden_lead,
-        golden_score,
+        is_golden,
+        eleanor_score,
         zillow_status,
         zillow_url,
         zillow_price,
         zillow_checked_at,
         combined_value,
-        eleanor_score,
         deal_grade,
         potential_revenue,
         status,
@@ -42,7 +41,7 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at
       `)
-      .eq('golden_lead', true)
+      .eq('is_golden', true)
       .order('golden_score', { ascending: false })
       .limit(limit);
 
@@ -57,8 +56,8 @@ export async function GET(request: NextRequest) {
     // Get summary stats
     const { data: allGolden } = await supabase
       .from('maxsam_leads')
-      .select('excess_funds_amount, combined_value, zillow_status, golden_score')
-      .eq('golden_lead', true);
+      .select('excess_funds_amount, combined_value, zillow_status, eleanor_score')
+      .eq('is_golden', true);
 
     const stats = {
       total: allGolden?.length || 0,
@@ -71,7 +70,7 @@ export async function GET(request: NextRequest) {
       },
       total_excess: allGolden?.reduce((sum, l) => sum + (l.excess_funds_amount || 0), 0) || 0,
       total_combined_value: allGolden?.reduce((sum, l) => sum + (l.combined_value || 0), 0) || 0,
-      avg_golden_score: allGolden?.length ? Math.round(allGolden.reduce((sum, l) => sum + (l.golden_score || 0), 0) / allGolden.length) : 0,
+      avg_eleanor_score: allGolden?.length ? Math.round(allGolden.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / allGolden.length) : 0,
     };
 
     // Get Zillow matches for these leads
