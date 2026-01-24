@@ -1,14 +1,6 @@
-import { createClient } from '@supabase/supabase-js'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
+import { supabase } from '@/lib/supabase/client'
 
 export async function fetchDashboardStats() {
-  const supabase = getSupabase();
 
   // Query only tables that definitely exist (maxsam_leads)
   // execution_queue and activity_feed may not exist yet
