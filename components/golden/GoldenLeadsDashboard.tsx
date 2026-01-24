@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useToast } from '@/components/Toast';
 
 // ============================================================================
@@ -41,6 +41,9 @@ interface HuntRun {
   completed_at: string | null;
 }
 
+type SortField = 'eleanor_score' | 'excess_funds_amount' | 'created_at' | 'owner_name' | 'status';
+type SortDirection = 'asc' | 'desc';
+
 // ============================================================================
 // STATUS BADGE COMPONENT
 // ============================================================================
@@ -51,6 +54,12 @@ function StatusBadge({ status }: { status: string }) {
     pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
     sold: 'bg-red-500/20 text-red-400 border-red-500/30',
     off_market: 'bg-zinc-500/20 text-zinc-400 border-zinc-500/30',
+    ready_for_outreach: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    contacted: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    agreement_sent: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
+    enriched: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    scored: 'bg-orange-500/20 text-orange-400 border-orange-500/30',
+    test: 'bg-pink-500/20 text-pink-400 border-pink-500/30',
     unknown: 'bg-zinc-700/20 text-zinc-500 border-zinc-700/30',
   };
 
@@ -59,6 +68,12 @@ function StatusBadge({ status }: { status: string }) {
     pending: '🟡',
     sold: '🔴',
     off_market: '⚫',
+    ready_for_outreach: '📤',
+    contacted: '📞',
+    agreement_sent: '📄',
+    enriched: '✨',
+    scored: '⭐',
+    test: '🧪',
     unknown: '❓',
   };
 
@@ -66,6 +81,40 @@ function StatusBadge({ status }: { status: string }) {
     <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium border ${colors[status] || colors.unknown}`}>
       {icons[status] || icons.unknown} {status || 'Unknown'}
     </span>
+  );
+}
+
+// ============================================================================
+// SORTABLE HEADER COMPONENT
+// ============================================================================
+
+function SortableHeader({
+  label,
+  field,
+  currentSort,
+  currentDirection,
+  onSort,
+}: {
+  label: string;
+  field: SortField;
+  currentSort: SortField;
+  currentDirection: SortDirection;
+  onSort: (field: SortField) => void;
+}) {
+  const isActive = currentSort === field;
+
+  return (
+    <th
+      className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase cursor-pointer hover:text-zinc-200 transition-colors select-none"
+      onClick={() => onSort(field)}
+    >
+      <div className="flex items-center gap-1">
+        {label}
+        <span className={`transition-opacity ${isActive ? 'opacity-100' : 'opacity-30'}`}>
+          {isActive && currentDirection === 'asc' ? '↑' : '↓'}
+        </span>
+      </div>
+    </th>
   );
 }
 
@@ -120,52 +169,192 @@ function LeadRow({
   lead,
   onSelect,
   isSelected,
+  isChecked,
+  onCheck,
+  onSendSMS,
+  onSendAgreement,
+  actionLoading,
 }: {
   lead: GoldenLead;
   onSelect: (lead: GoldenLead) => void;
   isSelected: boolean;
+  isChecked: boolean;
+  onCheck: (leadId: string, checked: boolean) => void;
+  onSendSMS: (leadId: string) => void;
+  onSendAgreement: (leadId: string) => void;
+  actionLoading: string | null;
 }) {
+  const getPhone = () => lead.phone || lead.phone_1 || lead.phone_2;
+  const isLoading = actionLoading === lead.id;
+
   return (
     <tr
-      onClick={() => onSelect(lead)}
-      className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 cursor-pointer transition-colors ${
+      className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors ${
         isSelected ? 'bg-yellow-500/10' : ''
       }`}
     >
-      <td className="px-4 py-3">
+      {/* Checkbox */}
+      <td className="px-3 py-3">
+        <input
+          type="checkbox"
+          checked={isChecked}
+          onChange={(e) => {
+            e.stopPropagation();
+            onCheck(lead.id, e.target.checked);
+          }}
+          className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-zinc-900 cursor-pointer"
+        />
+      </td>
+      {/* Score */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
         <div className="flex items-center gap-2">
           <span className="text-yellow-500">⭐</span>
           <span className="font-medium text-white">{lead.eleanor_score}</span>
         </div>
       </td>
-      <td className="px-4 py-3">
+      {/* Owner / Property */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
         <div>
           <p className="font-medium text-white">{lead.owner_name}</p>
-          <p className="text-xs text-zinc-500">{lead.property_address}</p>
+          <p className="text-xs text-zinc-500">{lead.property_address || 'Unknown'}</p>
         </div>
       </td>
-      <td className="px-4 py-3">
-        <span className="text-green-400 font-semibold">
+      {/* Excess Funds */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
+        <span className={`font-semibold ${(lead.excess_funds_amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
           ${(lead.excess_funds_amount || 0).toLocaleString()}
         </span>
       </td>
-      <td className="px-4 py-3">
+      {/* Status */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
         <StatusBadge status={lead.status || 'unknown'} />
       </td>
+      {/* Phone */}
       <td className="px-4 py-3">
-        <span className="text-cyan-400">{lead.phone || '-'}</span>
+        {getPhone() ? (
+          <a
+            href={`tel:${getPhone()}`}
+            className="text-cyan-400 hover:text-cyan-300 hover:underline"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {getPhone()}
+          </a>
+        ) : (
+          <span className="text-zinc-600">-</span>
+        )}
       </td>
-      <td className="px-4 py-3">
-        <span className="text-purple-400 font-semibold">
+      {/* Potential Fee */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
+        <span className={`font-semibold ${(lead.excess_funds_amount || 0) > 0 ? 'text-purple-400' : 'text-zinc-600'}`}>
           ${((lead.excess_funds_amount || 0) * 0.25).toLocaleString()}
         </span>
       </td>
-      <td className="px-4 py-3">
+      {/* Added */}
+      <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
         <span className="text-zinc-500 text-xs">
           {new Date(lead.created_at).toLocaleDateString()}
         </span>
       </td>
+      {/* Actions */}
+      <td className="px-3 py-3">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSendSMS(lead.id);
+            }}
+            disabled={isLoading || !getPhone()}
+            className="px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 rounded border border-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title={getPhone() ? 'Send SMS' : 'No phone number'}
+          >
+            {isLoading ? '...' : '💬'}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSendAgreement(lead.id);
+            }}
+            disabled={isLoading}
+            className="px-2 py-1 text-xs bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 rounded border border-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            title="Send Agreement"
+          >
+            {isLoading ? '...' : '📄'}
+          </button>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onSelect(lead);
+            }}
+            className="px-2 py-1 text-xs bg-zinc-500/20 text-zinc-400 hover:bg-zinc-500/30 rounded border border-zinc-500/30 transition-colors"
+            title="View Details"
+          >
+            👁️
+          </button>
+        </div>
+      </td>
     </tr>
+  );
+}
+
+// ============================================================================
+// BULK ACTION BAR COMPONENT
+// ============================================================================
+
+function BulkActionBar({
+  selectedCount,
+  onSendSMS,
+  onSendAgreement,
+  onClearSelection,
+  loading,
+}: {
+  selectedCount: number;
+  onSendSMS: () => void;
+  onSendAgreement: () => void;
+  onClearSelection: () => void;
+  loading: boolean;
+}) {
+  if (selectedCount === 0) return null;
+
+  return (
+    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+      <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl px-6 py-4 flex items-center gap-4">
+        <span className="text-white font-medium">
+          {selectedCount} lead{selectedCount !== 1 ? 's' : ''} selected
+        </span>
+        <div className="h-6 w-px bg-zinc-700" />
+        <button
+          onClick={onSendSMS}
+          disabled={loading}
+          className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? (
+            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          ) : (
+            '💬'
+          )}
+          Send SMS
+        </button>
+        <button
+          onClick={onSendAgreement}
+          disabled={loading}
+          className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
+        >
+          {loading ? (
+            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+          ) : (
+            '📄'
+          )}
+          Send Agreement
+        </button>
+        <div className="h-6 w-px bg-zinc-700" />
+        <button
+          onClick={onClearSelection}
+          className="px-3 py-2 text-zinc-400 hover:text-white transition-colors"
+        >
+          ✕ Clear
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -176,11 +365,18 @@ function LeadRow({
 function LeadDetailPanel({
   lead,
   onClose,
+  onSendSMS,
+  onSendAgreement,
+  actionLoading,
 }: {
   lead: GoldenLead;
   onClose: () => void;
+  onSendSMS: (leadId: string) => void;
+  onSendAgreement: (leadId: string) => void;
+  actionLoading: string | null;
 }) {
   const getPhone = () => lead.phone || lead.phone_1 || lead.phone_2;
+  const isLoading = actionLoading === lead.id;
 
   return (
     <div className="fixed inset-y-0 right-0 w-96 bg-zinc-900 border-l border-zinc-800 shadow-2xl z-50 overflow-y-auto">
@@ -199,10 +395,12 @@ function LeadDetailPanel({
         {/* Owner Info */}
         <div className="mb-6">
           <h3 className="text-lg font-semibold text-white mb-3">{lead.owner_name}</h3>
-          <p className="text-zinc-400 text-sm">{lead.property_address}</p>
+          <p className="text-zinc-400 text-sm">{lead.property_address || 'Unknown address'}</p>
           <p className="text-zinc-500 text-sm">{lead.city || ''}{lead.city && lead.state ? ', ' : ''}{lead.state || ''} {lead.zip_code || ''}</p>
           {getPhone() && (
-            <p className="text-cyan-400 text-sm mt-2">📞 {getPhone()}</p>
+            <a href={`tel:${getPhone()}`} className="text-cyan-400 text-sm mt-2 block hover:underline">
+              📞 {getPhone()}
+            </a>
           )}
         </div>
 
@@ -223,7 +421,7 @@ function LeadDetailPanel({
         {/* Excess Funds Section */}
         <div className="mb-6 p-4 bg-green-500/10 border border-green-500/30 rounded-xl">
           <h4 className="text-green-400 font-medium mb-2">💰 Excess Funds</h4>
-          <p className="text-2xl font-bold text-green-400">
+          <p className={`text-2xl font-bold ${(lead.excess_funds_amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
             ${(lead.excess_funds_amount || 0).toLocaleString()}
           </p>
           <p className="text-xs text-zinc-500 mt-1">
@@ -260,11 +458,29 @@ function LeadDetailPanel({
               📞 Call Now
             </a>
           )}
-          <button className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-semibold rounded-lg transition-colors">
-            ✉️ Send SMS
+          <button
+            onClick={() => onSendSMS(lead.id)}
+            disabled={isLoading || !getPhone()}
+            className="w-full py-3 bg-cyan-500 hover:bg-cyan-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+            ) : (
+              '✉️'
+            )}
+            Send SMS
           </button>
-          <button className="w-full py-3 bg-purple-500 hover:bg-purple-400 text-white font-semibold rounded-lg transition-colors">
-            📄 Generate Contract
+          <button
+            onClick={() => onSendAgreement(lead.id)}
+            disabled={isLoading}
+            className="w-full py-3 bg-purple-500 hover:bg-purple-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
+          >
+            {isLoading ? (
+              <div className="animate-spin w-5 h-5 border-2 border-white border-t-transparent rounded-full" />
+            ) : (
+              '📄'
+            )}
+            Send Agreement
           </button>
         </div>
       </div>
@@ -283,6 +499,11 @@ export default function GoldenLeadsDashboard() {
   const [loading, setLoading] = useState(true);
   const [hunting, setHunting] = useState(false);
   const [selectedLead, setSelectedLead] = useState<GoldenLead | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [sortField, setSortField] = useState<SortField>('eleanor_score');
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [bulkLoading, setBulkLoading] = useState(false);
   const { addToast } = useToast();
 
   const fetchData = useCallback(async () => {
@@ -313,6 +534,72 @@ export default function GoldenLeadsDashboard() {
     fetchData();
   }, [fetchData]);
 
+  // Sorted leads
+  const sortedLeads = useMemo(() => {
+    const sorted = [...leads].sort((a, b) => {
+      let aVal: string | number | Date;
+      let bVal: string | number | Date;
+
+      switch (sortField) {
+        case 'eleanor_score':
+          aVal = a.eleanor_score || 0;
+          bVal = b.eleanor_score || 0;
+          break;
+        case 'excess_funds_amount':
+          aVal = a.excess_funds_amount || 0;
+          bVal = b.excess_funds_amount || 0;
+          break;
+        case 'created_at':
+          aVal = new Date(a.created_at).getTime();
+          bVal = new Date(b.created_at).getTime();
+          break;
+        case 'owner_name':
+          aVal = a.owner_name.toLowerCase();
+          bVal = b.owner_name.toLowerCase();
+          break;
+        case 'status':
+          aVal = a.status || '';
+          bVal = b.status || '';
+          break;
+        default:
+          return 0;
+      }
+
+      if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
+      if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    return sorted;
+  }, [leads, sortField, sortDirection]);
+
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortField(field);
+      setSortDirection('desc');
+    }
+  };
+
+  const handleCheck = (leadId: string, checked: boolean) => {
+    const newSelected = new Set(selectedIds);
+    if (checked) {
+      newSelected.add(leadId);
+    } else {
+      newSelected.delete(leadId);
+    }
+    setSelectedIds(newSelected);
+  };
+
+  const handleSelectAll = (checked: boolean) => {
+    if (checked) {
+      setSelectedIds(new Set(sortedLeads.map(l => l.id)));
+    } else {
+      setSelectedIds(new Set());
+    }
+  };
+
   const startHunt = async () => {
     setHunting(true);
     addToast('info', 'Starting Golden Lead Hunt...');
@@ -339,6 +626,122 @@ export default function GoldenLeadsDashboard() {
     }
   };
 
+  const sendSMS = async (leadId: string) => {
+    setActionLoading(leadId);
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'send-sms' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        addToast('success', 'SMS sent successfully!');
+        await fetchData();
+      } else {
+        addToast('error', data.error || 'Failed to send SMS');
+      }
+    } catch {
+      addToast('error', 'Failed to send SMS');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const sendAgreement = async (leadId: string) => {
+    setActionLoading(leadId);
+    try {
+      const res = await fetch(`/api/leads/${leadId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'generate-contract' }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        addToast('success', 'Agreement sent successfully!');
+        await fetchData();
+      } else {
+        addToast('error', data.error || 'Failed to send agreement');
+      }
+    } catch {
+      addToast('error', 'Failed to send agreement');
+    } finally {
+      setActionLoading(null);
+    }
+  };
+
+  const bulkSendSMS = async () => {
+    setBulkLoading(true);
+    const ids = Array.from(selectedIds);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/leads/${id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'send-sms' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      addToast('success', `Sent SMS to ${successCount} lead${successCount !== 1 ? 's' : ''}`);
+    }
+    if (failCount > 0) {
+      addToast('error', `Failed to send SMS to ${failCount} lead${failCount !== 1 ? 's' : ''}`);
+    }
+
+    setSelectedIds(new Set());
+    setBulkLoading(false);
+    await fetchData();
+  };
+
+  const bulkSendAgreement = async () => {
+    setBulkLoading(true);
+    const ids = Array.from(selectedIds);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const id of ids) {
+      try {
+        const res = await fetch(`/api/leads/${id}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action: 'generate-contract' }),
+        });
+        const data = await res.json();
+        if (data.success) {
+          successCount++;
+        } else {
+          failCount++;
+        }
+      } catch {
+        failCount++;
+      }
+    }
+
+    if (successCount > 0) {
+      addToast('success', `Sent agreement to ${successCount} lead${successCount !== 1 ? 's' : ''}`);
+    }
+    if (failCount > 0) {
+      addToast('error', `Failed to send agreement to ${failCount} lead${failCount !== 1 ? 's' : ''}`);
+    }
+
+    setSelectedIds(new Set());
+    setBulkLoading(false);
+    await fetchData();
+  };
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -346,6 +749,9 @@ export default function GoldenLeadsDashboard() {
       </div>
     );
   }
+
+  const allSelected = sortedLeads.length > 0 && selectedIds.size === sortedLeads.length;
+  const someSelected = selectedIds.size > 0 && selectedIds.size < sortedLeads.length;
 
   return (
     <div className="space-y-6">
@@ -413,6 +819,7 @@ export default function GoldenLeadsDashboard() {
       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
         <p className="text-yellow-400 text-sm">
           <span className="font-semibold">Golden Leads</span> are high-value leads with Eleanor scores of 80+ that are ready for outreach.
+          <span className="text-zinc-500 ml-2">Click column headers to sort. Use checkboxes for bulk actions.</span>
         </p>
       </div>
 
@@ -421,28 +828,46 @@ export default function GoldenLeadsDashboard() {
         <table className="w-full">
           <thead>
             <tr className="border-b border-zinc-800 bg-zinc-900">
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Score</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Owner / Property</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Excess Funds</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Status</th>
+              {/* Select All Checkbox */}
+              <th className="px-3 py-3 text-left">
+                <input
+                  type="checkbox"
+                  checked={allSelected}
+                  ref={(el) => {
+                    if (el) el.indeterminate = someSelected;
+                  }}
+                  onChange={(e) => handleSelectAll(e.target.checked)}
+                  className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-zinc-900 cursor-pointer"
+                />
+              </th>
+              <SortableHeader label="Score" field="eleanor_score" currentSort={sortField} currentDirection={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Owner / Property" field="owner_name" currentSort={sortField} currentDirection={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Excess Funds" field="excess_funds_amount" currentSort={sortField} currentDirection={sortDirection} onSort={handleSort} />
+              <SortableHeader label="Status" field="status" currentSort={sortField} currentDirection={sortDirection} onSort={handleSort} />
               <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Phone</th>
               <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Potential Fee</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Added</th>
+              <SortableHeader label="Added" field="created_at" currentSort={sortField} currentDirection={sortDirection} onSort={handleSort} />
+              <th className="px-3 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Actions</th>
             </tr>
           </thead>
           <tbody>
-            {leads.length > 0 ? (
-              leads.map((lead) => (
+            {sortedLeads.length > 0 ? (
+              sortedLeads.map((lead) => (
                 <LeadRow
                   key={lead.id}
                   lead={lead}
                   onSelect={setSelectedLead}
                   isSelected={selectedLead?.id === lead.id}
+                  isChecked={selectedIds.has(lead.id)}
+                  onCheck={handleCheck}
+                  onSendSMS={sendSMS}
+                  onSendAgreement={sendAgreement}
+                  actionLoading={actionLoading}
                 />
               ))
             ) : (
               <tr>
-                <td colSpan={7} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={9} className="px-4 py-12 text-center text-zinc-500">
                   No golden leads found. Click "Hunt Golden Leads" to start scanning.
                 </td>
               </tr>
@@ -476,6 +901,15 @@ export default function GoldenLeadsDashboard() {
         </div>
       )}
 
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        onSendSMS={bulkSendSMS}
+        onSendAgreement={bulkSendAgreement}
+        onClearSelection={() => setSelectedIds(new Set())}
+        loading={bulkLoading}
+      />
+
       {/* Detail Panel */}
       {selectedLead && (
         <>
@@ -483,7 +917,13 @@ export default function GoldenLeadsDashboard() {
             className="fixed inset-0 bg-black/50 z-40"
             onClick={() => setSelectedLead(null)}
           />
-          <LeadDetailPanel lead={selectedLead} onClose={() => setSelectedLead(null)} />
+          <LeadDetailPanel
+            lead={selectedLead}
+            onClose={() => setSelectedLead(null)}
+            onSendSMS={sendSMS}
+            onSendAgreement={sendAgreement}
+            actionLoading={actionLoading}
+          />
         </>
       )}
     </div>
