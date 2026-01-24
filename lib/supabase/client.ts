@@ -2,10 +2,13 @@ import { createClient as createSupabaseClient, SupabaseClient } from '@supabase/
 
 let _supabase: SupabaseClient | null = null
 
+// Use placeholder values during build, actual values at runtime
+// This prevents build failures when env vars aren't available at build time
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co'
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key'
+
 function getSupabase(): SupabaseClient {
   if (!_supabase) {
-    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-    const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     _supabase = createSupabaseClient(supabaseUrl, supabaseAnonKey)
   }
   return _supabase
