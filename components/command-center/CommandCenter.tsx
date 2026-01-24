@@ -1,12 +1,26 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/Toast'
 
 export type CommandCenterProps = {
   mode?: string | null
   leadIds?: string[]
+}
+
+interface PipelineResult {
+  success: boolean
+  stage: string
+  parsed: number
+  inserted: number
+  duplicates: number
+  scored: number
+  goldenLeads: number
+  skipTraced: number
+  queued: number
+  totalPotential: number
+  errors: string[]
 }
 
 interface Stats {
@@ -137,6 +151,9 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
   const [statsLoading, setStatsLoading] = useState(true)
   const [systemStatus, setSystemStatus] = useState<'online' | 'degraded' | 'offline'>('online')
   const [modalOpen, setModalOpen] = useState<string | null>(null)
+  const [importProgress, setImportProgress] = useState<PipelineResult | null>(null)
+  const [importing, setImporting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
 
   const fetchStats = useCallback(async () => {
     try {
@@ -196,6 +213,78 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
       case 'online': return 'bg-green-500'
       case 'degraded': return 'bg-yellow-500'
       case 'offline': return 'bg-red-500'
+    }
+  }
+
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+
+    if (!file.name.toLowerCase().endsWith('.pdf')) {
+      addToast('error', 'Please select a PDF file')
+      return
+    }
+
+    setImporting(true)
+    setModalOpen('import')
+    setImportProgress(null)
+
+    try {
+      const formData = new FormData()
+      formData.append('file', file)
+      formData.append('source', 'manual_upload')
+
+      const res = await fetch('/api/pipeline/ingest', {
+        method: 'POST',
+        body: formData,
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setImportProgress(data)
+        addToast('success', `Imported ${data.inserted} leads, ${data.goldenLeads} golden!`)
+        fetchStats()
+      } else {
+        addToast('error', data.error || 'Import failed')
+        setImportProgress(data)
+      }
+    } catch {
+      addToast('error', 'Upload failed')
+    } finally {
+      setImporting(false)
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+    }
+  }
+
+  const triggerImportFromURL = async (url: string) => {
+    setImporting(true)
+    setModalOpen('import')
+    setImportProgress(null)
+
+    try {
+      const res = await fetch('/api/pipeline/ingest', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ url, source: 'url_import' }),
+      })
+
+      const data = await res.json()
+
+      if (res.ok && data.success) {
+        setImportProgress(data)
+        addToast('success', `Imported ${data.inserted} leads from URL!`)
+        fetchStats()
+      } else {
+        addToast('error', data.error || 'Import failed')
+        setImportProgress(data)
+      }
+    } catch {
+      addToast('error', 'URL import failed')
+    } finally {
+      setImporting(false)
     }
   }
 
@@ -292,7 +381,15 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
       {/* Pipeline Actions */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
         <h2 className="text-lg font-semibold mb-4 text-white">Pipeline Actions</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+          <ActionButton
+            label="Import PDFs"
+            emoji="📄"
+            description="Upload & process leads"
+            color="blue"
+            loading={importing}
+            onClick={() => fileInputRef.current?.click()}
+          />
           <ActionButton
             label="Run Ralph"
             emoji="🤖"
@@ -328,6 +425,14 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
             onClick={() => runAction('SAM Batch', '/api/sam/run-batch')}
           />
         </div>
+        {/* Hidden file input for PDF upload */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept=".pdf"
+          className="hidden"
+          onChange={handleFileUpload}
+        />
       </div>
 
       {/* Reports & Diagnostics */}
@@ -558,6 +663,115 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
             </button>
           </div>
         )}
+      </DrillDownModal>
+
+      {/* Import Progress Modal */}
+      <DrillDownModal
+        isOpen={modalOpen === 'import'}
+        onClose={() => !importing && setModalOpen(null)}
+        title="Lead Import Pipeline"
+      >
+        <div className="space-y-4">
+          {importing && !importProgress && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4" />
+              <p className="text-zinc-300">Processing PDF with Gemini AI...</p>
+              <p className="text-xs text-zinc-500 mt-2">Extracting leads, scoring, and cross-referencing</p>
+            </div>
+          )}
+
+          {importProgress && (
+            <div className="space-y-4">
+              <div className={`text-center py-4 rounded-lg ${importProgress.success ? 'bg-green-900/30' : 'bg-red-900/30'}`}>
+                <div className="text-2xl mb-2">{importProgress.success ? '✅' : '❌'}</div>
+                <div className="text-lg font-bold text-white">
+                  {importProgress.success ? 'Import Complete' : 'Import Failed'}
+                </div>
+                <div className="text-sm text-zinc-400">Stage: {importProgress.stage}</div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-blue-400">{importProgress.parsed}</div>
+                  <div className="text-xs text-zinc-500">Parsed</div>
+                </div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-green-400">{importProgress.inserted}</div>
+                  <div className="text-xs text-zinc-500">Inserted</div>
+                </div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-yellow-400">{importProgress.goldenLeads}</div>
+                  <div className="text-xs text-zinc-500">Golden Leads</div>
+                </div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-orange-400">{importProgress.duplicates}</div>
+                  <div className="text-xs text-zinc-500">Duplicates</div>
+                </div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-purple-400">{importProgress.skipTraced}</div>
+                  <div className="text-xs text-zinc-500">Skip Traced</div>
+                </div>
+                <div className="bg-zinc-800 rounded-lg p-3 text-center">
+                  <div className="text-2xl font-bold text-cyan-400">{importProgress.queued}</div>
+                  <div className="text-xs text-zinc-500">Queued for SAM</div>
+                </div>
+              </div>
+
+              <div className="bg-green-900/20 border border-green-700/50 rounded-lg p-4 text-center">
+                <div className="text-sm text-zinc-400">Potential Revenue</div>
+                <div className="text-2xl font-bold text-green-400">
+                  {formatCurrency(importProgress.totalPotential * 0.25)}
+                </div>
+                <div className="text-xs text-zinc-500">25% of {formatCurrency(importProgress.totalPotential)}</div>
+              </div>
+
+              {importProgress.errors.length > 0 && (
+                <div className="bg-red-900/20 border border-red-700/50 rounded-lg p-3">
+                  <h4 className="text-sm font-medium text-red-400 mb-2">Errors:</h4>
+                  <ul className="text-xs text-red-300 space-y-1 max-h-24 overflow-y-auto">
+                    {importProgress.errors.map((err, i) => (
+                      <li key={i}>{err}</li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              <button
+                onClick={() => { setModalOpen(null); router.push('/dashboard/leads'); }}
+                className="w-full py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm"
+              >
+                View Imported Leads
+              </button>
+            </div>
+          )}
+
+          {!importing && !importProgress && (
+            <div className="space-y-4">
+              <p className="text-sm text-zinc-400 text-center">
+                Upload a Dallas County excess funds PDF or import from URL
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="py-3 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm flex flex-col items-center"
+                >
+                  <span className="text-xl mb-1">📄</span>
+                  Upload PDF
+                </button>
+                <button
+                  onClick={() => {
+                    const url = prompt('Enter PDF URL:')
+                    if (url) triggerImportFromURL(url)
+                  }}
+                  className="py-3 bg-purple-600 hover:bg-purple-500 rounded-lg text-white text-sm flex flex-col items-center"
+                >
+                  <span className="text-xl mb-1">🔗</span>
+                  Import from URL
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </DrillDownModal>
     </div>
   )
