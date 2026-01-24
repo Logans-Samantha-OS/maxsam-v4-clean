@@ -1,0 +1,413 @@
+{
+  "name": "SAM Daily Outreach Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 9 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trigger-9am",
+      "name": "Daily 9 AM CST Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [0, 0],
+      "notes": "Runs every day at 9:00 AM. Set your N8N instance timezone to America/Chicago (CST)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT \n  id,\n  owner_name,\n  property_address,\n  city,\n  state,\n  zip_code,\n  excess_funds_amount,\n  eleanor_score,\n  phone,\n  phone_1,\n  phone_2,\n  email,\n  status\nFROM maxsam_leads\nWHERE \n  eleanor_score >= 85\n  AND (phone IS NOT NULL OR phone_1 IS NOT NULL OR phone_2 IS NOT NULL)\n  AND status IN ('new', 'ready_for_outreach')\n  AND (\n    last_contacted_at IS NULL \n    OR last_contacted_at < NOW() - INTERVAL '7 days'\n  )\n  AND id NOT IN (\n    SELECT lead_id FROM opt_outs WHERE is_active = true\n  )\nORDER BY eleanor_score DESC\nLIMIT 50;",
+        "additionalFields": {}
+      },
+      "id": "query-leads",
+      "name": "Query Hot Leads from Supabase",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [220, 0],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Gets leads with score >= 85, valid phone, not contacted in 7 days, not opted out"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "check-results",
+              "leftValue": "={{ $json.length }}",
+              "rightValue": 0,
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-leads-exist",
+      "name": "Any Leads Found?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [440, 0]
+    },
+    {
+      "parameters": {
+        "fieldToSplitOut": "={{ $json }}",
+        "options": {}
+      },
+      "id": "split-leads",
+      "name": "Split Into Individual Leads",
+      "type": "n8n-nodes-base.splitOut",
+      "typeVersion": 1,
+      "position": [660, -100]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract first name and best phone number\nconst lead = $input.item.json;\n\n// Get first name from owner_name\nlet firstName = 'there';\nif (lead.owner_name) {\n  const nameParts = lead.owner_name.trim().split(' ');\n  firstName = nameParts[0];\n  // Capitalize properly\n  firstName = firstName.charAt(0).toUpperCase() + firstName.slice(1).toLowerCase();\n}\n\n// Get best available phone (prefer phone, then phone_1, then phone_2)\nconst phone = lead.phone || lead.phone_1 || lead.phone_2;\n\n// Format phone number (ensure it has +1 prefix)\nlet formattedPhone = phone ? phone.replace(/\\D/g, '') : null;\nif (formattedPhone && !formattedPhone.startsWith('1')) {\n  formattedPhone = '1' + formattedPhone;\n}\nif (formattedPhone) {\n  formattedPhone = '+' + formattedPhone;\n}\n\n// Format excess funds amount\nconst amount = lead.excess_funds_amount || 0;\nconst formattedAmount = amount.toLocaleString('en-US', {\n  style: 'currency',\n  currency: 'USD',\n  minimumFractionDigits: 0,\n  maximumFractionDigits: 0\n});\n\n// Build the SMS message using weaponized template\nconst message = `Hi ${firstName}, this is Max from MaxSam Recovery. Dallas County is holding ${formattedAmount} from the sale of ${lead.property_address || 'your property'}. This expires soon. Can we help you claim it? Reply YES for a free consultation or STOP to opt out.`;\n\nreturn {\n  ...lead,\n  first_name: firstName,\n  formatted_phone: formattedPhone,\n  formatted_amount: formattedAmount,\n  sms_message: message,\n  can_send: !!formattedPhone\n};"
+      },
+      "id": "prepare-sms",
+      "name": "Prepare SMS Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [880, -100],
+      "notes": "Extracts first name, formats phone, builds personalized SMS"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "can-send-check",
+              "leftValue": "={{ $json.can_send }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-can-send",
+      "name": "Valid Phone?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.1,
+      "position": [1100, -100]
+    },
+    {
+      "parameters": {
+        "from": "={{ $env.TWILIO_PHONE_NUMBER }}",
+        "to": "={{ $json.formatted_phone }}",
+        "message": "={{ $json.sms_message }}"
+      },
+      "id": "send-twilio-sms",
+      "name": "Send SMS via Twilio",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [1320, -200],
+      "credentials": {
+        "twilioApi": {
+          "id": "TWILIO_CREDENTIAL_ID",
+          "name": "Twilio API"
+        }
+      },
+      "continueOnFail": true,
+      "notes": "Sends personalized SMS to lead"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "UPDATE maxsam_leads \nSET \n  status = 'contacted',\n  last_contacted_at = NOW(),\n  contact_attempts = COALESCE(contact_attempts, 0) + 1,\n  updated_at = NOW()\nWHERE id = '{{ $json.id }}'::uuid\nRETURNING id, status, last_contacted_at;",
+        "additionalFields": {}
+      },
+      "id": "update-lead-status",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1540, -200],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Marks lead as contacted and updates timestamp"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "INSERT INTO communication_logs (\n  lead_id,\n  type,\n  direction,\n  content,\n  status,\n  phone_number,\n  created_at\n) VALUES (\n  '{{ $json.id }}'::uuid,\n  'sms',\n  'outbound',\n  '{{ $json.sms_message }}',\n  'sent',\n  '{{ $json.formatted_phone }}',\n  NOW()\n);",
+        "additionalFields": {}
+      },
+      "id": "log-communication",
+      "name": "Log Communication",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1760, -200],
+      "credentials": {
+        "postgres": {
+          "id": "SUPABASE_POSTGRES_CREDENTIAL_ID",
+          "name": "Supabase PostgreSQL"
+        }
+      },
+      "notes": "Records SMS in communication_logs for audit trail"
+    },
+    {
+      "parameters": {
+        "aggregate": "aggregateAllItemData",
+        "options": {}
+      },
+      "id": "aggregate-results",
+      "name": "Aggregate Results",
+      "type": "n8n-nodes-base.aggregate",
+      "typeVersion": 1,
+      "position": [1980, -200]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Count successful sends\nconst allItems = $input.all();\nconst successCount = allItems.length;\n\n// Calculate total value\nlet totalValue = 0;\nfor (const item of allItems) {\n  totalValue += item.json.excess_funds_amount || 0;\n}\n\nconst formattedTotal = totalValue.toLocaleString('en-US', {\n  style: 'currency',\n  currency: 'USD',\n  minimumFractionDigits: 0,\n  maximumFractionDigits: 0\n});\n\n// Build summary message for Telegram\nconst now = new Date();\nconst dateStr = now.toLocaleDateString('en-US', { \n  weekday: 'long', \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\nconst message = `🤖 SAM Daily Outreach Report\\n\\n` +\n  `📅 ${dateStr}\\n\\n` +\n  `📱 Leads Contacted: ${successCount}\\n` +\n  `💰 Total Opportunity Value: ${formattedTotal}\\n` +\n  `💵 Potential Fee (25%): ${(totalValue * 0.25).toLocaleString('en-US', { style: 'currency', currency: 'USD', minimumFractionDigits: 0 })}\\n\\n` +\n  `✅ All leads updated to 'contacted' status.\\n\\n` +\n  `Next outreach batch: Tomorrow 9 AM CST`;\n\nreturn {\n  success_count: successCount,\n  total_value: totalValue,\n  telegram_message: message\n};"
+      },
+      "id": "build-summary",
+      "name": "Build Summary Report",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [2200, -200],
+      "notes": "Creates summary statistics for Telegram notification"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.telegram_message }}",
+        "additionalFields": {
+          "parse_mode": "HTML"
+        }
+      },
+      "id": "send-telegram",
+      "name": "Send Telegram Summary to Logan",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [2420, -200],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Notifies Logan of daily outreach results"
+    },
+    {
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "🤖 SAM Daily Outreach Report\n\n📅 {{ $now.format('LLLL') }}\n\n⚠️ No leads found matching criteria:\n- Eleanor Score >= 85\n- Valid phone number\n- Not contacted in 7 days\n- Not opted out\n\nNext check: Tomorrow 9 AM CST",
+        "additionalFields": {}
+      },
+      "id": "send-no-leads-notification",
+      "name": "Notify No Leads Found",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [660, 100],
+      "credentials": {
+        "telegramApi": {
+          "id": "TELEGRAM_CREDENTIAL_ID",
+          "name": "Telegram Bot"
+        }
+      },
+      "notes": "Notifies Logan when no leads match criteria"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Log skipped lead (no valid phone)\nconst lead = $input.item.json;\n\nconsole.log(`Skipped lead ${lead.id} - ${lead.owner_name}: No valid phone number`);\n\nreturn {\n  skipped: true,\n  lead_id: lead.id,\n  owner_name: lead.owner_name,\n  reason: 'No valid phone number'\n};"
+      },
+      "id": "log-skipped",
+      "name": "Log Skipped Lead",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1320, 0],
+      "notes": "Logs leads that couldn't be contacted"
+    }
+  ],
+  "connections": {
+    "Daily 9 AM CST Trigger": {
+      "main": [
+        [
+          {
+            "node": "Query Hot Leads from Supabase",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Hot Leads from Supabase": {
+      "main": [
+        [
+          {
+            "node": "Any Leads Found?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Any Leads Found?": {
+      "main": [
+        [
+          {
+            "node": "Split Into Individual Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Notify No Leads Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Split Into Individual Leads": {
+      "main": [
+        [
+          {
+            "node": "Prepare SMS Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare SMS Message": {
+      "main": [
+        [
+          {
+            "node": "Valid Phone?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid Phone?": {
+      "main": [
+        [
+          {
+            "node": "Send SMS via Twilio",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Log Skipped Lead",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS via Twilio": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Log Communication",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Log Communication": {
+      "main": [
+        [
+          {
+            "node": "Aggregate Results",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate Results": {
+      "main": [
+        [
+          {
+            "node": "Build Summary Report",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Summary Report": {
+      "main": [
+        [
+          {
+            "node": "Send Telegram Summary to Logan",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": "",
+    "timezone": "America/Chicago"
+  },
+  "staticData": null,
+  "tags": [
+    {
+      "name": "SAM Outreach",
+      "createdAt": "2024-01-24T00:00:00.000Z",
+      "updatedAt": "2024-01-24T00:00:00.000Z"
+    },
+    {
+      "name": "Production",
+      "createdAt": "2024-01-24T00:00:00.000Z",
+      "updatedAt": "2024-01-24T00:00:00.000Z"
+    }
+  ],
+  "triggerCount": 1,
+  "pinData": {},
+  "versionId": "1.0.0"
+}
