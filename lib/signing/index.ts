@@ -388,18 +388,80 @@ async function handleWebhookEvent(event: NormalizedWebhookEvent): Promise<void> 
     case AgreementEventType.SIGNED:
       updates.signed_at = new Date().toISOString();
       newStatus = 'signed';
-      // Also update lead status
+      // Also update lead status and AUTO-CREATE INVOICE
       const { data: packet } = await supabase
         .from('agreement_packets')
-        .select('lead_id')
+        .select('lead_id, client_email, client_name, total_fee, property_address, id')
         .eq('id', event.packetId)
         .single();
 
       if (packet?.lead_id) {
+        // Update lead status
         await supabase
           .from('maxsam_leads')
           .update({ status: 'contract_signed' })
           .eq('id', packet.lead_id);
+
+        // AUTO-INVOICE: Create Stripe invoice for signed contract
+        if (packet.client_email && packet.total_fee && packet.total_fee > 0) {
+          try {
+            const { createInvoice } = await import('../stripe');
+            const invoiceResult = await createInvoice(
+              packet.client_email,
+              packet.client_name || 'Property Owner',
+              packet.total_fee,
+              `Recovery Fee - ${packet.property_address || 'Property'}`,
+              {
+                lead_id: packet.lead_id,
+                packet_id: packet.id,
+                source: 'auto_signed_webhook'
+              }
+            );
+
+            if (invoiceResult.success) {
+              // Update packet with invoice info
+              await supabase
+                .from('agreement_packets')
+                .update({
+                  stripe_invoice_id: invoiceResult.invoiceId,
+                  stripe_invoice_url: invoiceResult.invoiceUrl,
+                  invoice_created_at: new Date().toISOString()
+                })
+                .eq('id', event.packetId);
+
+              // Log invoice creation event
+              await logEvent(event.packetId, AgreementEventType.STATUS_CHANGED, 'system', {
+                action: 'auto_invoice_created',
+                invoice_id: invoiceResult.invoiceId,
+                invoice_url: invoiceResult.invoiceUrl,
+                amount: packet.total_fee
+              });
+
+              // Send Telegram notification
+              const botToken = process.env.TELEGRAM_BOT_TOKEN;
+              const chatId = process.env.TELEGRAM_CHAT_ID;
+              if (botToken && chatId) {
+                await fetch(`https://api.telegram.org/bot${botToken}/sendMessage`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    chat_id: chatId,
+                    text: `💰 AUTO-INVOICE SENT!\n\n📝 Contract Signed: ${packet.client_name}\n🏠 ${packet.property_address}\n💵 Invoice: $${packet.total_fee.toLocaleString()}\n🔗 ${invoiceResult.invoiceUrl}\n\nWaiting for payment...`,
+                    parse_mode: 'HTML'
+                  })
+                });
+              }
+            } else {
+              console.error('Auto-invoice creation failed:', invoiceResult.error);
+              await logEvent(event.packetId, AgreementEventType.FAILED, 'system', {
+                action: 'auto_invoice_failed',
+                error: invoiceResult.error
+              });
+            }
+          } catch (invoiceError) {
+            console.error('Auto-invoice exception:', invoiceError);
+          }
+        }
       }
       break;
 
