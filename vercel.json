@@ -1,6 +1,14 @@
 {
   "crons": [
     {
+      "path": "/api/agent-loop",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/reset-daily-goals",
+      "schedule": "0 6 * * *"
+    },
+    {
       "path": "/api/cron/sam-campaign",
       "schedule": "0 15 * * 1-6"
     },
