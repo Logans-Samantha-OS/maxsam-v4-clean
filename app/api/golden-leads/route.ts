@@ -14,6 +14,26 @@ export async function GET(request: NextRequest) {
   const status = searchParams.get('status'); // active, pending, sold, all
 
   try {
+    // DEBUG: First check what's in the table
+    const { data: debugData, error: debugError } = await supabase
+      .from('maxsam_leads')
+      .select('id, owner_name, is_golden, eleanor_score')
+      .eq('is_golden', true)
+      .limit(5);
+
+    console.log('[Golden Leads API] DEBUG - is_golden=true count:', debugData?.length || 0);
+    console.log('[Golden Leads API] DEBUG - error:', debugError);
+    if (debugData && debugData.length > 0) {
+      console.log('[Golden Leads API] DEBUG - sample:', JSON.stringify(debugData[0]));
+    }
+
+    // Check raw data without filter
+    const { data: rawTest } = await supabase
+      .from('maxsam_leads')
+      .select('id, is_golden')
+      .limit(10);
+    console.log('[Golden Leads API] DEBUG - raw is_golden values:', rawTest?.map(l => ({ id: l.id?.substring(0,8), is_golden: l.is_golden })));
+
     // Build query - use is_golden column (the actual column name in database)
     let query = supabase
       .from('maxsam_leads')
@@ -50,6 +70,8 @@ export async function GET(request: NextRequest) {
     }
 
     const { data: goldenLeads, error, count } = await query;
+
+    console.log('[Golden Leads API] Main query - count:', goldenLeads?.length || 0, 'error:', error);
 
     if (error) throw error;
 
