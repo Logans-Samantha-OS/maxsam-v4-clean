@@ -1,6 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
+import {
+  getNotebookForCounty,
+  formatCountyQuestion,
+  getCountyRoutingInfo,
+  listSupportedCounties,
+  COUNTY_TO_NOTEBOOK,
+  DEFAULT_NOTEBOOK,
+} from '@/lib/alex/notebook-routing';
 
 /**
  * ALEX NotebookLM Query API
@@ -8,10 +16,11 @@ import crypto from 'crypto';
  * POST /api/alex/notebook-query
  *
  * Queries the ALEX Knowledge Base (powered by the alex-knowledge MCP)
- * with caching to reduce API calls and improve response time.
+ * with caching and automatic county-based notebook routing.
  *
  * Request Body:
- * - notebook: string (optional) - Notebook name for categorization (e.g., "TX_Dallas_County_Playbook")
+ * - county: string (optional) - County name for automatic notebook routing
+ * - notebook: string (optional) - Direct notebook name (overrides county routing)
  * - question: string (required) - The question to ask
  * - bypass_cache: boolean (optional) - Force fresh query, ignore cache
  * - max_results: number (optional) - Maximum results to return (default 5)
@@ -21,12 +30,14 @@ import crypto from 'crypto';
  * - sources: array - Source documents used in the answer
  * - cached: boolean - Whether this response came from cache
  * - cache_key: string - The cache key used
+ * - routing: object - Notebook routing info (county, notebook, region)
  */
 
 // ALEX Knowledge Base API URL (MCP server endpoint)
 const ALEX_KNOWLEDGE_API = process.env.ALEX_KNOWLEDGE_API_URL || 'http://localhost:3100';
 
 interface NotebookQueryRequest {
+  county?: string;
   notebook?: string;
   question: string;
   bypass_cache?: boolean;
@@ -51,6 +62,12 @@ interface NotebookQueryResponse {
   cached: boolean;
   cache_key: string;
   timestamp: string;
+  routing: {
+    county: string | null;
+    notebook: string;
+    region: string;
+    used_default: boolean;
+  };
 }
 
 /**
@@ -110,6 +127,36 @@ async function queryAlexKnowledge(
   }
 }
 
+/**
+ * Update notebook routing statistics
+ */
+async function updateRoutingStats(
+  supabase: ReturnType<typeof createClient>,
+  county: string,
+  notebook: string
+) {
+  try {
+    // Upsert the routing record with updated query count
+    await supabase.from('notebook_routing').upsert(
+      {
+        county: county,
+        notebook_name: notebook,
+        last_queried_at: new Date().toISOString(),
+        query_count: 1, // Will be incremented by trigger or manual update
+      },
+      {
+        onConflict: 'county',
+      }
+    );
+
+    // Increment the query count
+    await supabase.rpc('increment_notebook_routing_count', { p_county: county });
+  } catch (error) {
+    // Don't fail the request if stats update fails
+    console.warn('Failed to update routing stats:', error);
+  }
+}
+
 export async function POST(request: NextRequest) {
   try {
     const body: NotebookQueryRequest = await request.json();
@@ -122,11 +169,44 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const notebook = body.notebook || 'default';
-    const question = body.question.trim();
+    const county = body.county?.trim() || null;
     const bypassCache = body.bypass_cache || false;
     const maxResults = body.max_results || 5;
     const similarityThreshold = body.similarity_threshold || 0.7;
+
+    // Determine notebook: explicit notebook > county routing > default
+    let notebook: string;
+    let routingInfo: ReturnType<typeof getCountyRoutingInfo>;
+
+    if (body.notebook) {
+      // Explicit notebook provided
+      notebook = body.notebook;
+      routingInfo = {
+        county: county || 'N/A',
+        notebook: body.notebook,
+        region: 'Custom',
+        isDefault: false,
+      };
+    } else if (county) {
+      // Route based on county
+      routingInfo = getCountyRoutingInfo(county);
+      notebook = routingInfo.notebook;
+    } else {
+      // Use default
+      notebook = DEFAULT_NOTEBOOK;
+      routingInfo = {
+        county: 'N/A',
+        notebook: DEFAULT_NOTEBOOK,
+        region: 'Default',
+        isDefault: true,
+      };
+    }
+
+    // Format the question with county context if needed
+    let question = body.question.trim();
+    if (county) {
+      question = formatCountyQuestion(county, question);
+    }
 
     const questionHash = hashQuestion(question);
     const cacheKey = `${notebook}:${questionHash}`;
@@ -153,12 +233,23 @@ export async function POST(request: NextRequest) {
           })
           .eq('id', cached.id);
 
+        // Update routing stats
+        if (county) {
+          await updateRoutingStats(supabase, county, notebook);
+        }
+
         const response: NotebookQueryResponse = {
           answer: cached.answer || '',
           sources: cached.sources || [],
           cached: true,
           cache_key: cacheKey,
           timestamp: cached.created_at,
+          routing: {
+            county: county,
+            notebook: notebook,
+            region: routingInfo.region,
+            used_default: routingInfo.isDefault,
+          },
         };
 
         return NextResponse.json(response);
@@ -166,6 +257,9 @@ export async function POST(request: NextRequest) {
     }
 
     // Query the ALEX Knowledge Base
+    console.log(`[ALEX] Querying notebook "${notebook}" for county "${county || 'N/A'}"`);
+    console.log(`[ALEX] Question: ${question}`);
+
     const { answer, sources } = await queryAlexKnowledge(
       question,
       maxResults,
@@ -201,12 +295,23 @@ export async function POST(request: NextRequest) {
       // Don't fail the request just because caching failed
     }
 
+    // Update routing stats
+    if (county) {
+      await updateRoutingStats(supabase, county, notebook);
+    }
+
     const response: NotebookQueryResponse = {
       answer,
       sources: formattedSources,
       cached: false,
       cache_key: cacheKey,
       timestamp: new Date().toISOString(),
+      routing: {
+        county: county,
+        notebook: notebook,
+        region: routingInfo.region,
+        used_default: routingInfo.isDefault,
+      },
     };
 
     return NextResponse.json(response);
@@ -223,22 +328,28 @@ export async function POST(request: NextRequest) {
 /**
  * GET /api/alex/notebook-query
  *
- * Returns cache statistics and available notebooks
+ * Returns cache statistics, routing info, and available notebooks
  */
 export async function GET() {
   try {
     const supabase = createClient();
 
     // Get cache statistics
-    const { data: stats } = await supabase
+    const { data: cacheStats } = await supabase
       .from('notebook_cache')
       .select('notebook_name, hit_count, created_at')
       .order('created_at', { ascending: false });
 
-    // Group by notebook
+    // Get routing statistics
+    const { data: routingStats } = await supabase
+      .from('notebook_routing')
+      .select('*')
+      .order('query_count', { ascending: false });
+
+    // Group cache by notebook
     const notebooks: Record<string, { entries: number; total_hits: number }> = {};
 
-    (stats || []).forEach((entry) => {
+    (cacheStats || []).forEach((entry) => {
       const name = entry.notebook_name;
       if (!notebooks[name]) {
         notebooks[name] = { entries: 0, total_hits: 0 };
@@ -249,21 +360,38 @@ export async function GET() {
 
     return NextResponse.json({
       cache_stats: {
-        total_entries: stats?.length || 0,
+        total_entries: cacheStats?.length || 0,
         notebooks,
       },
+      routing_stats: routingStats || [],
+      supported_counties: listSupportedCounties(),
+      county_to_notebook: COUNTY_TO_NOTEBOOK,
+      default_notebook: DEFAULT_NOTEBOOK,
       usage: {
         endpoint: 'POST /api/alex/notebook-query',
         body: {
-          notebook: 'string (optional) - Notebook name for categorization',
+          county: 'string (optional) - County name for automatic notebook routing',
+          notebook: 'string (optional) - Direct notebook name (overrides county)',
           question: 'string (required) - The question to ask',
           bypass_cache: 'boolean (optional) - Force fresh query',
           max_results: 'number (optional) - Max results (default 5)',
         },
-        example: {
-          notebook: 'TX_Dallas_County_Playbook',
-          question: 'What is the excess funds URL for Dallas County?',
-        },
+        examples: [
+          {
+            description: 'Query by county (recommended)',
+            request: {
+              county: 'Tarrant',
+              question: 'What is the excess funds URL?',
+            },
+          },
+          {
+            description: 'Query specific notebook',
+            request: {
+              notebook: 'TX_Dallas_County_Playbook',
+              question: 'What is the filing process for Dallas County?',
+            },
+          },
+        ],
       },
     });
 
