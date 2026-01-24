@@ -7,12 +7,13 @@ const NAV_ITEMS = [
   { label: 'Dashboard', href: '/dashboard' },
   { label: 'CEO Control', href: '/Executive' },
   { label: 'Command Center', href: '/dashboard/command-center' },
+  { label: 'Leads', href: '/dashboard/leads' },
+  { label: 'Pipeline', href: '/dashboard/pipeline' },
   { label: 'Golden Leads', href: '/dashboard/golden-leads' },
   { label: 'Messages', href: '/dashboard/messages' },
   { label: 'Governance', href: '/dashboard/governance' },
   { label: 'Smart Import', href: '/dashboard/upload' },
   { label: 'Stats', href: '/dashboard/stats' },
-  { label: 'Leads', href: '/leads' },
 ]
 
 export default function Sidebar() {

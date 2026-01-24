@@ -11,7 +11,7 @@ export const runtime = 'nodejs'
  */
 export async function GET(req: NextRequest) {
   try {
-    const supabase = await createClient()
+    const supabase = createClient()
 
     // First check if new conversations table exists
     const { error: tableCheckError } = await supabase
