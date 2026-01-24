@@ -39,6 +39,44 @@ interface Stats {
   }
 }
 
+interface AgentState {
+  agent: string
+  status: 'idle' | 'working' | 'paused' | 'error'
+  current_task: string | null
+  last_run: string | null
+}
+
+interface AgentGoal {
+  id: string
+  agent: string
+  goal: string
+  goal_key: string
+  priority: number
+  target_daily: number | null
+  current_daily: number
+  progress_percent: number | null
+}
+
+interface AgentLoopStatus {
+  agents: Record<string, AgentState>
+  goals: AgentGoal[]
+  recent_decisions: Array<{
+    agent: string
+    decision: string
+    reasoning: string
+    outcome: string
+    success: boolean
+    created_at: string
+  }>
+  opportunities: {
+    golden_uncontacted: number
+    expiring_claims: number
+    unscored: number
+    missing_phones: number
+    non_responders: number
+  }
+}
+
 interface DrillDownModalProps {
   isOpen: boolean
   onClose: () => void
@@ -154,6 +192,20 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
   const [importProgress, setImportProgress] = useState<PipelineResult | null>(null)
   const [importing, setImporting] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
+  const [agentStatus, setAgentStatus] = useState<AgentLoopStatus | null>(null)
+  const [agentLoopLoading, setAgentLoopLoading] = useState(false)
+
+  const fetchAgentStatus = useCallback(async () => {
+    try {
+      const res = await fetch('/api/agent-loop')
+      if (res.ok) {
+        const data = await res.json()
+        setAgentStatus(data)
+      }
+    } catch {
+      // Ignore agent status errors
+    }
+  }, [])
 
   const fetchStats = useCallback(async () => {
     try {
@@ -174,9 +226,13 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
 
   useEffect(() => {
     fetchStats()
-    const interval = setInterval(fetchStats, 30000)
+    fetchAgentStatus()
+    const interval = setInterval(() => {
+      fetchStats()
+      fetchAgentStatus()
+    }, 30000)
     return () => clearInterval(interval)
-  }, [fetchStats])
+  }, [fetchStats, fetchAgentStatus])
 
   const runAction = async (action: string, endpoint: string, body?: object, method: 'POST' | 'GET' = 'POST') => {
     setLoadingAction(action)
@@ -288,6 +344,64 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
     }
   }
 
+  const runAgentLoop = async () => {
+    setAgentLoopLoading(true)
+    try {
+      const res = await fetch('/api/agent-loop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({})
+      })
+      const data = await res.json()
+      if (data.status === 'completed') {
+        addToast('success', `Agent: ${data.action?.agent} - ${data.action?.action}`)
+      } else if (data.status === 'idle') {
+        addToast('info', 'No actions needed right now')
+      } else {
+        addToast('error', data.message || 'Agent loop failed')
+      }
+      fetchAgentStatus()
+    } catch {
+      addToast('error', 'Failed to run agent loop')
+    } finally {
+      setAgentLoopLoading(false)
+    }
+  }
+
+  const toggleAgentPause = async (agent: string, paused: boolean) => {
+    try {
+      await fetch('/api/agent-loop', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: paused ? 'pause' : 'resume', agent })
+      })
+      addToast('success', `${agent} ${paused ? 'paused' : 'resumed'}`)
+      fetchAgentStatus()
+    } catch {
+      addToast('error', 'Failed to update agent')
+    }
+  }
+
+  const getAgentStatusColor = (status: string) => {
+    switch (status) {
+      case 'idle': return 'bg-green-500'
+      case 'working': return 'bg-blue-500 animate-pulse'
+      case 'paused': return 'bg-yellow-500'
+      case 'error': return 'bg-red-500'
+      default: return 'bg-zinc-500'
+    }
+  }
+
+  const getAgentEmoji = (agent: string) => {
+    switch (agent) {
+      case 'ALEX': return '🔍'
+      case 'ELEANOR': return '🎯'
+      case 'SAM': return '📱'
+      case 'RALPH': return '🤖'
+      default: return '🤖'
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -375,6 +489,116 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
           <div className="col-span-6 text-center py-8 text-zinc-400">
             Failed to load stats
           </div>
+        )}
+      </div>
+
+      {/* Agent Status Panel */}
+      <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold text-white">Agent Status</h2>
+          <div className="flex gap-2">
+            <button
+              onClick={runAgentLoop}
+              disabled={agentLoopLoading}
+              className="px-3 py-1.5 text-xs bg-purple-600 hover:bg-purple-500 rounded-lg text-white transition-colors disabled:opacity-50"
+            >
+              {agentLoopLoading ? 'Running...' : 'Run Agent Loop'}
+            </button>
+            <button
+              onClick={fetchAgentStatus}
+              className="px-3 py-1.5 text-xs bg-zinc-700 hover:bg-zinc-600 rounded-lg text-zinc-300 transition-colors"
+            >
+              Refresh
+            </button>
+          </div>
+        </div>
+
+        {agentStatus ? (
+          <>
+            {/* Agent Cards */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+              {['ALEX', 'ELEANOR', 'SAM', 'RALPH'].map(agent => {
+                const state = agentStatus.agents[agent]
+                const goals = agentStatus.goals.filter(g => g.agent === agent)
+                const completedGoals = goals.filter(g => g.progress_percent !== null && g.progress_percent >= 100).length
+
+                return (
+                  <div key={agent} className="bg-zinc-800 rounded-lg p-3">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-lg">{getAgentEmoji(agent)}</span>
+                        <span className="font-medium text-white text-sm">{agent}</span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <div className={`w-2 h-2 rounded-full ${getAgentStatusColor(state?.status || 'idle')}`} />
+                        <button
+                          onClick={() => toggleAgentPause(agent, state?.status !== 'paused')}
+                          className="text-xs text-zinc-400 hover:text-white"
+                        >
+                          {state?.status === 'paused' ? 'Resume' : 'Pause'}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="text-xs text-zinc-500 capitalize mb-1">
+                      {state?.current_task || state?.status || 'idle'}
+                    </div>
+                    <div className="text-xs text-zinc-400">
+                      {completedGoals}/{goals.length} goals met today
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* Opportunities */}
+            <div className="grid grid-cols-5 gap-2 mb-4">
+              <div className="bg-yellow-900/30 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-yellow-400">{agentStatus.opportunities.golden_uncontacted}</div>
+                <div className="text-xs text-zinc-500">Golden Uncontacted</div>
+              </div>
+              <div className="bg-red-900/30 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-red-400">{agentStatus.opportunities.expiring_claims}</div>
+                <div className="text-xs text-zinc-500">Expiring Claims</div>
+              </div>
+              <div className="bg-blue-900/30 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-blue-400">{agentStatus.opportunities.unscored}</div>
+                <div className="text-xs text-zinc-500">Unscored</div>
+              </div>
+              <div className="bg-purple-900/30 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-purple-400">{agentStatus.opportunities.missing_phones}</div>
+                <div className="text-xs text-zinc-500">Missing Phones</div>
+              </div>
+              <div className="bg-orange-900/30 rounded-lg p-2 text-center">
+                <div className="text-lg font-bold text-orange-400">{agentStatus.opportunities.non_responders}</div>
+                <div className="text-xs text-zinc-500">Non-Responders</div>
+              </div>
+            </div>
+
+            {/* Recent Decisions */}
+            {agentStatus.recent_decisions.length > 0 && (
+              <div className="mt-4">
+                <h3 className="text-sm font-medium text-zinc-400 mb-2">Recent Agent Decisions</h3>
+                <div className="space-y-2 max-h-32 overflow-y-auto">
+                  {agentStatus.recent_decisions.slice(0, 5).map((decision, i) => (
+                    <div key={i} className="flex items-start gap-2 text-xs bg-zinc-800/50 rounded p-2">
+                      <span className={`flex-shrink-0 ${decision.success ? 'text-green-400' : 'text-red-400'}`}>
+                        {decision.success ? '✓' : '✗'}
+                      </span>
+                      <div>
+                        <span className="text-zinc-300">{decision.agent}:</span>{' '}
+                        <span className="text-zinc-400">{decision.decision}</span>
+                        {decision.outcome && (
+                          <div className="text-zinc-500 mt-0.5">{decision.outcome}</div>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </>
+        ) : (
+          <div className="text-center py-4 text-zinc-500">Loading agent status...</div>
         )}
       </div>
 
