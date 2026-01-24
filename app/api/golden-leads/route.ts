@@ -1,6 +1,12 @@
 /**
  * Golden Leads API
  * Main endpoint for fetching golden leads data for dashboard
+ *
+ * Query params:
+ * - limit: number (default 50)
+ * - status: 'active' | 'pending' | 'sold' | 'all'
+ * - county: string (filter by county name)
+ * - super_only: 'true' (only show super golden leads)
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -11,30 +17,12 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   const limit = parseInt(searchParams.get('limit') || '50');
-  const status = searchParams.get('status'); // active, pending, sold, all
+  const status = searchParams.get('status');
+  const county = searchParams.get('county');
+  const superOnly = searchParams.get('super_only') === 'true';
 
   try {
-    // DEBUG: First check what's in the table
-    const { data: debugData, error: debugError } = await supabase
-      .from('maxsam_leads')
-      .select('id, owner_name, is_golden, eleanor_score')
-      .eq('is_golden', true)
-      .limit(5);
-
-    console.log('[Golden Leads API] DEBUG - is_golden=true count:', debugData?.length || 0);
-    console.log('[Golden Leads API] DEBUG - error:', debugError);
-    if (debugData && debugData.length > 0) {
-      console.log('[Golden Leads API] DEBUG - sample:', JSON.stringify(debugData[0]));
-    }
-
-    // Check raw data without filter
-    const { data: rawTest } = await supabase
-      .from('maxsam_leads')
-      .select('id, is_golden')
-      .limit(10);
-    console.log('[Golden Leads API] DEBUG - raw is_golden values:', rawTest?.map(l => ({ id: l.id?.substring(0,8), is_golden: l.is_golden })));
-
-    // Build query - use is_golden column (the actual column name in database)
+    // Build query with super golden columns
     let query = supabase
       .from('maxsam_leads')
       .select(`
@@ -46,14 +34,12 @@ export async function GET(request: NextRequest) {
         zip_code,
         excess_funds_amount,
         is_golden,
+        is_super_golden,
+        golden_match_source,
+        distressed_property_url,
+        distressed_listing_price,
+        combined_opportunity_value,
         eleanor_score,
-        zillow_status,
-        zillow_url,
-        zillow_price,
-        zillow_checked_at,
-        combined_value,
-        deal_grade,
-        potential_revenue,
         status,
         phone,
         phone_1,
@@ -61,86 +47,79 @@ export async function GET(request: NextRequest) {
         created_at,
         updated_at
       `)
-      .eq('is_golden', true)
+      .eq('is_golden', true);
+
+    // Filter for super golden only if requested
+    if (superOnly) {
+      query = query.eq('is_super_golden', true);
+    }
+
+    // Filter by county if provided
+    if (county && county !== 'all') {
+      // County filter - match against city or use a county lookup
+      // For now, we'll match cities that are in that county's metro area
+      query = query.ilike('city', `%${county}%`);
+    }
+
+    // Filter by status if provided
+    if (status && status !== 'all') {
+      query = query.eq('status', status);
+    }
+
+    // Order: super_golden first, then by eleanor_score
+    query = query
+      .order('is_super_golden', { ascending: false, nullsFirst: false })
       .order('eleanor_score', { ascending: false, nullsFirst: false })
       .limit(limit);
 
-    if (status && status !== 'all') {
-      query = query.eq('zillow_status', status);
-    }
-
     const { data: goldenLeads, error, count } = await query;
 
-    console.log('[Golden Leads API] Main query - count:', goldenLeads?.length || 0, 'error:', error);
+    if (error) {
+      console.error('[Golden Leads API] Query error:', error);
+      throw error;
+    }
 
-    if (error) throw error;
-
-    // Get summary stats
+    // Get summary stats for all golden leads
     const { data: allGolden } = await supabase
       .from('maxsam_leads')
-      .select('excess_funds_amount, combined_value, zillow_status, eleanor_score')
+      .select('excess_funds_amount, combined_opportunity_value, is_super_golden, eleanor_score, status')
       .eq('is_golden', true);
+
+    const superGoldenLeads = allGolden?.filter(l => l.is_super_golden) || [];
 
     const stats = {
       total: allGolden?.length || 0,
+      super_golden_count: superGoldenLeads.length,
       by_status: {
-        active: allGolden?.filter(l => l.zillow_status === 'active').length || 0,
-        pending: allGolden?.filter(l => l.zillow_status === 'pending').length || 0,
-        sold: allGolden?.filter(l => l.zillow_status === 'sold').length || 0,
-        off_market: allGolden?.filter(l => l.zillow_status === 'off_market').length || 0,
-        unknown: allGolden?.filter(l => !l.zillow_status || l.zillow_status === 'unknown').length || 0,
+        new: allGolden?.filter(l => l.status === 'new' || !l.status).length || 0,
+        contacted: allGolden?.filter(l => l.status === 'contacted').length || 0,
+        qualified: allGolden?.filter(l => l.status === 'qualified').length || 0,
+        negotiating: allGolden?.filter(l => l.status === 'negotiating').length || 0,
+        closed: allGolden?.filter(l => l.status === 'closed').length || 0,
       },
       total_excess: allGolden?.reduce((sum, l) => sum + (l.excess_funds_amount || 0), 0) || 0,
-      total_combined_value: allGolden?.reduce((sum, l) => sum + (l.combined_value || 0), 0) || 0,
-      avg_eleanor_score: allGolden?.length ? Math.round(allGolden.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / allGolden.length) : 0,
+      total_combined_value: allGolden?.reduce((sum, l) => sum + (l.combined_opportunity_value || 0), 0) || 0,
+      avg_eleanor_score: allGolden?.length
+        ? Math.round(allGolden.reduce((sum, l) => sum + (l.eleanor_score || 0), 0) / allGolden.length)
+        : 0,
     };
 
-    // Get Zillow matches for these leads (optional - table may not exist)
-    const leadIds = goldenLeads?.map(l => l.id) || [];
-    let zillowMatches: Record<string, unknown>[] = [];
-
-    if (leadIds.length > 0) {
-      try {
-        const { data: matches, error: matchError } = await supabase
-          .from('zillow_matches')
-          .select('*')
-          .in('lead_id', leadIds)
-          .order('scraped_at', { ascending: false });
-
-        if (!matchError) {
-          zillowMatches = matches || [];
-        } else {
-          console.log('[Golden Leads API] zillow_matches query skipped:', matchError.message);
-        }
-      } catch (zillowError) {
-        // zillow_matches table might not exist - that's OK
-        console.log('[Golden Leads API] zillow_matches not available');
-      }
-    }
-
-    // Create lookup for zillow matches
-    const zillowByLead = new Map<string, unknown>();
-    zillowMatches.forEach(m => {
-      if (!zillowByLead.has(m.lead_id as string)) {
-        zillowByLead.set(m.lead_id as string, m);
-      }
-    });
-
-    // Enrich leads with zillow data
-    const enrichedLeads = goldenLeads?.map(lead => ({
-      ...lead,
-      zillow_match: zillowByLead.get(lead.id) || null,
-    })) || [];
+    // Get county sources for filter dropdown
+    const { data: counties } = await supabase
+      .from('county_sources')
+      .select('county_name, state')
+      .eq('is_active', true)
+      .order('county_name');
 
     return NextResponse.json({
       success: true,
-      leads: enrichedLeads,
+      leads: goldenLeads || [],
       stats,
+      counties: counties || [],
       count: count || goldenLeads?.length || 0,
     });
   } catch (error) {
     console.error('Golden leads fetch error:', error);
-    // Better error extraction
     let message = 'Unknown error';
     if (error instanceof Error) {
       message = error.message;
