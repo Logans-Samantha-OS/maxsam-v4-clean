@@ -1,8 +1,8 @@
 {
   "name": "ALEX County Query Integration",
-  "description": "HTTP Request node configuration for querying ALEX Knowledge Base before county scraping",
+  "description": "HTTP Request node configuration for querying ALEX Knowledge Base with automatic county-based notebook routing",
   "documentation": {
-    "purpose": "Query ALEX for county-specific information (URLs, filing processes) before scraping",
+    "purpose": "Query ALEX for county-specific information (URLs, filing processes) before scraping. Automatically routes to the correct regional notebook.",
     "usage": "Add this node before the scraping step in ALEX County Rotation Scraper workflow"
   },
   "nodes": [
@@ -29,7 +29,7 @@
           "parameters": []
         },
         "specifyBody": "json",
-        "jsonBody": "={\n  \"notebook\": \"TX_County_Playbooks\",\n  \"question\": \"What is the excess funds URL for {{ $json.county_name }} County Texas?\",\n  \"max_results\": 3,\n  \"similarity_threshold\": 0.6\n}",
+        "jsonBody": "={\n  \"county\": \"{{ $json.county_name }}\",\n  \"question\": \"What is the excess funds URL?\",\n  \"max_results\": 3,\n  \"similarity_threshold\": 0.6\n}",
         "options": {
           "timeout": 30000,
           "response": {
@@ -39,7 +39,7 @@
           }
         }
       },
-      "notes": "Queries ALEX Knowledge Base for the county's excess funds URL. Response includes 'answer' with relevant info and 'sources' array."
+      "notes": "Queries ALEX with county-based routing. The API automatically routes to the correct regional notebook and adds county context to the question."
     },
     {
       "name": "Extract URL from ALEX Response",
@@ -47,9 +47,9 @@
       "typeVersion": 2,
       "position": [600, 200],
       "parameters": {
-        "jsCode": "// Extract URL from ALEX response\nconst alexResponse = $input.first().json;\nconst answer = alexResponse.answer || '';\n\n// Try to extract URL from the answer\nconst urlMatch = answer.match(/https?:\\/\\/[^\\s<>\"]+/);\nconst extractedUrl = urlMatch ? urlMatch[0] : null;\n\nreturn {\n  json: {\n    county_name: $('Query ALEX for County URL').first().json.county_name || 'Unknown',\n    alex_answer: answer,\n    alex_url: extractedUrl,\n    alex_cached: alexResponse.cached || false,\n    alex_sources: alexResponse.sources || [],\n    // Fall back to Google Sheet URL if ALEX doesn't have one\n    use_fallback: !extractedUrl\n  }\n};"
+        "jsCode": "// Extract URL from ALEX response\nconst alexResponse = $input.first().json;\nconst answer = alexResponse.answer || '';\nconst routing = alexResponse.routing || {};\n\n// Try to extract URL from the answer\nconst urlMatch = answer.match(/https?:\\/\\/[^\\s<>\"]+/);\nconst extractedUrl = urlMatch ? urlMatch[0] : null;\n\nreturn {\n  json: {\n    county_name: routing.county || 'Unknown',\n    notebook_used: routing.notebook || 'Unknown',\n    region: routing.region || 'Unknown',\n    used_default_notebook: routing.used_default || false,\n    alex_answer: answer,\n    alex_url: extractedUrl,\n    alex_cached: alexResponse.cached || false,\n    alex_sources: alexResponse.sources || [],\n    // Fall back to Google Sheet URL if ALEX doesn't have one\n    use_fallback: !extractedUrl\n  }\n};"
       },
-      "notes": "Parses ALEX response to extract the URL. Sets use_fallback flag if no URL found."
+      "notes": "Parses ALEX response including routing info. Sets use_fallback flag if no URL found."
     },
     {
       "name": "IF URL Found",
@@ -114,18 +114,45 @@
     "step_6": "Connect TRUE branch to use ALEX URL for scraping",
     "step_7": "Connect FALSE branch to your existing Google Sheet fallback logic"
   },
+  "routing_info": {
+    "description": "The API automatically routes counties to the correct regional notebook",
+    "regions": {
+      "DFW Metro": ["Dallas", "Tarrant", "Collin", "Denton", "Rockwall", "Ellis", "Johnson", "Kaufman", "Parker", "Wise"],
+      "Houston Metro": ["Harris", "Fort Bend", "Montgomery", "Brazoria", "Galveston"],
+      "Austin / San Antonio": ["Travis", "Williamson", "Hays", "Bexar", "Comal"],
+      "Other": ["El Paso", "Hidalgo", "Cameron", "Nueces", "Lubbock", "McLennan", "Bell"]
+    },
+    "default_notebook": "TX_Dallas_County_Playbook"
+  },
   "example_queries": [
     {
-      "question": "What is the excess funds URL for Dallas County Texas?",
-      "expected_response_contains": "https://www.dallascounty.org/"
+      "description": "Query by county (recommended)",
+      "request": {
+        "county": "Tarrant",
+        "question": "What is the excess funds URL?"
+      },
+      "expected_routing": {
+        "notebook": "TX_Dallas_County_Playbook",
+        "region": "DFW Metro"
+      }
     },
     {
-      "question": "What is the excess funds claim process for Tarrant County?",
-      "expected_response_contains": "filing requirements"
+      "description": "Query Houston Metro county",
+      "request": {
+        "county": "Harris",
+        "question": "What is the filing process?"
+      },
+      "expected_routing": {
+        "notebook": "TX_Dallas_County_Playbook",
+        "region": "Houston Metro"
+      }
     },
     {
-      "question": "What documents are needed for Harris County excess funds claim?",
-      "expected_response_contains": "ID, proof of ownership"
+      "description": "Query with explicit notebook (overrides routing)",
+      "request": {
+        "notebook": "TX_Dallas_County_Playbook",
+        "question": "What documents are needed for claims?"
+      }
     }
   ]
 }
