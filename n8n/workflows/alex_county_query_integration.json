@@ -1,0 +1,131 @@
+{
+  "name": "ALEX County Query Integration",
+  "description": "HTTP Request node configuration for querying ALEX Knowledge Base before county scraping",
+  "documentation": {
+    "purpose": "Query ALEX for county-specific information (URLs, filing processes) before scraping",
+    "usage": "Add this node before the scraping step in ALEX County Rotation Scraper workflow"
+  },
+  "nodes": [
+    {
+      "name": "Query ALEX for County URL",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [400, 200],
+      "parameters": {
+        "method": "POST",
+        "url": "https://maxsam-v4-clean.vercel.app/api/alex/notebook-query",
+        "authentication": "none",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": []
+        },
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"notebook\": \"TX_County_Playbooks\",\n  \"question\": \"What is the excess funds URL for {{ $json.county_name }} County Texas?\",\n  \"max_results\": 3,\n  \"similarity_threshold\": 0.6\n}",
+        "options": {
+          "timeout": 30000,
+          "response": {
+            "response": {
+              "fullResponse": false
+            }
+          }
+        }
+      },
+      "notes": "Queries ALEX Knowledge Base for the county's excess funds URL. Response includes 'answer' with relevant info and 'sources' array."
+    },
+    {
+      "name": "Extract URL from ALEX Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [600, 200],
+      "parameters": {
+        "jsCode": "// Extract URL from ALEX response\nconst alexResponse = $input.first().json;\nconst answer = alexResponse.answer || '';\n\n// Try to extract URL from the answer\nconst urlMatch = answer.match(/https?:\\/\\/[^\\s<>\"]+/);\nconst extractedUrl = urlMatch ? urlMatch[0] : null;\n\nreturn {\n  json: {\n    county_name: $('Query ALEX for County URL').first().json.county_name || 'Unknown',\n    alex_answer: answer,\n    alex_url: extractedUrl,\n    alex_cached: alexResponse.cached || false,\n    alex_sources: alexResponse.sources || [],\n    // Fall back to Google Sheet URL if ALEX doesn't have one\n    use_fallback: !extractedUrl\n  }\n};"
+      },
+      "notes": "Parses ALEX response to extract the URL. Sets use_fallback flag if no URL found."
+    },
+    {
+      "name": "IF URL Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [800, 200],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "alex-url-check",
+              "leftValue": "={{ $json.alex_url }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "notes": "Routes to ALEX URL if found, otherwise falls back to Google Sheet lookup"
+    }
+  ],
+  "connections": {
+    "Query ALEX for County URL": {
+      "main": [
+        [
+          {
+            "node": "Extract URL from ALEX Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract URL from ALEX Response": {
+      "main": [
+        [
+          {
+            "node": "IF URL Found",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "integration_instructions": {
+    "step_1": "Open the 'ALEX - County Rotation Scraper' workflow in N8N",
+    "step_2": "Add the 'Query ALEX for County URL' HTTP Request node BEFORE the county scraping step",
+    "step_3": "Connect the county list/iteration node to 'Query ALEX for County URL'",
+    "step_4": "Add the 'Extract URL from ALEX Response' Code node after the HTTP request",
+    "step_5": "Add the 'IF URL Found' node to branch based on whether ALEX returned a URL",
+    "step_6": "Connect TRUE branch to use ALEX URL for scraping",
+    "step_7": "Connect FALSE branch to your existing Google Sheet fallback logic"
+  },
+  "example_queries": [
+    {
+      "question": "What is the excess funds URL for Dallas County Texas?",
+      "expected_response_contains": "https://www.dallascounty.org/"
+    },
+    {
+      "question": "What is the excess funds claim process for Tarrant County?",
+      "expected_response_contains": "filing requirements"
+    },
+    {
+      "question": "What documents are needed for Harris County excess funds claim?",
+      "expected_response_contains": "ID, proof of ownership"
+    }
+  ]
+}
