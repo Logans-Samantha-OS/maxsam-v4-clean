@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/Toast'
 
 export type CommandCenterProps = {
@@ -22,6 +23,30 @@ interface Stats {
     inbound: number
     outbound: number
   }
+}
+
+interface DrillDownModalProps {
+  isOpen: boolean
+  onClose: () => void
+  title: string
+  children: React.ReactNode
+}
+
+function DrillDownModal({ isOpen, onClose, title, children }: DrillDownModalProps) {
+  if (!isOpen) return null
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center">
+      <div className="absolute inset-0 bg-black/70" onClick={onClose} />
+      <div className="relative bg-zinc-900 border border-zinc-700 rounded-xl p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-semibold text-white">{title}</h3>
+          <button onClick={onClose} className="text-zinc-400 hover:text-white text-xl">&times;</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  )
 }
 
 interface ActionButtonProps {
@@ -60,7 +85,19 @@ function ActionButton({ label, emoji, description, onClick, loading, disabled, c
   )
 }
 
-function StatCard({ label, value, subtext, color = 'zinc' }: { label: string; value: string | number; subtext?: string; color?: string }) {
+function StatCard({
+  label,
+  value,
+  subtext,
+  color = 'zinc',
+  onClick
+}: {
+  label: string
+  value: string | number
+  subtext?: string
+  color?: string
+  onClick?: () => void
+}) {
   const colorClasses: Record<string, string> = {
     zinc: 'border-zinc-700',
     green: 'border-green-500/50',
@@ -70,10 +107,14 @@ function StatCard({ label, value, subtext, color = 'zinc' }: { label: string; va
   }
 
   return (
-    <div className={`bg-zinc-900 border ${colorClasses[color]} rounded-lg p-4`}>
+    <div
+      className={`bg-zinc-900 border ${colorClasses[color]} rounded-lg p-4 ${onClick ? 'cursor-pointer hover:bg-zinc-800 transition-colors' : ''}`}
+      onClick={onClick}
+    >
       <div className="text-xs text-zinc-400 uppercase tracking-wide">{label}</div>
       <div className="text-2xl font-bold text-zinc-100 mt-1">{value}</div>
       {subtext && <div className="text-xs text-zinc-500 mt-1">{subtext}</div>}
+      {onClick && <div className="text-xs text-blue-400 mt-1">Click to view →</div>}
     </div>
   )
 }
@@ -88,12 +129,14 @@ function formatCurrency(amount: number) {
 }
 
 export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
+  const router = useRouter()
   const { addToast } = useToast()
   const [loadingAction, setLoadingAction] = useState<string | null>(null)
   const [results, setResults] = useState<Record<string, unknown> | null>(null)
   const [stats, setStats] = useState<Stats | null>(null)
   const [statsLoading, setStatsLoading] = useState(true)
   const [systemStatus, setSystemStatus] = useState<'online' | 'degraded' | 'offline'>('online')
+  const [modalOpen, setModalOpen] = useState<string | null>(null)
 
   const fetchStats = useCallback(async () => {
     try {
@@ -118,17 +161,20 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
     return () => clearInterval(interval)
   }, [fetchStats])
 
-  const runAction = async (action: string, endpoint: string, body?: object) => {
+  const runAction = async (action: string, endpoint: string, body?: object, method: 'POST' | 'GET' = 'POST') => {
     setLoadingAction(action)
     setResults(null)
 
     try {
-      const res = await fetch(endpoint, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body || {}),
-      })
+      const options: RequestInit = method === 'GET'
+        ? { method: 'GET' }
+        : {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body || {}),
+          }
 
+      const res = await fetch(endpoint, options)
       const data = await res.json()
 
       if (res.ok) {
@@ -198,25 +244,42 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
           ))
         ) : stats ? (
           <>
-            <StatCard label="Total Leads" value={stats.totalLeads} />
-            <StatCard label="Golden Leads" value={stats.goldenLeads} color="yellow" />
-            <StatCard label="Pipeline Value" value={formatCurrency(stats.pipelineValue)} color="green" />
+            <StatCard
+              label="Total Leads"
+              value={stats.totalLeads}
+              onClick={() => router.push('/dashboard/leads')}
+            />
+            <StatCard
+              label="Golden Leads"
+              value={stats.goldenLeads}
+              color="yellow"
+              onClick={() => router.push('/dashboard/golden-leads')}
+            />
+            <StatCard
+              label="Pipeline Value"
+              value={formatCurrency(stats.pipelineValue)}
+              color="green"
+              onClick={() => setModalOpen('pipeline')}
+            />
             <StatCard
               label="Projected Revenue"
               value={formatCurrency(stats.projectedRevenue)}
               subtext="25% fee"
               color="green"
+              onClick={() => setModalOpen('revenue')}
             />
             <StatCard
               label="Contacted Today"
               value={stats.contactedToday}
               color="blue"
+              onClick={() => router.push('/dashboard/leads?filter=contacted_today')}
             />
             <StatCard
               label="Messages"
               value={stats.messages.total}
               subtext={`${stats.messages.inbound} in / ${stats.messages.outbound} out`}
               color="purple"
+              onClick={() => router.push('/dashboard/messages')}
             />
           </>
         ) : (
@@ -285,7 +348,7 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
             description="Check all systems"
             color="green"
             loading={loadingAction === 'health'}
-            onClick={() => runAction('Health Check', '/api/diagnostics')}
+            onClick={() => runAction('Health Check', '/api/diagnostics', undefined, 'GET')}
           />
           <ActionButton
             label="Pipeline Stats"
@@ -293,7 +356,7 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
             description="Analytics overview"
             color="purple"
             loading={loadingAction === 'stats'}
-            onClick={() => runAction('Pipeline Stats', '/api/analytics/pipeline')}
+            onClick={() => runAction('Pipeline Stats', '/api/analytics/pipeline', undefined, 'GET')}
           />
           <ActionButton
             label="Activity Feed"
@@ -301,7 +364,7 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
             description="Recent events"
             color="orange"
             loading={loadingAction === 'activity'}
-            onClick={() => runAction('Activity', '/api/activity')}
+            onClick={() => runAction('Activity', '/api/activity', undefined, 'GET')}
           />
         </div>
       </div>
@@ -401,6 +464,101 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
           </pre>
         </div>
       )}
+
+      {/* Pipeline Value Modal */}
+      <DrillDownModal
+        isOpen={modalOpen === 'pipeline'}
+        onClose={() => setModalOpen(null)}
+        title="Pipeline Value Breakdown"
+      >
+        {stats && (
+          <div className="space-y-4">
+            <div className="text-center mb-6">
+              <div className="text-3xl font-bold text-green-400">{formatCurrency(stats.pipelineValue)}</div>
+              <div className="text-zinc-400 text-sm">Total Pipeline Value</div>
+            </div>
+            <div className="space-y-2">
+              <h4 className="text-sm font-medium text-zinc-300 mb-2">By Status:</h4>
+              {Object.entries(stats.statusCounts).map(([status, count]) => (
+                <div key={status} className="flex justify-between items-center py-2 border-b border-zinc-800">
+                  <span className="text-zinc-400 capitalize">{status.replace('_', ' ')}</span>
+                  <span className="text-white font-medium">{count} leads</span>
+                </div>
+              ))}
+            </div>
+            <div className="pt-4 border-t border-zinc-700">
+              <p className="text-xs text-zinc-500">
+                Pipeline value = sum of all excess_funds_amount across {stats.totalLeads} leads
+              </p>
+            </div>
+            <button
+              onClick={() => { setModalOpen(null); router.push('/dashboard/leads'); }}
+              className="w-full mt-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-lg text-white text-sm"
+            >
+              View All Leads
+            </button>
+          </div>
+        )}
+      </DrillDownModal>
+
+      {/* Projected Revenue Modal */}
+      <DrillDownModal
+        isOpen={modalOpen === 'revenue'}
+        onClose={() => setModalOpen(null)}
+        title="Projected Revenue Calculation"
+      >
+        {stats && (
+          <div className="space-y-4">
+            <div className="text-center mb-6">
+              <div className="text-3xl font-bold text-green-400">{formatCurrency(stats.projectedRevenue)}</div>
+              <div className="text-zinc-400 text-sm">Projected Revenue (25% Fee)</div>
+            </div>
+            <div className="bg-zinc-800 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-zinc-300 mb-3">Revenue Calculation:</h4>
+              <div className="space-y-2 text-sm">
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Pipeline Value:</span>
+                  <span className="text-white">{formatCurrency(stats.pipelineValue)}</span>
+                </div>
+                <div className="flex justify-between">
+                  <span className="text-zinc-400">Recovery Fee:</span>
+                  <span className="text-white">25%</span>
+                </div>
+                <div className="flex justify-between pt-2 border-t border-zinc-700">
+                  <span className="text-zinc-300 font-medium">Projected Revenue:</span>
+                  <span className="text-green-400 font-bold">{formatCurrency(stats.projectedRevenue)}</span>
+                </div>
+              </div>
+            </div>
+            <div className="bg-zinc-800/50 rounded-lg p-4">
+              <h4 className="text-sm font-medium text-zinc-300 mb-2">By Deal Priority:</h4>
+              <div className="grid grid-cols-3 gap-2 text-center">
+                <div className="bg-red-900/30 rounded p-2">
+                  <div className="text-red-400 font-bold">{stats.statusCounts['qualified'] || 0}</div>
+                  <div className="text-xs text-zinc-500">Hot</div>
+                </div>
+                <div className="bg-yellow-900/30 rounded p-2">
+                  <div className="text-yellow-400 font-bold">{stats.statusCounts['contacted'] || 0}</div>
+                  <div className="text-xs text-zinc-500">Warm</div>
+                </div>
+                <div className="bg-blue-900/30 rounded p-2">
+                  <div className="text-blue-400 font-bold">{stats.statusCounts['new'] || 0}</div>
+                  <div className="text-xs text-zinc-500">New</div>
+                </div>
+              </div>
+            </div>
+            <p className="text-xs text-zinc-500">
+              Actual revenue depends on conversion rates and deal closures.
+            </p>
+            <button
+              onClick={() => { setModalOpen(null); router.push('/dashboard/pipeline'); }}
+              className="w-full mt-4 py-2 bg-green-600 hover:bg-green-500 rounded-lg text-white text-sm"
+            >
+              View Pipeline
+            </button>
+          </div>
+        )}
+      </DrillDownModal>
     </div>
   )
 }
