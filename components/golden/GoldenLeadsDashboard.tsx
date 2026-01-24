@@ -16,6 +16,11 @@ interface GoldenLead {
   zip_code: string | null;
   excess_funds_amount: number;
   is_golden: boolean;
+  is_super_golden: boolean;
+  golden_match_source: string | null;
+  distressed_property_url: string | null;
+  distressed_listing_price: number | null;
+  combined_opportunity_value: number | null;
   eleanor_score: number;
   status: string;
   phone: string | null;
@@ -27,8 +32,22 @@ interface GoldenLead {
 
 interface GoldenStats {
   total: number;
+  super_golden_count: number;
   total_excess: number;
+  total_combined_value: number;
   avg_eleanor_score: number;
+  by_status: {
+    new: number;
+    contacted: number;
+    qualified: number;
+    negotiating: number;
+    closed: number;
+  };
+}
+
+interface CountySource {
+  county_name: string;
+  state: string;
 }
 
 interface HuntRun {
@@ -41,8 +60,21 @@ interface HuntRun {
   completed_at: string | null;
 }
 
-type SortField = 'eleanor_score' | 'excess_funds_amount' | 'created_at' | 'owner_name' | 'status';
+type SortField = 'eleanor_score' | 'excess_funds_amount' | 'combined_opportunity_value' | 'created_at' | 'owner_name' | 'status';
 type SortDirection = 'asc' | 'desc';
+
+// ============================================================================
+// SUPER GOLDEN BADGE COMPONENT
+// ============================================================================
+
+function SuperGoldenBadge({ source }: { source: string | null }) {
+  return (
+    <span className="inline-flex items-center gap-1 px-2 py-1 mt-1 bg-gradient-to-r from-yellow-500/30 to-orange-500/30 border border-yellow-500/50 rounded-full text-xs font-bold text-yellow-300">
+      DUAL OPPORTUNITY
+      {source && <span className="text-yellow-500 ml-1">({source})</span>}
+    </span>
+  );
+}
 
 // ============================================================================
 // STATUS BADGE COMPONENT
@@ -191,7 +223,7 @@ function LeadRow({
     <tr
       className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors ${
         isSelected ? 'bg-yellow-500/10' : ''
-      }`}
+      } ${lead.is_super_golden ? 'bg-gradient-to-r from-yellow-500/5 to-orange-500/5' : ''}`}
     >
       {/* Checkbox */}
       <td className="px-3 py-3">
@@ -205,10 +237,14 @@ function LeadRow({
           className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-zinc-900 cursor-pointer"
         />
       </td>
-      {/* Score */}
+      {/* Type + Score */}
       <td className="px-4 py-3 cursor-pointer" onClick={() => onSelect(lead)}>
         <div className="flex items-center gap-2">
-          <span className="text-yellow-500">⭐</span>
+          {lead.is_super_golden ? (
+            <span className="text-orange-400 font-bold text-xs">SUPER</span>
+          ) : (
+            <span className="text-yellow-500">G</span>
+          )}
           <span className="font-medium text-white">{lead.eleanor_score}</span>
         </div>
       </td>
@@ -217,6 +253,9 @@ function LeadRow({
         <div>
           <p className="font-medium text-white">{lead.owner_name}</p>
           <p className="text-xs text-zinc-500">{lead.property_address || 'Unknown'}</p>
+          {lead.is_super_golden && (
+            <SuperGoldenBadge source={lead.golden_match_source} />
+          )}
         </div>
       </td>
       {/* Excess Funds */}
@@ -495,6 +534,7 @@ function LeadDetailPanel({
 export default function GoldenLeadsDashboard() {
   const [leads, setLeads] = useState<GoldenLead[]>([]);
   const [stats, setStats] = useState<GoldenStats | null>(null);
+  const [counties, setCounties] = useState<CountySource[]>([]);
   const [recentHunts, setRecentHunts] = useState<HuntRun[]>([]);
   const [loading, setLoading] = useState(true);
   const [hunting, setHunting] = useState(false);
@@ -504,12 +544,18 @@ export default function GoldenLeadsDashboard() {
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc');
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [countyFilter, setCountyFilter] = useState<string>('all');
+  const [superOnlyFilter, setSuperOnlyFilter] = useState(false);
   const { addToast } = useToast();
 
   const fetchData = useCallback(async () => {
     try {
+      const params = new URLSearchParams();
+      if (countyFilter !== 'all') params.set('county', countyFilter);
+      if (superOnlyFilter) params.set('super_only', 'true');
+
       const [leadsRes, cronRes] = await Promise.all([
-        fetch('/api/golden-leads'),
+        fetch(`/api/golden-leads?${params.toString()}`),
         fetch('/api/golden-leads/cron'),
       ]);
 
@@ -517,6 +563,7 @@ export default function GoldenLeadsDashboard() {
         const data = await leadsRes.json();
         setLeads(data.leads || []);
         setStats(data.stats || null);
+        setCounties(data.counties || []);
       }
 
       if (cronRes.ok) {
@@ -528,15 +575,20 @@ export default function GoldenLeadsDashboard() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [countyFilter, superOnlyFilter]);
 
   useEffect(() => {
     fetchData();
   }, [fetchData]);
 
-  // Sorted leads
+  // Sorted leads - super golden always first
   const sortedLeads = useMemo(() => {
     const sorted = [...leads].sort((a, b) => {
+      // Super golden always comes first
+      if (a.is_super_golden !== b.is_super_golden) {
+        return a.is_super_golden ? -1 : 1;
+      }
+
       let aVal: string | number | Date;
       let bVal: string | number | Date;
 
@@ -548,6 +600,10 @@ export default function GoldenLeadsDashboard() {
         case 'excess_funds_amount':
           aVal = a.excess_funds_amount || 0;
           bVal = b.excess_funds_amount || 0;
+          break;
+        case 'combined_opportunity_value':
+          aVal = a.combined_opportunity_value || 0;
+          bVal = b.combined_opportunity_value || 0;
           break;
         case 'created_at':
           aVal = new Date(a.created_at).getTime();
@@ -783,13 +839,20 @@ export default function GoldenLeadsDashboard() {
 
       {/* Stats Grid */}
       {stats && (
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-5 gap-4">
           <StatsCard
             label="Golden Leads"
             value={stats.total}
             subValue={`Avg score: ${stats.avg_eleanor_score}`}
             color="yellow"
             icon="⭐"
+          />
+          <StatsCard
+            label="Super Golden"
+            value={stats.super_golden_count}
+            subValue="Dual opportunities"
+            color="cyan"
+            icon="🌟"
           />
           <StatsCard
             label="Total Excess Funds"
@@ -799,21 +862,49 @@ export default function GoldenLeadsDashboard() {
             icon="💰"
           />
           <StatsCard
+            label="Combined Value"
+            value={`$${((stats.total_combined_value || 0) / 1000).toFixed(0)}K`}
+            subValue="All opportunities"
+            color="purple"
+            icon="💎"
+          />
+          <StatsCard
             label="Potential Fee (25%)"
             value={`$${((stats.total_excess * 0.25) / 1000).toFixed(0)}K`}
             subValue="Revenue opportunity"
             color="cyan"
             icon="💵"
           />
-          <StatsCard
-            label="Avg Eleanor Score"
-            value={stats.avg_eleanor_score}
-            subValue="Lead quality"
-            color="purple"
-            icon="⭐"
-          />
         </div>
       )}
+
+      {/* Filters */}
+      <div className="flex items-center gap-4">
+        <label className="flex items-center gap-2 text-sm text-zinc-400">
+          <input
+            type="checkbox"
+            checked={superOnlyFilter}
+            onChange={(e) => setSuperOnlyFilter(e.target.checked)}
+            className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-500 focus:ring-yellow-500"
+          />
+          Super Golden Only
+        </label>
+
+        {counties.length > 0 && (
+          <select
+            value={countyFilter}
+            onChange={(e) => setCountyFilter(e.target.value)}
+            className="px-4 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-white text-sm focus:outline-none focus:border-yellow-500"
+          >
+            <option value="all">All Counties</option>
+            {counties.map((c) => (
+              <option key={c.county_name} value={c.county_name}>
+                {c.county_name} County, {c.state}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
 
       {/* Info Banner */}
       <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4">
