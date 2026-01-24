@@ -42,7 +42,7 @@ export async function GET(request: NextRequest) {
         updated_at
       `)
       .eq('is_golden', true)
-      .order('golden_score', { ascending: false })
+      .order('eleanor_score', { ascending: false, nullsFirst: false })
       .limit(limit);
 
     if (status && status !== 'all') {

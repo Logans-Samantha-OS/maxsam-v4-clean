@@ -28,9 +28,7 @@
       "Bash(vercel whoami:*)",
       "Bash(vercel link:*)",
       "Bash(vercel:*)",
-      "Bash(grep:*)",
-      "Bash(ls:*)",
-      "Bash(node -e:*)"
+      "Bash(git rebase:*)"
     ],
     "deny": [],
     "ask": []
