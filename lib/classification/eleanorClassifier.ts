@@ -205,6 +205,13 @@ function checkClassA(
 ): { qualifies: boolean; reason: string } {
   const thresholds = CLASSIFICATION_THRESHOLDS.CLASS_A;
 
+  // Class A REQUIRES actual evidence of dual deal potential:
+  // 1. Cross-referenced with distressed property list, OR
+  // 2. Has explicit distressed signal from data
+  //
+  // Without cross-reference or distress signal, even high equity is speculative
+  // Those leads go to Class B (big fish) or Class C (standard)
+
   // Cross-referenced leads auto-qualify for Class A if they meet minimum excess
   if (isCrossReferenced && excessAmount >= thresholds.minExcessFunds) {
     return {
@@ -213,28 +220,21 @@ function checkClassA(
     };
   }
 
-  // Check standard Class A thresholds
-  if (
-    excessAmount >= thresholds.minExcessFunds &&
-    equity >= thresholds.minWholesaleEquity
-  ) {
+  // Explicit distressed signal with good excess
+  if (hasDistressedSignal && excessAmount >= thresholds.minExcessFunds && equity >= thresholds.minWholesaleEquity) {
     return {
       qualifies: true,
-      reason: `Dual deal potential: $${excessAmount.toLocaleString()} excess + $${equity.toLocaleString()} equity`,
+      reason: `Distressed property dual deal: $${excessAmount.toLocaleString()} excess + $${equity.toLocaleString()} equity`,
     };
   }
 
-  // High equity with moderate excess
-  if (equity >= 25000 && excessAmount >= 10000) {
-    return {
-      qualifies: true,
-      reason: `High equity dual deal: $${equity.toLocaleString()} equity opportunity`,
-    };
-  }
+  // NOTE: Removed speculative equity-based Class A qualification
+  // Without cross-reference or distress signal, we can't confirm dual deal potential
+  // These leads should be Class B (if $75K+) or Class C (standard recovery)
 
   return {
     qualifies: false,
-    reason: 'Does not meet dual deal thresholds',
+    reason: 'No confirmed dual deal evidence (not cross-referenced or distressed)',
   };
 }
 
