@@ -28,49 +28,22 @@ export async function POST(request: NextRequest) {
   const supabase = createClient();
   const results: Array<{ step: string; success: boolean; error?: string }> = [];
 
-  // Step 1: Create workflow_state table
-  const { error: workflowError } = await supabase.rpc('exec_sql', {
-    sql: `
-      CREATE TABLE IF NOT EXISTS workflow_state (
-        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-        workflow_name TEXT NOT NULL,
-        run_id TEXT,
-        lead_id UUID,
-        state JSONB DEFAULT '{}',
-        started_at TIMESTAMPTZ DEFAULT now(),
-        completed_at TIMESTAMPTZ,
-        status TEXT DEFAULT 'running',
-        created_at TIMESTAMPTZ DEFAULT now()
-      );
-      CREATE INDEX IF NOT EXISTS idx_workflow_state_lead ON workflow_state(lead_id);
-      CREATE INDEX IF NOT EXISTS idx_workflow_state_name ON workflow_state(workflow_name);
-      CREATE INDEX IF NOT EXISTS idx_workflow_state_status ON workflow_state(status);
-      CREATE INDEX IF NOT EXISTS idx_workflow_state_started ON workflow_state(started_at DESC);
-    `
-  }).catch(() => ({ error: 'exec_sql not available' }));
+  // Step 1: Check workflow_state table
+  const { error: workflowError } = await supabase
+    .from('workflow_state')
+    .select('id')
+    .limit(1);
 
-  // If exec_sql doesn't exist, try direct insert approach
-  if (workflowError) {
-    // Try creating via direct SQL execution
-    const { error } = await supabase
-      .from('workflow_state')
-      .select('id')
-      .limit(1);
-
-    if (error && error.code === '42P01') {
-      // Table doesn't exist - need to create via Supabase dashboard
-      results.push({
-        step: 'workflow_state',
-        success: false,
-        error: 'Table does not exist. Please run migration SQL in Supabase dashboard.'
-      });
-    } else if (!error) {
-      results.push({ step: 'workflow_state', success: true });
-    } else {
-      results.push({ step: 'workflow_state', success: false, error: error.message });
-    }
-  } else {
+  if (workflowError && workflowError.code === '42P01') {
+    results.push({
+      step: 'workflow_state',
+      success: false,
+      error: 'Table does not exist. Please run migration SQL in Supabase dashboard.'
+    });
+  } else if (!workflowError) {
     results.push({ step: 'workflow_state', success: true });
+  } else {
+    results.push({ step: 'workflow_state', success: false, error: workflowError.message });
   }
 
   // Step 2: Check agent_goals table
