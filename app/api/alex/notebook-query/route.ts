@@ -85,8 +85,8 @@ async function queryAlexKnowledge(
   maxResults: number = 5
 ): Promise<{ answer: string; sources: KnowledgeResult[] }> {
   try {
-    // Use the search_knowledge function in Supabase
-    const { data, error } = await supabase.rpc('search_knowledge', {
+    // Use the search_knowledge_text function in Supabase (full-text search)
+    const { data, error } = await supabase.rpc('search_knowledge_text', {
       search_query: question,
       max_results: maxResults,
     });
