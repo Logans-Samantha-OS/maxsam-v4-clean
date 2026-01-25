@@ -1,0 +1,340 @@
+{
+  "name": "ALEX County Document Fetcher",
+  "description": "Scheduled workflow that fetches and ingests county documents (excess funds lists, PDFs) into the ALEX knowledge base",
+  "nodes": [
+    {
+      "id": "schedule-trigger",
+      "name": "Daily Schedule",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "triggerAtHour": 5,
+              "triggerAtMinute": 30
+            }
+          ]
+        }
+      },
+      "notes": "Runs daily at 5:30 AM to fetch fresh county documents before morning outreach"
+    },
+    {
+      "id": "get-county-sources",
+      "name": "Get County Sources",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [300, 300],
+      "parameters": {
+        "operation": "getAll",
+        "tableId": "county_sources",
+        "returnAll": false,
+        "limit": 50,
+        "filters": {
+          "conditions": [
+            {
+              "keyName": "is_active",
+              "keyValue": true
+            },
+            {
+              "keyName": "auto_fetch",
+              "keyValue": true
+            }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase MaxSam-V4"
+        }
+      },
+      "notes": "Fetches list of county sources configured for automatic document fetching (uses existing schema)"
+    },
+    {
+      "id": "loop-counties",
+      "name": "Loop Over Counties",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [500, 300],
+      "parameters": {
+        "batchSize": 1,
+        "options": {}
+      },
+      "notes": "Process one county at a time to avoid rate limits"
+    },
+    {
+      "id": "fetch-with-browserless",
+      "name": "Fetch Page Content",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [700, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://production-sfo.browserless.io/content?token={{$credentials.browserlessToken}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ url: $json.excess_funds_url, waitUntil: 'networkidle0', gotoOptions: { timeout: 30000 } }) }}",
+        "options": {
+          "timeout": 60000,
+          "response": {
+            "response": {
+              "responseFormat": "text"
+            }
+          }
+        }
+      },
+      "notes": "Uses Browserless to render JavaScript-heavy county websites"
+    },
+    {
+      "id": "extract-with-gemini",
+      "name": "Extract Data with Gemini",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [900, 300],
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key={{$credentials.geminiApiKey}}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ contents: [{ parts: [{ text: 'Extract all excess funds records from this HTML. For each record, extract: property_address, owner_name, excess_funds_amount (number only), case_number, sale_date. Return a JSON array. If no records found, return [].\\n\\nHTML:\\n' + $json.data.slice(0, 50000) }] }], generationConfig: { temperature: 0.1, maxOutputTokens: 8192 } }) }}",
+        "options": {
+          "timeout": 60000
+        }
+      },
+      "notes": "Gemini extracts structured data from the HTML content"
+    },
+    {
+      "id": "parse-extraction",
+      "name": "Parse Extraction",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [1100, 300],
+      "parameters": {
+        "jsCode": "// Parse Gemini extraction response\nconst geminiResponse = $input.first().json;\nconst countyData = $node['Loop Over Counties'].json;\n\ntry {\n  const textContent = geminiResponse.candidates?.[0]?.content?.parts?.[0]?.text || '';\n  \n  // Clean up response\n  let cleanedText = textContent.trim();\n  if (cleanedText.startsWith('```json')) cleanedText = cleanedText.slice(7);\n  if (cleanedText.startsWith('```')) cleanedText = cleanedText.slice(3);\n  if (cleanedText.endsWith('```')) cleanedText = cleanedText.slice(0, -3);\n  cleanedText = cleanedText.trim();\n  \n  const leads = JSON.parse(cleanedText);\n  \n  return {\n    json: {\n      county_name: countyData.county_name,\n      source_id: countyData.id,\n      excess_funds_url: countyData.excess_funds_url,\n      leads: leads,\n      lead_count: leads.length,\n      fetched_at: new Date().toISOString(),\n      success: true\n    }\n  };\n} catch (error) {\n  return {\n    json: {\n      county_name: countyData.county_name,\n      source_id: countyData.id,\n      excess_funds_url: countyData.excess_funds_url,\n      leads: [],\n      lead_count: 0,\n      fetched_at: new Date().toISOString(),\n      success: false,\n      error: error.message\n    }\n  };\n}"
+      },
+      "notes": "Parses Gemini JSON response and structures data for database insert"
+    },
+    {
+      "id": "check-leads-found",
+      "name": "Check Leads Found",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [1300, 300],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "leads-found",
+              "leftValue": "={{ $json.lead_count }}",
+              "rightValue": "0",
+              "operator": {
+                "type": "number",
+                "operation": "gt"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "notes": "Routes to insert leads if any were found"
+    },
+    {
+      "id": "insert-leads",
+      "name": "Insert Leads to Supabase",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1500, 250],
+      "parameters": {
+        "operation": "upsert",
+        "tableId": "maxsam_leads",
+        "conflictFields": "property_address,owner_name",
+        "fieldsToSend": {
+          "fieldsMappingMode": "defineBelow",
+          "values": [
+            { "fieldName": "property_address", "fieldValue": "={{ $json.leads }}" },
+            { "fieldName": "owner_name", "fieldValue": "" },
+            { "fieldName": "excess_funds_amount", "fieldValue": "" },
+            { "fieldName": "case_number", "fieldValue": "" },
+            { "fieldName": "sale_date", "fieldValue": "" },
+            { "fieldName": "county", "fieldValue": "={{ $json.county_name }}" },
+            { "fieldName": "source_type", "fieldValue": "auto_fetch" },
+            { "fieldName": "source_id", "fieldValue": "={{ $json.source_id }}" },
+            { "fieldName": "source_url", "fieldValue": "={{ $json.excess_funds_url }}" },
+            { "fieldName": "created_at", "fieldValue": "={{ $json.fetched_at }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase MaxSam-V4"
+        }
+      },
+      "notes": "Upserts leads to avoid duplicates, uses property_address + owner_name as conflict key"
+    },
+    {
+      "id": "update-source-stats",
+      "name": "Update Source Stats",
+      "type": "n8n-nodes-base.supabase",
+      "typeVersion": 1,
+      "position": [1700, 300],
+      "parameters": {
+        "operation": "update",
+        "tableId": "county_sources",
+        "matchingColumns": "id",
+        "fieldsToSend": {
+          "fieldsMappingMode": "defineBelow",
+          "values": [
+            { "fieldName": "last_scraped_at", "fieldValue": "={{ $json.fetched_at }}" },
+            { "fieldName": "last_lead_count", "fieldValue": "={{ $json.lead_count }}" },
+            { "fieldName": "last_fetch_success", "fieldValue": "={{ $json.success }}" },
+            { "fieldName": "total_fetches", "fieldValue": "={{ ($node['Get County Sources'].json.total_fetches || 0) + 1 }}" }
+          ]
+        }
+      },
+      "credentials": {
+        "supabaseApi": {
+          "id": "supabase-cred",
+          "name": "Supabase MaxSam-V4"
+        }
+      },
+      "notes": "Updates county source with fetch statistics"
+    },
+    {
+      "id": "telegram-notify",
+      "name": "Notify Telegram",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [1900, 300],
+      "parameters": {
+        "operation": "sendMessage",
+        "chatId": "={{$credentials.telegramChatId}}",
+        "text": "=**County Document Fetch Complete**\n\nCounty: {{ $json.county_name }}\nLeads Found: {{ $json.lead_count }}\nSuccess: {{ $json.success ? 'Yes' : 'No' }}\nTime: {{ $json.fetched_at }}\n\n{{ $json.error ? 'Error: ' + $json.error : '' }}",
+        "additionalFields": {
+          "parseMode": "Markdown"
+        }
+      },
+      "notes": "Notifies Logan via Telegram about fetch results"
+    },
+    {
+      "id": "wait-rate-limit",
+      "name": "Wait for Rate Limit",
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [2100, 300],
+      "parameters": {
+        "amount": 5,
+        "unit": "seconds"
+      },
+      "notes": "Waits between county fetches to respect rate limits"
+    }
+  ],
+  "connections": {
+    "Daily Schedule": {
+      "main": [
+        [{ "node": "Get County Sources", "type": "main", "index": 0 }]
+      ]
+    },
+    "Get County Sources": {
+      "main": [
+        [{ "node": "Loop Over Counties", "type": "main", "index": 0 }]
+      ]
+    },
+    "Loop Over Counties": {
+      "main": [
+        [{ "node": "Fetch Page Content", "type": "main", "index": 0 }],
+        [{ "node": "Wait for Rate Limit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Fetch Page Content": {
+      "main": [
+        [{ "node": "Extract Data with Gemini", "type": "main", "index": 0 }]
+      ]
+    },
+    "Extract Data with Gemini": {
+      "main": [
+        [{ "node": "Parse Extraction", "type": "main", "index": 0 }]
+      ]
+    },
+    "Parse Extraction": {
+      "main": [
+        [{ "node": "Check Leads Found", "type": "main", "index": 0 }]
+      ]
+    },
+    "Check Leads Found": {
+      "main": [
+        [{ "node": "Insert Leads to Supabase", "type": "main", "index": 0 }],
+        [{ "node": "Update Source Stats", "type": "main", "index": 0 }]
+      ]
+    },
+    "Insert Leads to Supabase": {
+      "main": [
+        [{ "node": "Update Source Stats", "type": "main", "index": 0 }]
+      ]
+    },
+    "Update Source Stats": {
+      "main": [
+        [{ "node": "Notify Telegram", "type": "main", "index": 0 }]
+      ]
+    },
+    "Notify Telegram": {
+      "main": [
+        [{ "node": "Wait for Rate Limit", "type": "main", "index": 0 }]
+      ]
+    },
+    "Wait for Rate Limit": {
+      "main": [
+        [{ "node": "Loop Over Counties", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "timezone": "America/Chicago"
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "alex" },
+    { "name": "document-ingestion" },
+    { "name": "scheduled" }
+  ],
+  "active": false,
+  "required_credentials": [
+    {
+      "name": "browserlessToken",
+      "type": "browserless",
+      "description": "Browserless API token for headless browser scraping"
+    },
+    {
+      "name": "geminiApiKey",
+      "type": "google_ai",
+      "description": "Google Gemini API key for document extraction"
+    },
+    {
+      "name": "supabaseApi",
+      "type": "supabase",
+      "description": "Supabase API credentials for MaxSam-V4 project"
+    },
+    {
+      "name": "telegramChatId",
+      "type": "telegram",
+      "description": "Logan's Telegram chat ID for notifications"
+    }
+  ],
+  "setup_notes": {
+    "step_1": "Create county_sources table in Supabase (see migration file)",
+    "step_2": "Configure credentials in N8N for Browserless, Gemini, Supabase, Telegram",
+    "step_3": "Import this workflow JSON into N8N",
+    "step_4": "Add county source records to county_sources table",
+    "step_5": "Activate the workflow"
+  }
+}
