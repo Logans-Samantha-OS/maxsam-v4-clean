@@ -5,14 +5,20 @@ import { Lead } from '@/lib/eleanor';
 
 /**
  * POST /api/classification/backfill
- * Run classification on all unclassified leads with $5K+ excess funds.
+ * Run classification on leads with $5K+ excess funds.
+ *
+ * Query params:
+ * - reclassify=true: Reclassify ALL leads (not just unclassified)
  *
  * Classification Rules (per CLAUDE.md):
- * - Class A: Dual deal potential (excess + wholesale)
- * - Class B: $75K+ excess (big fish)
- * - Class C: $5K-$75K excess (standard)
+ * - Class A: Dual deal potential (cross-referenced OR distressed + excess + equity)
+ * - Class B: $75K+ excess (big fish recovery only)
+ * - Class C: $5K-$75K excess (standard recovery)
  */
-export async function POST() {
+export async function POST(request: Request) {
+  const url = new URL(request.url);
+  const reclassifyAll = url.searchParams.get('reclassify') === 'true';
+
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
@@ -28,13 +34,18 @@ export async function POST() {
   const errors: string[] = [];
 
   try {
-    // Get unclassified leads with $5K+ excess funds
-    const { data: leads, error: fetchError } = await supabase
+    // Build query - either all viable leads or just unclassified
+    let query = supabase
       .from('maxsam_leads')
       .select('*')
-      .is('lead_class', null)
       .gte('excess_funds_amount', 5000)
       .order('excess_funds_amount', { ascending: false });
+
+    if (!reclassifyAll) {
+      query = query.is('lead_class', null);
+    }
+
+    const { data: leads, error: fetchError } = await query;
 
     if (fetchError) {
       return NextResponse.json(
