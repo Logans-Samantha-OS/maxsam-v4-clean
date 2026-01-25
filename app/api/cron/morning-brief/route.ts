@@ -15,9 +15,9 @@ export async function GET(request: NextRequest) {
 
     try {
         // Call the existing morning brief POST endpoint which sends Telegram
-        const baseUrl = process.env.VERCEL_URL
-            ? `https://${process.env.VERCEL_URL}`
-            : process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
+        // Use production URL directly since VERCEL_URL returns preview URL
+        const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+            || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
 
         const response = await fetch(`${baseUrl}/api/morning-brief`, {
             method: 'POST',
