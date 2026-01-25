@@ -44,14 +44,14 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/messages - Send a new message
+ * POST /api/messages - Send a new message via Twilio
  */
 export async function POST(request: NextRequest) {
   const supabase = await createClient()
 
   try {
-    const body = await request.json()
-    const { lead_id, message, to_number } = body
+    const reqBody = await request.json()
+    const { lead_id, message, to_number } = reqBody
 
     if (!lead_id || !message) {
       return NextResponse.json(
@@ -63,7 +63,7 @@ export async function POST(request: NextRequest) {
     // Get lead info
     const { data: lead, error: leadError } = await supabase
       .from('maxsam_leads')
-      .select('id, owner_name, phone, phone_1, phone_2, email')
+      .select('id, owner_name, phone, phone_1, phone_2, email, contact_attempts')
       .eq('id', lead_id)
       .single()
 
@@ -76,47 +76,45 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No phone number available' }, { status: 400 })
     }
 
-    // Format phone number
-    const formattedPhone = phoneToUse.startsWith('+')
-      ? phoneToUse
-      : phoneToUse.startsWith('1')
-        ? `+${phoneToUse}`
-        : `+1${phoneToUse.replace(/\D/g, '')}`
+    // Import Twilio functions
+    const { sendSMS, normalizePhone } = await import('@/lib/twilio')
 
-    // Send via Twilio through N8N webhook
-    const n8nResponse = await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lead_id,
-        phone: formattedPhone,
-        owner_name: lead.owner_name,
-        message,
-        source: 'messaging_center'
-      })
-    })
+    // Normalize phone number
+    const formattedPhone = normalizePhone(phoneToUse)
 
-    if (!n8nResponse.ok) {
-      console.warn('N8N webhook failed, message may not be sent')
+    // Send via Twilio directly
+    const twilioResult = await sendSMS(formattedPhone, message, lead_id)
+
+    if (!twilioResult.success) {
+      return NextResponse.json({
+        error: twilioResult.error || 'Failed to send SMS'
+      }, { status: 400 })
     }
 
     const now = new Date().toISOString()
     const fromNumber = process.env.TWILIO_PHONE_NUMBER || '+18449632549'
 
-    // Log to sms_messages (legacy)
-    const { data: smsMessage } = await supabase
+    // Log to sms_messages (legacy) - use correct field names
+    const { data: smsMessage, error: insertError } = await supabase
       .from('sms_messages')
       .insert({
         lead_id,
         direction: 'outbound',
-        message,
+        body: message,
         from_number: fromNumber,
         to_number: formattedPhone,
         status: 'sent',
+        message_sid: twilioResult.sid,
+        sent_at: now,
+        agent_name: 'SAM',
         created_at: now
       })
       .select()
       .single()
+
+    if (insertError) {
+      console.error('[Messages API] Failed to log message:', insertError)
+    }
 
     // Also log to unified messages table if it exists
     try {
@@ -162,7 +160,7 @@ export async function POST(request: NextRequest) {
             to_address: formattedPhone,
             status: 'sent',
             provider: 'twilio',
-            external_id: smsMessage?.id,
+            external_id: twilioResult.sid,
           })
       }
     } catch (e) {
@@ -174,20 +172,27 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('maxsam_leads')
       .update({
-        contact_count: ((lead as Record<string, unknown>).contact_count as number || 0) + 1,
+        contact_attempts: (lead.contact_attempts || 0) + 1,
         last_contact_date: now
       })
       .eq('id', lead_id)
 
     return NextResponse.json({
       success: true,
-      message: smsMessage || { id: 'sent', message, to_number: formattedPhone }
+      message: smsMessage || {
+        id: twilioResult.sid,
+        body: message,
+        to_number: formattedPhone,
+        direction: 'outbound',
+        status: 'sent',
+        created_at: now
+      }
     })
 
   } catch (error: unknown) {
     console.error('[Messages API] Send error:', error)
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 
@@ -364,12 +369,12 @@ async function getConversationMessages(
       .eq('id', leadId)
       .single()
 
-    // Transform to expected format for UI
+    // Transform to expected format for UI - use body field
     const transformedMessages = (messages || []).map(msg => ({
       id: msg.id,
       lead_id: msg.lead_id,
       direction: msg.direction,
-      message: msg.content,
+      body: msg.content,
       from_number: msg.from_address,
       to_number: msg.to_address,
       status: msg.status,
@@ -528,7 +533,7 @@ async function getConversationsList(
       id,
       lead_id,
       direction,
-      message,
+      body,
       from_number,
       to_number,
       status,
@@ -578,7 +583,7 @@ async function getConversationsList(
     if (!existing) {
       conversationMap.set(msg.lead_id, {
         lead_id: msg.lead_id,
-        last_message: msg.message || '',
+        last_message: msg.body || '',
         last_message_time: msg.created_at,
         last_direction: msg.direction,
         unread_count: isUnread ? 1 : 0,
