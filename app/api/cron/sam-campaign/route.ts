@@ -73,6 +73,8 @@ type Lead = {
     opted_out: boolean;
     do_not_contact: boolean;
     sms_opt_out: boolean;
+    excess_funds_expiry_date: string | null;
+    days_until_expiration: number | null;
 };
 
 function getFirstName(name: string): string {
@@ -115,9 +117,11 @@ export async function GET(request: NextRequest) {
         }
 
         // Get high-value leads: $10K+ excess funds, score >= 70, has phone, not maxed out
+        // PRIORITY: Leads with soonest expiry dates first (don't miss deadlines!)
+        // Then by Eleanor score for equally urgent leads
         const { data: leads, error: leadsError } = await supabase
             .from('maxsam_leads')
-            .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, golden_lead, is_golden_lead, phone, phone_1, phone_2, owner_phone, status, contact_attempts, outreach_count, opted_out, do_not_contact, sms_opt_out')
+            .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, golden_lead, is_golden_lead, phone, phone_1, phone_2, owner_phone, status, contact_attempts, outreach_count, opted_out, do_not_contact, sms_opt_out, excess_funds_expiry_date, days_until_expiration')
             .in('status', ['new', 'scored', 'ready_for_outreach', 'contacted'])
             .lt('contact_attempts', 5)
             .or('opted_out.is.null,opted_out.eq.false')
@@ -125,6 +129,7 @@ export async function GET(request: NextRequest) {
             .or('sms_opt_out.is.null,sms_opt_out.eq.false')
             .gte('excess_funds_amount', 10000)
             .gte('eleanor_score', 70)
+            .order('excess_funds_expiry_date', { ascending: true, nullsFirst: false })
             .order('eleanor_score', { ascending: false })
             .limit(20);
 
