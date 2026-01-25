@@ -7,12 +7,30 @@ MaxSam V4 is an automated real estate money machine that:
 2. Scores leads with Eleanor AI
 3. Contacts owners via Sam AI (Twilio SMS)
 4. Generates and sends contracts via DocuSign
-5. Collects payments via Stripe
+5. Tracks deals through to payment
 6. Notifies Logan via Telegram
 
 **Owner:** Logan Toups, Richardson, TX
 **Revenue Model:** 25% excess funds recovery fee, 10% wholesale fee
 **All revenue → 100% to Logan (configurable for future partners)**
+
+### Revenue Streams (IMPORTANT - No Client Invoicing!)
+
+**Excess Funds Recovery (25% fee):**
+- COUNTY holds excess funds from tax sale
+- We find the original property owner
+- Owner signs assignment agreement
+- We file claim with COUNTY
+- COUNTY disburses funds
+- We take 25% fee, send 75% to owner
+- NO client invoice - money comes from county payout
+
+**Wholesale Deals (10% assignment fee):**
+- We find distressed property, get it under contract
+- We find BUYER willing to pay more
+- We assign contract to buyer
+- BUYER pays assignment fee at closing via TITLE COMPANY
+- NO client invoice - money comes through title company
 
 ## Tech Stack
 
@@ -30,7 +48,7 @@ lib/
   contract-generator.ts  # Generate contracts from templates
   twilio.ts           # SMS/voice via Twilio
   sam-outreach.ts     # Autonomous outreach engine
-  stripe.ts           # Invoice creation & payment
+  stripe.ts           # (Deprecated - not used for client payments)
   skip-tracing.ts     # Contact info lookup
   telegram.ts         # Notification system
   supabase/server.ts  # Server-side Supabase client
@@ -55,8 +73,9 @@ supabase/migrations/
 
 - `maxsam_leads` - Lead data with Eleanor scores
 - `contracts` - DocuSign contracts
+- `deals` - **NEW** Deal tracking (excess funds claims & wholesale closings)
 - `buyers` - Investor/buyer network
-- `revenue` - Payment tracking
+- `revenue` - Payment tracking (linked to deals)
 - `opt_outs` - TCPA compliance
 - `status_history` - Audit trail
 - `system_config` - Settings
@@ -74,11 +93,16 @@ POST      /api/eleanor/score-all  # Batch score
 GET       /api/eleanor/explain/[id]  # Scoring breakdown
 
 GET/POST  /api/contracts          # List/create contracts
-POST      /api/contracts/[id]     # Actions: resend, create-invoice, void
+POST      /api/contracts/[id]     # Actions: resend, void
 
-POST      /api/docusign/webhook   # DocuSign events
+GET/POST  /api/deals              # List/create deals
+GET/PUT   /api/deals/[id]         # Get/update deal
+POST      /api/deals/[id]         # Actions: file_claim, approve_claim, record_county_payout,
+                                  #          assign_buyer, schedule_closing, close_deal
+
+POST      /api/docusign/webhook   # DocuSign events → Creates deal record
 POST      /api/twilio/inbound-sms # Incoming SMS
-POST      /api/stripe/webhook     # Payment events
+POST      /api/stripe/webhook     # (Deprecated - not used for client payments)
 
 POST      /api/sam/run-batch      # Run outreach
 GET/PUT   /api/settings           # System config
@@ -147,13 +171,29 @@ vercel logs
 
 ## Revenue Flow
 
+### Excess Funds Recovery Flow
 1. Lead ingested → Scored by Eleanor
 2. Sam contacts via SMS
 3. Owner responds YES → Status: Qualified
 4. Contract generated → Sent via DocuSign
-5. Owner signs → Telegram notification
-6. Invoice sent via Stripe
-7. Payment received → MONEY IN ACCOUNT
+5. Owner signs → Deal record created, Telegram notification
+6. File claim with COUNTY
+7. County approves claim
+8. County disburses funds → We take 25%, send 75% to owner
+9. MONEY IN ACCOUNT
+
+### Wholesale Deal Flow
+1. Lead ingested → Scored by Eleanor
+2. Sam contacts via SMS
+3. Owner responds YES → Status: Qualified
+4. Contract generated → Sent via DocuSign
+5. Owner signs → Deal record created, Telegram notification
+6. Find BUYER, assign contract
+7. Schedule closing with TITLE COMPANY
+8. Title company pays assignment fee at closing
+9. MONEY IN ACCOUNT
+
+**NOTE:** We do NOT invoice clients via Stripe. Money flows from county/title company.
 
 ## Key Configuration
 
