@@ -28,7 +28,17 @@
       "Bash(vercel whoami:*)",
       "Bash(vercel link:*)",
       "Bash(vercel:*)",
-      "Bash(git rebase:*)"
+      "Bash(git rebase:*)",
+      "Bash(git cherry-pick:*)",
+      "mcp__plugin_playwright_playwright__browser_console_messages",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "Bash(claude mcp list:*)",
+      "Bash(npm search:*)",
+      "Bash(claude mcp add:*)",
+      "Bash(npx notebooklm-mcp-auth:*)",
+      "Bash(npx notebooklm-mcp@latest:*)",
+      "Bash(npx notebooklm-mcp@latest)",
+      "Bash(npx vercel:*)"
     ],
     "deny": [],
     "ask": []
