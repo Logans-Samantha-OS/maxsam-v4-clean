@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect, useCallback } from 'react'
+import { useRouter } from 'next/navigation'
 import ClassificationSummary from '@/components/dashboard/ClassificationSummary'
 import CommandCenter from '@/components/command-center/CommandCenter'
 import WorkflowControlPanel from '@/components/WorkflowControlPanel'
@@ -28,6 +29,7 @@ interface DashboardData {
 }
 
 export default function CeoDashboardPage() {
+  const router = useRouter()
   const [data, setData] = useState<DashboardData | null>(null)
   const [loading, setLoading] = useState(true)
   const [lastUpdated, setLastUpdated] = useState<Date>(new Date())
@@ -360,7 +362,10 @@ export default function CeoDashboardPage() {
                     <p className="text-white font-medium">{item.name}</p>
                     <p className="text-zinc-500 text-sm">{item.reason}</p>
                   </div>
-                  <button className="px-3 py-1 bg-red-500/20 text-red-400 rounded text-sm hover:bg-red-500/30">
+                  <button
+                    onClick={() => router.push(`/dashboard/messages?lead=${item.id}`)}
+                    className="px-3 py-1 bg-red-500/20 text-red-400 rounded text-sm hover:bg-red-500/30"
+                  >
                     Review
                   </button>
                 </div>

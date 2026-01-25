@@ -17,7 +17,7 @@ import {
 
 export type GateConfig = {
   master?: boolean;
-  agent?: 'orion' | 'ralph' | 'sam';
+  agent?: 'orion' | 'ralph' | 'sam' | 'alex';
   gate?: string;
   n8n_workflow?: string;
 };
