@@ -96,13 +96,14 @@ export async function checkWorkflowGate(gate_key: string): Promise<GateCheckResu
 }
 
 /**
- * Check agent-specific gate (ORION, RALPH, SAM)
+ * Check agent-specific gate (ORION, RALPH, SAM, ALEX)
  */
-export async function checkAgentGate(agent: 'orion' | 'ralph' | 'sam'): Promise<GateCheckResult> {
+export async function checkAgentGate(agent: 'orion' | 'ralph' | 'sam' | 'alex'): Promise<GateCheckResult> {
   const gateMap: Record<string, string> = {
     orion: 'gate_orion_scoring',
     ralph: 'gate_ralph_execution',
-    sam: 'gate_sam_outreach'
+    sam: 'gate_sam_outreach',
+    alex: 'gate_alex_skip_trace'
   };
 
   return checkWorkflowGate(gateMap[agent]);
