@@ -65,7 +65,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (hasPhone) {
-      query = query.or('phone_1.not.is.null,phone_2.not.is.null');
+      query = query.or('phone.not.is.null,phone_1.not.is.null,phone_2.not.is.null,owner_phone.not.is.null');
     }
 
     if (search) {
