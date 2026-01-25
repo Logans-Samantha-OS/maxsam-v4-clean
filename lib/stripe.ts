@@ -1,6 +1,16 @@
 /**
  * Stripe Integration for MaxSam V4
- * Handles invoice creation and payment collection
+ *
+ * IMPORTANT: MaxSam does NOT invoice clients via Stripe.
+ *
+ * Revenue comes from:
+ * - Excess Funds: COUNTY payout (we take 25%)
+ * - Wholesale: TITLE COMPANY at closing (we take 10%)
+ *
+ * The invoice functions below are DEPRECATED and kept only for
+ * backwards compatibility. Use the deals API instead.
+ *
+ * @deprecated - Client invoicing is not part of the MaxSam business model
  */
 
 import { createClient } from './supabase/server';
@@ -124,6 +134,7 @@ export async function findOrCreateCustomer(
 
 /**
  * Create and send an invoice
+ * @deprecated MaxSam does not invoice clients. Revenue comes from county/title company.
  */
 export async function createInvoice(
   customerEmail: string,
@@ -201,6 +212,8 @@ export async function createInvoice(
 
 /**
  * Create invoice for a contract
+ * @deprecated MaxSam does not invoice clients. Revenue comes from county/title company.
+ * Use the deals API to track payment flow instead.
  */
 export async function createContractInvoice(
   contractId: string

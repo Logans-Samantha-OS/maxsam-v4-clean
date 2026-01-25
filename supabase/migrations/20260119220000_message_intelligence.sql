@@ -81,6 +81,12 @@ BEGIN
   END IF;
 END $$;
 
+-- Clean up any existing intent values that don't match the constraint
+UPDATE sms_messages
+SET intent = NULL
+WHERE intent IS NOT NULL
+  AND intent NOT IN ('AFFIRMATIVE', 'NEGATIVE', 'QUESTION', 'CONFUSED', 'HOSTILE', 'OUT_OF_SCOPE');
+
 -- Add check constraints for valid values
 DO $$
 BEGIN
@@ -96,6 +102,12 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 
+-- Clean up any existing sentiment values that don't match the constraint
+UPDATE sms_messages
+SET sentiment = NULL
+WHERE sentiment IS NOT NULL
+  AND sentiment NOT IN ('POSITIVE', 'NEUTRAL', 'NEGATIVE');
+
 DO $$
 BEGIN
   -- sentiment check
@@ -109,6 +121,12 @@ BEGIN
 EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
+
+-- Clean up any existing next_action values that don't match the constraint
+UPDATE sms_messages
+SET next_action = NULL
+WHERE next_action IS NOT NULL
+  AND next_action NOT IN ('WAIT', 'ASK_IDENTITY', 'ASK_ADDRESS', 'SEND_EXPLANATION', 'SEND_AGREEMENT', 'HANDOFF_HUMAN', 'STOP');
 
 DO $$
 BEGIN

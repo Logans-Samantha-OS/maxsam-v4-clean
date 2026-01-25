@@ -113,25 +113,36 @@ ${lead.response ? `💬 <i>"${lead.response}"</i>` : ''}
 
 /**
  * Contract signed notification - MONEY TIME
+ * NOTE: MaxSam does NOT invoice clients
+ * - Excess Funds: Money comes from COUNTY payout (we take 25%)
+ * - Wholesale: Money comes from TITLE COMPANY at closing (we take 10%)
  */
 export async function notifyContractSigned(contract: {
   seller_name?: string;
   property_address?: string;
   total_fee?: number;
   contract_type?: string;
+  next_step?: string;
 }): Promise<void> {
-  const nextStep = contract.contract_type === 'wholesale' || contract.contract_type === 'dual'
-    ? 'Find buyer & close deal'
-    : 'Submit claim to Dallas County';
+  const defaultNextStep = contract.contract_type === 'wholesale' || contract.contract_type === 'dual'
+    ? 'Find buyer & schedule closing with title company'
+    : 'File claim with county for excess funds';
+
+  const nextStep = contract.next_step || defaultNextStep;
+
+  const paymentSource = contract.contract_type === 'wholesale' || contract.contract_type === 'dual'
+    ? 'Title company will pay at closing'
+    : 'County will disburse funds after claim approval';
 
   const message = `🎉💰 <b>CONTRACT SIGNED!</b> 💰🎉
 
 ${contract.seller_name || 'Unknown'} signed the ${contract.contract_type} agreement!
 
 📍 <b>Property:</b> ${contract.property_address || 'N/A'}
-💵 <b>Fee:</b> ${formatMoney(contract.total_fee || 0)}
+💵 <b>Our Fee:</b> ${formatMoney(contract.total_fee || 0)}
 
-<b>Next:</b> ${nextStep}
+<b>Next Step:</b> ${nextStep}
+<b>Payment:</b> ${paymentSource}
 
 Money is coming, Logan! 🚀`;
 
@@ -140,20 +151,30 @@ Money is coming, Logan! 🚀`;
 
 /**
  * Payment received notification - JACKPOT
+ * NOTE: Payment comes from county (excess funds) or title company (wholesale)
+ * NOT from client invoices
  */
 export async function notifyPaymentReceived(payment: {
   amount: number;
   property_address?: string;
   seller_name?: string;
   contract_type?: string;
+  source?: 'county_payout' | 'title_company' | 'direct';
 }): Promise<void> {
+  const sourceText = payment.source === 'county_payout'
+    ? 'County Payout'
+    : payment.source === 'title_company'
+      ? 'Title Company'
+      : 'Direct';
+
   const message = `💰💰💰 <b>PAYMENT RECEIVED!</b> 💰💰💰
 
 ${formatMoney(payment.amount)} deposited!
 
 📍 <b>Property:</b> ${payment.property_address || 'N/A'}
-👤 <b>Client:</b> ${payment.seller_name || 'N/A'}
+👤 <b>Seller:</b> ${payment.seller_name || 'N/A'}
 📋 <b>Deal Type:</b> ${payment.contract_type || 'N/A'}
+🏦 <b>Source:</b> ${sourceText}
 
 Another check for Logan Toups! 🎉`;
 
@@ -161,7 +182,108 @@ Another check for Logan Toups! 🎉`;
 }
 
 /**
+ * Excess funds claim filed notification
+ */
+export async function notifyClaimFiled(deal: {
+  seller_name?: string;
+  property_address?: string;
+  county_name?: string;
+  excess_funds_amount?: number;
+  our_fee?: number;
+}): Promise<void> {
+  const message = `📋 <b>CLAIM FILED WITH COUNTY</b>
+
+Filed claim for ${deal.seller_name || 'Unknown'}
+
+🏛️ <b>County:</b> ${deal.county_name || 'Dallas'}
+📍 <b>Property:</b> ${deal.property_address || 'N/A'}
+💰 <b>Excess Funds:</b> ${formatMoney(deal.excess_funds_amount || 0)}
+💵 <b>Our 25% Fee:</b> ${formatMoney(deal.our_fee || 0)}
+
+Now we wait for county approval...`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
+ * Excess funds claim approved notification
+ */
+export async function notifyClaimApproved(deal: {
+  seller_name?: string;
+  property_address?: string;
+  county_name?: string;
+  payout_amount?: number;
+  our_fee?: number;
+}): Promise<void> {
+  const message = `✅ <b>CLAIM APPROVED!</b>
+
+${deal.county_name || 'County'} approved claim for ${deal.seller_name || 'Unknown'}!
+
+📍 <b>Property:</b> ${deal.property_address || 'N/A'}
+💰 <b>Payout Coming:</b> ${formatMoney(deal.payout_amount || 0)}
+💵 <b>Our 25% Fee:</b> ${formatMoney(deal.our_fee || 0)}
+
+Money coming soon! 🚀`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
+ * Wholesale closing scheduled notification
+ */
+export async function notifyClosingScheduled(deal: {
+  seller_name?: string;
+  property_address?: string;
+  buyer_name?: string;
+  title_company?: string;
+  closing_date?: string;
+  assignment_fee?: number;
+}): Promise<void> {
+  const message = `📅 <b>CLOSING SCHEDULED!</b>
+
+Wholesale deal closing set!
+
+📍 <b>Property:</b> ${deal.property_address || 'N/A'}
+👤 <b>Seller:</b> ${deal.seller_name || 'N/A'}
+🏢 <b>Buyer:</b> ${deal.buyer_name || 'N/A'}
+🏛️ <b>Title Co:</b> ${deal.title_company || 'N/A'}
+📆 <b>Date:</b> ${deal.closing_date || 'TBD'}
+💵 <b>Assignment Fee:</b> ${formatMoney(deal.assignment_fee || 0)}
+
+Get ready for payday! 💰`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
+ * Deal closed notification
+ */
+export async function notifyDealClosed(deal: {
+  deal_type: 'excess_funds' | 'wholesale';
+  seller_name?: string;
+  property_address?: string;
+  total_revenue?: number;
+  owner_payout?: number;
+}): Promise<void> {
+  const dealTypeText = deal.deal_type === 'excess_funds' ? 'Excess Funds' : 'Wholesale';
+
+  const message = `🎉🎉🎉 <b>DEAL CLOSED!</b> 🎉🎉🎉
+
+${dealTypeText} deal complete!
+
+📍 <b>Property:</b> ${deal.property_address || 'N/A'}
+👤 <b>Seller:</b> ${deal.seller_name || 'N/A'}
+💰 <b>Our Revenue:</b> ${formatMoney(deal.total_revenue || 0)}
+${deal.deal_type === 'excess_funds' ? `💸 <b>Seller Gets:</b> ${formatMoney(deal.owner_payout || 0)}` : ''}
+
+MONEY IN THE BANK! 🏦💵`;
+
+  await sendTelegramMessage(message);
+}
+
+/**
  * Morning brief notification
+ * NOTE: No invoices - we track claims pending (excess funds) and closings pending (wholesale)
  */
 export async function notifyMorningBrief(brief: {
   date: string;
@@ -169,9 +291,18 @@ export async function notifyMorningBrief(brief: {
   hotLeads: number;
   followUpsToday: number;
   pendingContracts: number;
-  pendingInvoices: number;
+  pendingClaims?: number;      // Excess funds claims awaiting county approval
+  pendingClosings?: number;    // Wholesale deals awaiting closing
+  pendingInvoices?: number;    // DEPRECATED - kept for backwards compat
   totalPipeline: number;
 }): Promise<void> {
+  const claimsLine = brief.pendingClaims !== undefined
+    ? `🏛️ Claims Pending: <b>${brief.pendingClaims}</b>`
+    : '';
+  const closingsLine = brief.pendingClosings !== undefined
+    ? `🏠 Closings Pending: <b>${brief.pendingClosings}</b>`
+    : '';
+
   const message = `☀️ <b>Good Morning, Logan!</b>
 ${brief.date}
 
@@ -181,7 +312,8 @@ ${brief.date}
 🔥 Hot Leads Ready: <b>${brief.hotLeads}</b>
 📞 Follow-ups Due: <b>${brief.followUpsToday}</b>
 📝 Contracts Pending: <b>${brief.pendingContracts}</b>
-💳 Invoices Pending: <b>${brief.pendingInvoices}</b>
+${claimsLine}
+${closingsLine}
 
 💰 <b>Pipeline Value:</b> ${formatMoney(brief.totalPipeline)}
 
