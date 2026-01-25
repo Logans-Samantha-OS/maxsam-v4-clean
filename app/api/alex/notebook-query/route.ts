@@ -2,7 +2,6 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase/server';
 import crypto from 'crypto';
 import {
-  getNotebookForCounty,
   formatCountyQuestion,
   getCountyRoutingInfo,
   listSupportedCounties,
@@ -32,9 +31,6 @@ import {
  * - cache_key: string - The cache key used
  * - routing: object - Notebook routing info (county, notebook, region)
  */
-
-// ALEX Knowledge Base API URL (MCP server endpoint)
-const ALEX_KNOWLEDGE_API = process.env.ALEX_KNOWLEDGE_API_URL || 'http://localhost:3100';
 
 interface NotebookQueryRequest {
   county?: string;
@@ -80,40 +76,50 @@ function hashQuestion(question: string): string {
 }
 
 /**
- * Query the ALEX Knowledge Base MCP server
+ * Query the ALEX Knowledge Base via Supabase
+ * Uses PostgreSQL full-text search for fast, relevant results
  */
 async function queryAlexKnowledge(
+  supabase: ReturnType<typeof createClient>,
   question: string,
-  maxResults: number = 5,
-  similarityThreshold: number = 0.7
+  maxResults: number = 5
 ): Promise<{ answer: string; sources: KnowledgeResult[] }> {
   try {
-    // Call the ALEX Knowledge MCP API
-    const response = await fetch(`${ALEX_KNOWLEDGE_API}/query`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        question,
-        max_results: maxResults,
-        similarity_threshold: similarityThreshold,
-      }),
+    // Use the search_knowledge function in Supabase
+    const { data, error } = await supabase.rpc('search_knowledge', {
+      search_query: question,
+      max_results: maxResults,
     });
 
-    if (!response.ok) {
-      throw new Error(`ALEX Knowledge API error: ${response.status}`);
+    if (error) {
+      console.error('Supabase search error:', error);
+      throw new Error(`Knowledge search failed: ${error.message}`);
     }
 
-    const data = await response.json();
+    if (!data || data.length === 0) {
+      return {
+        answer: 'No relevant information found in the knowledge base.',
+        sources: [],
+      };
+    }
 
     // Format the response
-    const sources = data.results || [];
+    const sources: KnowledgeResult[] = data.map((row: {
+      content: string;
+      source_name: string;
+      source_type: string;
+      rank: number;
+    }) => ({
+      content: row.content,
+      source_name: row.source_name,
+      source_type: row.source_type,
+      similarity: row.rank,
+    }));
 
     // Combine the top results into an answer
-    const answer = sources.length > 0
-      ? sources.map((s: KnowledgeResult) => s.content).join('\n\n---\n\n')
-      : 'No relevant information found in the knowledge base.';
+    const answer = sources
+      .map((s) => s.content)
+      .join('\n\n---\n\n');
 
     return { answer, sources };
   } catch (error) {
@@ -172,7 +178,6 @@ export async function POST(request: NextRequest) {
     const county = body.county?.trim() || null;
     const bypassCache = body.bypass_cache || false;
     const maxResults = body.max_results || 5;
-    const similarityThreshold = body.similarity_threshold || 0.7;
 
     // Determine notebook: explicit notebook > county routing > default
     let notebook: string;
@@ -261,9 +266,9 @@ export async function POST(request: NextRequest) {
     console.log(`[ALEX] Question: ${question}`);
 
     const { answer, sources } = await queryAlexKnowledge(
+      supabase,
       question,
-      maxResults,
-      similarityThreshold
+      maxResults
     );
 
     // Format sources for storage
