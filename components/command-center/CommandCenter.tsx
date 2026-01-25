@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/Toast'
+import NotebookSearch from './NotebookSearch'
 
 export type CommandCenterProps = {
   mode?: string | null
@@ -601,6 +602,9 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
           <div className="text-center py-4 text-zinc-500">Loading agent status...</div>
         )}
       </div>
+
+      {/* NotebookLM Search */}
+      <NotebookSearch />
 
       {/* Pipeline Actions */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
