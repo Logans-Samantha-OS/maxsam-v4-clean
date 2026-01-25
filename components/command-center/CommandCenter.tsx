@@ -3,6 +3,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/Toast'
+import NotebookSearch from './NotebookSearch'
 
 export type CommandCenterProps = {
   mode?: string | null
@@ -602,6 +603,8 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
         )}
       </div>
 
+      {/* NotebookLM Search */}
+      <NotebookSearch />
       {/* Pipeline Actions */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
         <h2 className="text-lg font-semibold mb-4 text-white">Pipeline Actions</h2>

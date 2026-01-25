@@ -38,7 +38,14 @@
       "Bash(npx notebooklm-mcp-auth:*)",
       "Bash(npx notebooklm-mcp@latest:*)",
       "Bash(npx notebooklm-mcp@latest)",
-      "Bash(npx vercel:*)"
+      "Bash(npx vercel:*)",
+      "mcp__n8n__search_nodes",
+      "Bash(npx notebooklm-mcp:*)",
+      "Bash(claude mcp get:*)",
+      "Bash(dir \"%LOCALAPPDATA%\\\\notebooklm-mcp\\\\Data\")",
+      "Bash(dir:*)",
+      "mcp__plugin_playwright_playwright__browser_type",
+      "mcp__plugin_playwright_playwright__browser_click"
     ],
     "deny": [],
     "ask": []
