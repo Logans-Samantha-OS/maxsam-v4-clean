@@ -5,12 +5,14 @@ import { sendTelegramMessage } from '@/lib/telegram';
 import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
 
 /**
- * GET /api/cron/alex-skip-trace - ALEX Skip Trace Cron Job
+ * GET /api/cron/alex-skip-trace - ALEX Skip Trace Weekly Backup Cron
  *
- * Runs at 2:00 AM CT (08:00 UTC) Monday-Saturday via Vercel Cron
- * Finds phone numbers for leads missing contact info
+ * TRIGGER 2: Runs at 2:00 AM CT (08:00 UTC) MONDAY ONLY via Vercel Cron
+ * Weekly backup to catch any leads that failed or were missed during post-import skip trace
  *
- * Also serves as status check endpoint when no cron secret is provided.
+ * Skip traces ALL leads where phone IS NULL and skip_traced != true
+ *
+ * See also: /api/cron/alex-skip-trace-webhook for post-PDF-import skip trace (TRIGGER 1)
  */
 export async function GET(request: NextRequest) {
   // If cron secret is provided and matches, run the skip trace
