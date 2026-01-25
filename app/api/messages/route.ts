@@ -45,7 +45,7 @@ export async function GET(request: NextRequest) {
         id,
         lead_id,
         direction,
-        message,
+        body,
         from_number,
         to_number,
         status,
@@ -86,7 +86,7 @@ export async function GET(request: NextRequest) {
       if (!existing) {
         conversationMap.set(msg.lead_id, {
           lead_id: msg.lead_id,
-          last_message: msg.message || '',
+          last_message: msg.body || '',
           last_message_time: msg.created_at,
           last_direction: msg.direction,
           unread_count: isUnread ? 1 : 0,
@@ -148,7 +148,7 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * POST /api/messages - Send a new message
+ * POST /api/messages - Send a new message via Twilio
  */
 export async function POST(request: NextRequest) {
   const supabase = createClient()
@@ -167,7 +167,7 @@ export async function POST(request: NextRequest) {
     // Get lead info
     const { data: lead, error: leadError } = await supabase
       .from('maxsam_leads')
-      .select('id, owner_name, phone, phone_1, phone_2')
+      .select('id, owner_name, phone, phone_1, phone_2, contact_attempts')
       .eq('id', lead_id)
       .single()
 
@@ -180,29 +180,19 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'No phone number available' }, { status: 400 })
     }
 
-    // Format phone number
-    const formattedPhone = phoneToUse.startsWith('+')
-      ? phoneToUse
-      : phoneToUse.startsWith('1')
-        ? `+${phoneToUse}`
-        : `+1${phoneToUse.replace(/\D/g, '')}`
+    // Import Twilio functions
+    const { sendSMS, normalizePhone } = await import('@/lib/twilio')
 
-    // Send via Twilio through N8N webhook
-    const n8nResponse = await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        lead_id,
-        phone: formattedPhone,
-        owner_name: lead.owner_name,
-        message,
-        source: 'messaging_center'
-      })
-    })
+    // Normalize phone number
+    const formattedPhone = normalizePhone(phoneToUse)
 
-    if (!n8nResponse.ok) {
-      // Try direct Twilio as fallback
-      console.warn('N8N webhook failed, message may not be sent')
+    // Send via Twilio directly
+    const twilioResult = await sendSMS(formattedPhone, message, lead_id)
+
+    if (!twilioResult.success) {
+      return NextResponse.json({
+        error: twilioResult.error || 'Failed to send SMS'
+      }, { status: 400 })
     }
 
     // Log the outbound message
@@ -211,10 +201,13 @@ export async function POST(request: NextRequest) {
       .insert({
         lead_id,
         direction: 'outbound',
-        message,
+        body: message,
         from_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
         to_number: formattedPhone,
         status: 'sent',
+        message_sid: twilioResult.sid,
+        sent_at: new Date().toISOString(),
+        agent_name: 'SAM',
         created_at: new Date().toISOString()
       })
       .select()
@@ -228,19 +221,27 @@ export async function POST(request: NextRequest) {
     await supabase
       .from('maxsam_leads')
       .update({
-        contact_count: (lead as { contact_count?: number }).contact_count ? (lead as { contact_count?: number }).contact_count! + 1 : 1,
+        contact_attempts: (lead.contact_attempts || 0) + 1,
         last_contact_date: new Date().toISOString()
       })
       .eq('id', lead_id)
 
     return NextResponse.json({
       success: true,
-      message: newMessage || { id: 'sent', message, to_number: formattedPhone }
+      message: newMessage || {
+        id: twilioResult.sid,
+        body: message,
+        to_number: formattedPhone,
+        direction: 'outbound',
+        status: 'sent',
+        created_at: new Date().toISOString()
+      }
     })
 
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown error'
-    return NextResponse.json({ error: message }, { status: 500 })
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error'
+    console.error('Send message error:', errorMessage)
+    return NextResponse.json({ error: errorMessage }, { status: 500 })
   }
 }
 
