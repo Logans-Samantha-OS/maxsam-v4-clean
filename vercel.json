@@ -1,12 +1,28 @@
 {
   "crons": [
     {
-      "path": "/api/cron/sam-campaign",
-      "schedule": "0 15 * * 1-6"
+      "path": "/api/cron/alex-notebook-sync",
+      "schedule": "0 6 * * 1-6"
+    },
+    {
+      "path": "/api/cron/alex-skip-trace",
+      "schedule": "0 8 * * 1-6"
+    },
+    {
+      "path": "/api/cron/eleanor-score-all",
+      "schedule": "0 11 * * 1-6"
+    },
+    {
+      "path": "/api/cron/flag-golden-leads",
+      "schedule": "0 12 * * 1-6"
     },
     {
       "path": "/api/cron/morning-brief",
       "schedule": "0 14 * * 1-6"
+    },
+    {
+      "path": "/api/cron/sam-campaign",
+      "schedule": "0 15 * * 1-6"
     }
   ]
 }
