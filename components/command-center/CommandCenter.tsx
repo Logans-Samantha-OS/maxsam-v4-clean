@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useToast } from '@/components/Toast'
 import NotebookSearch from './NotebookSearch'
+import NotebookSync from './NotebookSync'
 
 export type CommandCenterProps = {
   mode?: string | null
@@ -605,6 +606,9 @@ export default function CommandCenter({ mode, leadIds }: CommandCenterProps) {
 
       {/* NotebookLM Search */}
       <NotebookSearch />
+
+      {/* NotebookLM Sync */}
+      <NotebookSync />
 
       {/* Pipeline Actions */}
       <div className="rounded-xl border border-zinc-800 bg-zinc-900 p-4">
