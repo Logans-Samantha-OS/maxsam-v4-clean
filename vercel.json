@@ -2,11 +2,11 @@
   "crons": [
     {
       "path": "/api/cron/alex-notebook-sync",
-      "schedule": "0 6 * * 1-6"
+      "schedule": "0 6 * * 1"
     },
     {
       "path": "/api/cron/alex-skip-trace",
-      "schedule": "0 8 * * 1-6"
+      "schedule": "0 8 * * 1"
     },
     {
       "path": "/api/cron/eleanor-score-all",

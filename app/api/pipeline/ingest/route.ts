@@ -236,6 +236,33 @@ async function notifyTelegram(message: string): Promise<void> {
 }
 
 /**
+ * Schedule ALEX skip trace webhook to run after a delay
+ * Uses fire-and-forget fetch to the webhook endpoint
+ */
+function scheduleSkipTraceWebhook(delayMinutes: number): void {
+  // Fire-and-forget: schedule the webhook call after delay
+  const baseUrl = process.env.VERCEL_URL
+    ? `https://${process.env.VERCEL_URL}`
+    : process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
+
+  setTimeout(async () => {
+    try {
+      await fetch(`${baseUrl}/api/cron/alex-skip-trace-webhook`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          minutes_ago: delayMinutes + 5, // Look back slightly longer than delay
+          limit: 50,
+          trigger: 'post_pipeline'
+        })
+      });
+    } catch (err) {
+      console.error('Failed to trigger skip trace webhook:', err);
+    }
+  }, delayMinutes * 60 * 1000);
+}
+
+/**
  * Main pipeline execution
  */
 async function executePipeline(
@@ -467,6 +494,12 @@ export async function POST(request: NextRequest) {
       queueOutreach: true,
       source
     });
+
+    // Schedule ALEX skip trace webhook to run in 5 minutes
+    // This handles any leads that didn't get skip traced during pipeline
+    if (result.inserted > 0) {
+      scheduleSkipTraceWebhook(5);
+    }
 
     return NextResponse.json(result);
 
