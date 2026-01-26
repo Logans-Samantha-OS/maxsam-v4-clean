@@ -361,26 +361,48 @@ export default function MessagesPage() {
     }
   };
 
-  // Send agreement
+  // Send agreement via BoldSign
+  const [sendingAgreement, setSendingAgreement] = useState(false);
+
   const handleSendAgreement = async () => {
     if (!selectedConversation) return;
 
+    setSendingAgreement(true);
     try {
-      const res = await fetch(`/api/leads/${selectedConversation.lead_id}`, {
+      const res = await fetch('/api/boldsign/send', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate-contract' }),
+        body: JSON.stringify({ lead_id: selectedConversation.lead_id }),
       });
 
       const data = await res.json();
 
-      if (res.ok) {
-        addToast('success', 'Agreement generated and sent');
+      if (data.success) {
+        addToast('success', 'Agreement sent via BoldSign!');
+
+        // Update the lead status in conversation list
+        setConversations(prev =>
+          prev.map(c =>
+            c.lead_id === selectedConversation.lead_id && c.lead
+              ? { ...c, lead: { ...c.lead, status: 'agreement_sent' } }
+              : c
+          )
+        );
+
+        // Update selected conversation
+        if (selectedConversation.lead) {
+          setSelectedConversation({
+            ...selectedConversation,
+            lead: { ...selectedConversation.lead, status: 'agreement_sent' }
+          });
+        }
       } else {
         addToast('error', data.error || 'Failed to send agreement');
       }
     } catch {
-      addToast('error', 'Network error');
+      addToast('error', 'Network error while sending agreement');
+    } finally {
+      setSendingAgreement(false);
     }
   };
 
@@ -444,9 +466,17 @@ export default function MessagesPage() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handleSendAgreement}
-                  className="px-3 py-1.5 bg-purple-500 hover:bg-purple-400 text-white text-sm rounded-lg transition-colors"
+                  disabled={sendingAgreement}
+                  className="px-3 py-1.5 bg-purple-500 hover:bg-purple-400 text-white text-sm rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 >
-                  📄 Send Agreement
+                  {sendingAgreement ? (
+                    <span className="flex items-center gap-2">
+                      <span className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
+                      Sending...
+                    </span>
+                  ) : (
+                    '📄 Send Agreement'
+                  )}
                 </button>
                 <button
                   onClick={handleOptOut}
