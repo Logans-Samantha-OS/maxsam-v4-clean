@@ -1,11 +1,16 @@
 /**
  * BoldSign Integration for MaxSam V4
  * Replaces DocuSign for sending recovery agreements
+ *
+ * API Documentation: https://developers.boldsign.com/
+ *
+ * NOTE: Template ID must be created in BoldSign dashboard first.
+ * The template should have one signer role defined.
  */
 
 const BOLDSIGN_API_KEY = process.env.BOLDSIGN_API_KEY || 'M2M5ODA3NzEtOGNjNS00MGNiLWIxYTEtYzkwYmUxMDRlMTg5';
 const BOLDSIGN_BASE_URL = 'https://api.boldsign.com/v1';
-const RECOVERY_TEMPLATE_ID = process.env.BOLDSIGN_RECOVERY_TEMPLATE_ID || 'MzExMjVjOTgtMDNkOC00YWY1LWIzOGUtMGNmZThlMDRmYTNj';
+const RECOVERY_TEMPLATE_ID = process.env.BOLDSIGN_RECOVERY_TEMPLATE_ID || '';
 
 export interface BoldSignSigner {
   name: string;
@@ -41,6 +46,9 @@ export function isBoldSignConfigured(): boolean {
 
 /**
  * Send a document from template via BoldSign
+ *
+ * API: POST /v1/template/send?templateId={templateId}
+ * Docs: https://developers.boldsign.com/api-reference/template/send-document-from-template
  */
 export async function sendFromTemplate(options: SendTemplateOptions): Promise<BoldSignResponse> {
   const templateId = options.templateId || RECOVERY_TEMPLATE_ID;
@@ -52,39 +60,69 @@ export async function sendFromTemplate(options: SendTemplateOptions): Promise<Bo
     };
   }
 
+  if (!templateId) {
+    return {
+      success: false,
+      error: 'BoldSign template not configured. Please create a template in BoldSign dashboard and set BOLDSIGN_RECOVERY_TEMPLATE_ID environment variable.'
+    };
+  }
+
   try {
-    const response = await fetch(`${BOLDSIGN_BASE_URL}/template/send`, {
+    // BoldSign API requires templateId as query parameter
+    const url = `${BOLDSIGN_BASE_URL}/template/send?templateId=${encodeURIComponent(templateId)}`;
+
+    const requestBody = {
+      title: options.title || 'Excess Funds Recovery Agreement',
+      message: options.message || 'Please review and sign this agreement to proceed with your excess funds recovery.',
+      roles: options.roles.map((role, index) => ({
+        roleIndex: index + 1,
+        signerName: role.name,
+        signerEmail: role.emailAddress,
+        signerType: role.signerType || 'Signer',
+        signerOrder: role.signerOrder || index + 1,
+      })),
+      disableEmails: options.disableEmails ?? false,
+      disableSMS: options.disableSMS ?? true,
+    };
+
+    console.log('BoldSign request URL:', url);
+    console.log('BoldSign request body:', JSON.stringify(requestBody, null, 2));
+
+    const response = await fetch(url, {
       method: 'POST',
       headers: {
         'X-API-KEY': BOLDSIGN_API_KEY,
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({
-        templateId,
-        title: options.title || 'Excess Funds Recovery Agreement',
-        message: options.message || 'Please review and sign this agreement to proceed with your excess funds recovery.',
-        roles: options.roles.map((role, index) => ({
-          roleIndex: index + 1,
-          signerName: role.name,
-          signerEmail: role.emailAddress,
-          signerType: role.signerType || 'Signer',
-          signerOrder: role.signerOrder || index + 1,
-        })),
-        disableEmails: options.disableEmails ?? false,
-        disableSMS: options.disableSMS ?? true,
-      }),
+      body: JSON.stringify(requestBody),
     });
 
     const data = await response.json();
 
     if (!response.ok) {
-      console.error('BoldSign API error:', data);
+      console.error('BoldSign API error response:', JSON.stringify(data, null, 2));
+
+      // Parse BoldSign error format
+      let errorMessage = `BoldSign API error (${response.status})`;
+      if (data.errors) {
+        const errors = Object.entries(data.errors)
+          .map(([field, msgs]) => `${field}: ${Array.isArray(msgs) ? msgs.join(', ') : msgs}`)
+          .join('; ');
+        errorMessage = errors;
+      } else if (data.title) {
+        errorMessage = data.title;
+      } else if (data.message) {
+        errorMessage = data.message;
+      }
+
       return {
         success: false,
-        error: data.error || data.message || `BoldSign API error: ${response.status}`,
+        error: errorMessage,
         statusCode: response.status,
       };
     }
+
+    console.log('BoldSign success response:', JSON.stringify(data, null, 2));
 
     return {
       success: true,
