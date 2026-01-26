@@ -703,23 +703,14 @@ function LeadRow({
             </button>
           )}
 
-          {/* Edit - always visible */}
+          {/* Edit - always visible, opens modal */}
           <button
             onClick={() => onEdit(lead)}
-            className="px-2 py-1 text-xs bg-zinc-500/20 text-zinc-400 hover:bg-zinc-500/30 hover:text-white rounded border border-zinc-500/30 transition-colors"
+            className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 rounded border border-yellow-500/30 transition-colors"
             title="Edit Lead"
           >
             ✏️
           </button>
-
-          {/* View Details */}
-          <a
-            href={`/leads/${lead.id}`}
-            className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 rounded border border-yellow-500/30 transition-colors"
-            title="View Details"
-          >
-            👁️
-          </a>
         </div>
       </td>
     </tr>
