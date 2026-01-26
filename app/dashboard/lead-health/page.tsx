@@ -531,7 +531,7 @@ export default function LeadHealthPage() {
   const triggerSkipTrace = async () => {
     setActionLoading('needs_skip_trace')
     try {
-      const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
+      const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace-now', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ trigger: 'manual', source: 'lead-health' }),
