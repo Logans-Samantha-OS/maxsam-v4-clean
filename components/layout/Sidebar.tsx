@@ -8,6 +8,7 @@ const NAV_ITEMS = [
   { label: 'CEO Control', href: '/Executive' },
   { label: 'Command Center', href: '/dashboard/command-center' },
   { label: 'Leads', href: '/dashboard/leads' },
+  { label: 'Lead Health', href: '/dashboard/lead-health' },
   { label: 'Pipeline', href: '/dashboard/pipeline' },
   { label: 'Golden Leads', href: '/dashboard/golden-leads' },
   { label: 'Messages', href: '/dashboard/messages' },
