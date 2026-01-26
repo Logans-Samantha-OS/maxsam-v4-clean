@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback, useMemo } from 'react'
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -14,6 +14,8 @@ interface Lead {
   phone: string | null
   phone_1: string | null
   phone_2: string | null
+  primary_phone: string | null
+  primary_email: string | null
   property_address: string
   property_city: string | null
   city: string | null
@@ -21,6 +23,8 @@ interface Lead {
   state: string
   excess_funds_amount: number
   eleanor_score: number
+  priority_score: number | null
+  value_score: number | null
   deal_grade: string
   is_golden: boolean
   lead_class: string
@@ -28,10 +32,74 @@ interface Lead {
   last_contact_at: string | null
   contact_attempts: number
   created_at: string
+  updated_at: string
+  notes: string | null
 }
 
 type SortField = 'owner_name' | 'excess_funds_amount' | 'eleanor_score' | 'created_at' | 'last_contact_at' | 'status'
 type SortOrder = 'asc' | 'desc'
+
+const STATUS_OPTIONS = [
+  { value: 'new', label: 'New' },
+  { value: 'scored', label: 'Scored' },
+  { value: 'skip_traced', label: 'Skip Traced' },
+  { value: 'ready_for_outreach', label: 'Ready for Outreach' },
+  { value: 'contacted', label: 'Contacted' },
+  { value: 'in_conversation', label: 'In Conversation' },
+  { value: 'agreement_sent', label: 'Agreement Sent' },
+  { value: 'signed', label: 'Signed' },
+  { value: 'converted', label: 'Converted' },
+  { value: 'opted_out', label: 'Opted Out' },
+  { value: 'rejected', label: 'Rejected' },
+]
+
+// ============================================================================
+// HELPER FUNCTIONS
+// ============================================================================
+
+function getLeadPhone(lead: Lead): string | null {
+  return lead.primary_phone || lead.phone || lead.phone_1 || lead.phone_2 || null
+}
+
+function hasPhone(lead: Lead): boolean {
+  return !!getLeadPhone(lead)
+}
+
+function hasScore(lead: Lead): boolean {
+  return !!(lead.eleanor_score || lead.priority_score || lead.value_score)
+}
+
+// ============================================================================
+// TOAST COMPONENT
+// ============================================================================
+
+function Toast({
+  message,
+  type,
+  onClose,
+}: {
+  message: string
+  type: 'success' | 'error' | 'info'
+  onClose: () => void
+}) {
+  useEffect(() => {
+    const timer = setTimeout(onClose, 5000)
+    return () => clearTimeout(timer)
+  }, [onClose])
+
+  const bgColor = {
+    success: 'bg-green-500/90',
+    error: 'bg-red-500/90',
+    info: 'bg-cyan-500/90',
+  }[type]
+
+  return (
+    <div className={`fixed top-4 right-4 z-[100] px-4 py-3 rounded-lg shadow-lg ${bgColor} text-white flex items-center gap-3`}>
+      <span>{message}</span>
+      <button onClick={onClose} className="hover:opacity-80">✕</button>
+    </div>
+  )
+}
 
 // ============================================================================
 // STATS CARD COMPONENT
@@ -85,10 +153,16 @@ function StatsCard({
 function StatusBadge({ status }: { status: string }) {
   const colors: Record<string, string> = {
     new: 'bg-blue-500/20 text-blue-400 border-blue-500/30',
+    scored: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
+    skip_traced: 'bg-teal-500/20 text-teal-400 border-teal-500/30',
+    ready_for_outreach: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     contacted: 'bg-cyan-500/20 text-cyan-400 border-cyan-500/30',
+    in_conversation: 'bg-sky-500/20 text-sky-400 border-sky-500/30',
     agreement_sent: 'bg-purple-500/20 text-purple-400 border-purple-500/30',
     signed: 'bg-green-500/20 text-green-400 border-green-500/30',
+    converted: 'bg-lime-500/20 text-lime-400 border-lime-500/30',
     opted_out: 'bg-red-500/20 text-red-400 border-red-500/30',
+    rejected: 'bg-rose-500/20 text-rose-400 border-rose-500/30',
     enriched: 'bg-indigo-500/20 text-indigo-400 border-indigo-500/30',
     qualified: 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30',
     pending: 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30',
@@ -97,10 +171,16 @@ function StatusBadge({ status }: { status: string }) {
 
   const icons: Record<string, string> = {
     new: '🆕',
+    scored: '📊',
+    skip_traced: '🔍',
+    ready_for_outreach: '🎯',
     contacted: '📞',
+    in_conversation: '💬',
     agreement_sent: '📄',
     signed: '✅',
+    converted: '💰',
     opted_out: '🚫',
+    rejected: '❌',
     enriched: '✨',
     qualified: '⭐',
     pending: '⏳',
@@ -153,55 +233,275 @@ function SortableHeader({
 }
 
 // ============================================================================
+// LEAD EDIT MODAL COMPONENT
+// ============================================================================
+
+function LeadEditModal({
+  lead,
+  onClose,
+  onSave,
+  saving,
+}: {
+  lead: Lead
+  onClose: () => void
+  onSave: (data: Partial<Lead>) => Promise<void>
+  saving: boolean
+}) {
+  const [formData, setFormData] = useState({
+    owner_name: lead.owner_name || '',
+    primary_phone: lead.primary_phone || lead.phone || lead.phone_1 || lead.phone_2 || '',
+    primary_email: lead.primary_email || '',
+    property_address: lead.property_address || '',
+    status: lead.status || 'new',
+    is_golden: lead.is_golden || false,
+    priority_score: lead.priority_score || lead.eleanor_score || 0,
+    notes: lead.notes || '',
+  })
+
+  const notesRef = useRef<HTMLTextAreaElement>(null)
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    await onSave(formData)
+  }
+
+  const formatDate = (dateStr: string | null) => {
+    if (!dateStr) return 'N/A'
+    return new Date(dateStr).toLocaleString()
+  }
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div
+        className="fixed inset-0 bg-black/60 z-[60]"
+        onClick={onClose}
+      />
+
+      {/* Modal */}
+      <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
+        <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
+          {/* Header */}
+          <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+            <h2 className="text-xl font-bold text-white flex items-center gap-2">
+              ✏️ Edit Lead
+            </h2>
+            <button
+              onClick={onClose}
+              className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-colors"
+            >
+              ✕
+            </button>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="p-6 space-y-6">
+            {/* Contact Information */}
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
+                Contact Information
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Owner Name</label>
+                  <Input
+                    value={formData.owner_name}
+                    onChange={(e) => setFormData({ ...formData, owner_name: e.target.value })}
+                    className="bg-zinc-950 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">
+                    Primary Phone <span className="text-zinc-600">(xxx) xxx-xxxx</span>
+                  </label>
+                  <Input
+                    value={formData.primary_phone}
+                    onChange={(e) => setFormData({ ...formData, primary_phone: e.target.value })}
+                    placeholder="(214) 555-1234"
+                    className="bg-zinc-950 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Primary Email</label>
+                  <Input
+                    type="email"
+                    value={formData.primary_email}
+                    onChange={(e) => setFormData({ ...formData, primary_email: e.target.value })}
+                    placeholder="owner@email.com"
+                    className="bg-zinc-950 border-zinc-700"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Property Address</label>
+                  <Input
+                    value={formData.property_address}
+                    onChange={(e) => setFormData({ ...formData, property_address: e.target.value })}
+                    className="bg-zinc-950 border-zinc-700"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Status & Classification */}
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
+                Status & Classification
+              </h3>
+              <div className="grid grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Status</label>
+                  <select
+                    value={formData.status}
+                    onChange={(e) => setFormData({ ...formData, status: e.target.value })}
+                    className="w-full h-9 px-3 rounded-md bg-zinc-950 border border-zinc-700 text-sm text-zinc-100"
+                  >
+                    {STATUS_OPTIONS.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-xs text-zinc-400 mb-1">Priority Score (0-100)</label>
+                  <Input
+                    type="number"
+                    min="0"
+                    max="100"
+                    value={formData.priority_score}
+                    onChange={(e) => setFormData({ ...formData, priority_score: Number(e.target.value) })}
+                    className="bg-zinc-950 border-zinc-700"
+                  />
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={formData.is_golden}
+                      onChange={(e) => setFormData({ ...formData, is_golden: e.target.checked })}
+                      className="w-4 h-4 rounded bg-zinc-950 border-zinc-700 text-yellow-500"
+                    />
+                    <span className="text-sm text-zinc-300">⭐ Golden Lead</span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes */}
+            <div>
+              <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
+                Notes & Comments
+              </h3>
+              <textarea
+                ref={notesRef}
+                value={formData.notes}
+                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                placeholder="Add notes about this lead..."
+                rows={5}
+                className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-700 text-sm text-zinc-100 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
+              />
+            </div>
+
+            {/* Timestamps */}
+            <div className="text-xs text-zinc-500 flex gap-6">
+              <span>Created: {formatDate(lead.created_at)}</span>
+              <span>Updated: {formatDate(lead.updated_at)}</span>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
+              <Button
+                type="button"
+                variant="outline"
+                onClick={onClose}
+                disabled={saving}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="submit"
+                disabled={saving}
+                className="bg-yellow-500 hover:bg-yellow-400 text-black font-semibold"
+              >
+                {saving ? (
+                  <span className="flex items-center gap-2">
+                    <div className="animate-spin w-4 h-4 border-2 border-black border-t-transparent rounded-full" />
+                    Saving...
+                  </span>
+                ) : (
+                  'Save Changes'
+                )}
+              </Button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </>
+  )
+}
+
+// ============================================================================
 // BULK ACTION BAR COMPONENT
 // ============================================================================
 
 function BulkActionBar({
   selectedCount,
-  onSendSMS,
-  onSendAgreement,
+  selectedLeads,
+  onSkipTrace,
+  onSendToSam,
   onClearSelection,
   loading,
 }: {
   selectedCount: number
-  onSendSMS: () => void
-  onSendAgreement: () => void
+  selectedLeads: Lead[]
+  onSkipTrace: () => void
+  onSendToSam: () => void
   onClearSelection: () => void
   loading: boolean
 }) {
   if (selectedCount === 0) return null
 
+  const leadsWithoutPhone = selectedLeads.filter((l) => !hasPhone(l)).length
+  const leadsReadyForSam = selectedLeads.filter((l) => hasPhone(l) && hasScore(l)).length
+
   return (
-    <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 z-50">
+    <div className="sticky top-0 z-40 mb-4">
       <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl px-6 py-4 flex items-center gap-4">
         <span className="text-white font-medium">
           {selectedCount} lead{selectedCount !== 1 ? 's' : ''} selected
         </span>
         <div className="h-6 w-px bg-zinc-700" />
-        <button
-          onClick={onSendSMS}
-          disabled={loading}
-          className="px-4 py-2 bg-cyan-500 hover:bg-cyan-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {loading ? (
-            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-          ) : (
-            '💬'
-          )}
-          Send SMS
-        </button>
-        <button
-          onClick={onSendAgreement}
-          disabled={loading}
-          className="px-4 py-2 bg-purple-500 hover:bg-purple-400 text-white font-semibold rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2"
-        >
-          {loading ? (
-            <div className="animate-spin w-4 h-4 border-2 border-white border-t-transparent rounded-full" />
-          ) : (
-            '📄'
-          )}
-          Send Agreement
-        </button>
+
+        {leadsWithoutPhone > 0 && (
+          <button
+            onClick={onSkipTrace}
+            disabled={loading}
+            className="px-4 py-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 border border-amber-500/30"
+          >
+            {loading ? (
+              <div className="animate-spin w-4 h-4 border-2 border-amber-400 border-t-transparent rounded-full" />
+            ) : (
+              '🔍'
+            )}
+            Skip Trace Selected ({leadsWithoutPhone})
+          </button>
+        )}
+
+        {leadsReadyForSam > 0 && (
+          <button
+            onClick={onSendToSam}
+            disabled={loading}
+            className="px-4 py-2 bg-cyan-500/20 hover:bg-cyan-500/30 text-cyan-400 font-medium rounded-lg transition-colors disabled:opacity-50 flex items-center gap-2 border border-cyan-500/30"
+          >
+            {loading ? (
+              <div className="animate-spin w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full" />
+            ) : (
+              '📱'
+            )}
+            Send to SAM ({leadsReadyForSam})
+          </button>
+        )}
+
         <div className="h-6 w-px bg-zinc-700" />
         <button
           onClick={onClearSelection}
@@ -222,20 +522,24 @@ function LeadRow({
   lead,
   isChecked,
   onCheck,
-  onSendSMS,
-  onViewMessages,
-  onSendAgreement,
+  onSkipTrace,
+  onSendToSam,
+  onEdit,
+  onNotesClick,
   actionLoading,
+  recentlyUpdated,
 }: {
   lead: Lead
   isChecked: boolean
   onCheck: (leadId: string, checked: boolean) => void
-  onSendSMS: (leadId: string) => void
-  onViewMessages: (leadId: string) => void
-  onSendAgreement: (leadId: string) => void
+  onSkipTrace: (lead: Lead) => void
+  onSendToSam: (lead: Lead) => void
+  onEdit: (lead: Lead) => void
+  onNotesClick: (lead: Lead) => void
   actionLoading: string | null
+  recentlyUpdated: boolean
 }) {
-  const getPhone = () => lead.phone || lead.phone_1 || lead.phone_2
+  const phone = getLeadPhone(lead)
   const isLoading = actionLoading === lead.id
 
   const formatPhone = (phone: string | null) => {
@@ -270,8 +574,15 @@ function LeadRow({
     return `${Math.floor(diffDays / 30)}mo ago`
   }
 
+  const leadHasPhone = hasPhone(lead)
+  const leadHasScore = hasScore(lead)
+
   return (
-    <tr className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-colors ${lead.is_golden ? 'bg-yellow-500/5' : ''}`}>
+    <tr
+      className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-all ${
+        lead.is_golden ? 'bg-yellow-500/5' : ''
+      } ${recentlyUpdated ? 'bg-green-500/10 animate-pulse' : ''}`}
+    >
       {/* Checkbox */}
       <td className="px-3 py-3">
         <input
@@ -283,27 +594,27 @@ function LeadRow({
       </td>
       {/* Name */}
       <td className="px-4 py-3">
-        <a
-          href={`/leads/${lead.id}`}
-          className="font-medium text-white hover:text-yellow-400 hover:underline"
+        <button
+          onClick={() => onEdit(lead)}
+          className="font-medium text-white hover:text-yellow-400 hover:underline text-left"
         >
           {lead.owner_name || 'Unknown'}
-        </a>
+        </button>
         {lead.is_golden && (
           <span className="ml-2 text-yellow-400" title="Golden Lead">⭐</span>
         )}
       </td>
       {/* Phone */}
       <td className="px-4 py-3">
-        {getPhone() ? (
+        {phone ? (
           <a
-            href={`tel:${getPhone()}`}
+            href={`tel:${phone}`}
             className="text-cyan-400 hover:text-cyan-300 hover:underline"
           >
-            {formatPhone(getPhone())}
+            {formatPhone(phone)}
           </a>
         ) : (
-          <span className="text-zinc-600">No phone</span>
+          <span className="text-red-400 text-sm">No phone</span>
         )}
       </td>
       {/* Property */}
@@ -334,6 +645,20 @@ function LeadRow({
       <td className="px-4 py-3">
         <StatusBadge status={lead.status} />
       </td>
+      {/* Notes */}
+      <td className="px-3 py-3 text-center">
+        <button
+          onClick={() => onNotesClick(lead)}
+          className={`p-1.5 rounded transition-colors ${
+            lead.notes
+              ? 'text-yellow-400 hover:bg-yellow-500/20'
+              : 'text-zinc-600 hover:text-zinc-400 hover:bg-zinc-800'
+          }`}
+          title={lead.notes ? 'Has notes - click to view' : 'Add notes'}
+        >
+          {lead.notes ? '📝' : '📄'}
+        </button>
+      </td>
       {/* Last Contact */}
       <td className="px-4 py-3 text-zinc-400 text-sm">
         {getRelativeTime(lead.last_contact_at)}
@@ -346,29 +671,48 @@ function LeadRow({
       {/* Actions */}
       <td className="px-3 py-3">
         <div className="flex items-center gap-1">
+          {/* Skip Trace - only show if no phone */}
+          {!leadHasPhone && (
+            <button
+              onClick={() => onSkipTrace(lead)}
+              disabled={isLoading}
+              className="px-2 py-1 text-xs bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 rounded border border-amber-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Run Skip Trace"
+            >
+              {isLoading ? (
+                <span className="inline-block w-3 h-3 border border-amber-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                '🔍'
+              )}
+            </button>
+          )}
+
+          {/* Send to SAM - only show if has phone AND score */}
+          {leadHasPhone && leadHasScore && (
+            <button
+              onClick={() => onSendToSam(lead)}
+              disabled={isLoading}
+              className="px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 rounded border border-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              title="Send to SAM for Outreach"
+            >
+              {isLoading ? (
+                <span className="inline-block w-3 h-3 border border-cyan-400 border-t-transparent rounded-full animate-spin" />
+              ) : (
+                '📱'
+              )}
+            </button>
+          )}
+
+          {/* Edit - always visible */}
           <button
-            onClick={() => onViewMessages(lead.id)}
-            className="px-2 py-1 text-xs bg-zinc-500/20 text-zinc-400 hover:bg-zinc-500/30 rounded border border-zinc-500/30 transition-colors"
-            title="View Messages"
+            onClick={() => onEdit(lead)}
+            className="px-2 py-1 text-xs bg-zinc-500/20 text-zinc-400 hover:bg-zinc-500/30 hover:text-white rounded border border-zinc-500/30 transition-colors"
+            title="Edit Lead"
           >
-            💬
+            ✏️
           </button>
-          <button
-            onClick={() => onSendSMS(lead.id)}
-            disabled={isLoading || !getPhone()}
-            className="px-2 py-1 text-xs bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 rounded border border-cyan-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title={getPhone() ? 'Send SMS' : 'No phone number'}
-          >
-            {isLoading ? '...' : '📱'}
-          </button>
-          <button
-            onClick={() => onSendAgreement(lead.id)}
-            disabled={isLoading}
-            className="px-2 py-1 text-xs bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 rounded border border-purple-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-            title="Send Agreement"
-          >
-            {isLoading ? '...' : '📄'}
-          </button>
+
+          {/* View Details */}
           <a
             href={`/leads/${lead.id}`}
             className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 rounded border border-yellow-500/30 transition-colors"
@@ -392,6 +736,16 @@ export default function LeadsDashboardPage() {
   const [error, setError] = useState<string | null>(null)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
+
+  // Toast state
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
+
+  // Edit modal state
+  const [editingLead, setEditingLead] = useState<Lead | null>(null)
+  const [savingLead, setSavingLead] = useState(false)
+
+  // Recently updated leads (for green highlight)
+  const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set())
 
   // Stats
   const [stats, setStats] = useState({
@@ -423,6 +777,10 @@ export default function LeadsDashboardPage() {
   // Selected leads for bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
+  const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
+    setToast({ message, type })
+  }, [])
+
   const fetchLeads = useCallback(async () => {
     setLoading(true)
     setError(null)
@@ -451,7 +809,7 @@ export default function LeadsDashboardPage() {
       setTotal(data.total || 0)
 
       // Calculate stats from leads
-      const withPhone = fetchedLeads.filter((l: Lead) => l.phone || l.phone_1 || l.phone_2).length
+      const withPhone = fetchedLeads.filter((l: Lead) => hasPhone(l)).length
       const highScore = fetchedLeads.filter((l: Lead) => (l.eleanor_score || 0) >= 80).length
       const totalValue = fetchedLeads.reduce((sum: number, l: Lead) => sum + (l.excess_funds_amount || 0), 0)
 
@@ -501,82 +859,146 @@ export default function LeadsDashboardPage() {
     }
   }
 
-  const handleSendSMS = async (leadId: string) => {
-    setActionLoading(leadId)
+  // Skip Trace webhook
+  const triggerSkipTrace = async (lead: Lead) => {
+    setActionLoading(lead.id)
     try {
-      const res = await fetch(`/api/leads/${leadId}/sms`, {
+      const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          lead_id: lead.id,
+          owner_name: lead.owner_name,
+          property_address: lead.property_address,
+        }),
       })
-      if (!res.ok) throw new Error('Failed to send SMS')
-      fetchLeads()
-    } catch (err) {
-      console.error('Send SMS error:', err)
+      if (res.ok) {
+        showToast('Skip trace triggered! Check Telegram for updates.', 'success')
+      } else {
+        throw new Error('Failed')
+      }
+    } catch {
+      showToast('Skip trace failed - n8n may be at execution limit', 'error')
     } finally {
       setActionLoading(null)
     }
   }
 
-  const handleViewMessages = (leadId: string) => {
-    window.location.href = `/dashboard/messages?lead=${leadId}`
-  }
-
-  const handleSendAgreement = async (leadId: string) => {
-    setActionLoading(leadId)
+  // SAM Outreach webhook
+  const triggerSamOutreach = async (lead: Lead) => {
+    setActionLoading(lead.id)
     try {
-      const res = await fetch(`/api/leads/${leadId}`, {
+      const res = await fetch('https://skooki.app.n8n.cloud/webhook/sam-outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'generate-contract' }),
+        body: JSON.stringify({
+          lead_id: lead.id,
+          trigger: 'manual',
+        }),
       })
-      if (!res.ok) throw new Error('Failed to send agreement')
-      fetchLeads()
-    } catch (err) {
-      console.error('Send agreement error:', err)
+      if (res.ok) {
+        showToast('SAM outreach triggered! Check Telegram for updates.', 'success')
+      } else {
+        throw new Error('Failed')
+      }
+    } catch {
+      showToast('SAM outreach failed - n8n may be at execution limit', 'error')
     } finally {
       setActionLoading(null)
     }
   }
 
-  const bulkSendSMS = async () => {
+  // Bulk skip trace
+  const bulkSkipTrace = async () => {
     setBulkLoading(true)
-    const ids = Array.from(selectedIds)
+    const selectedLeadsList = filteredLeads.filter((l) => selectedIds.has(l.id) && !hasPhone(l))
+    let successCount = 0
 
-    for (const id of ids) {
+    for (const lead of selectedLeadsList) {
       try {
-        await fetch(`/api/leads/${id}/sms`, {
+        const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: lead.id,
+            owner_name: lead.owner_name,
+            property_address: lead.property_address,
+          }),
         })
-      } catch (err) {
-        console.error('Bulk SMS error:', err)
+        if (res.ok) successCount++
+      } catch {
+        // Continue with next
       }
     }
 
+    showToast(`Skip trace triggered for ${successCount} leads!`, successCount > 0 ? 'success' : 'error')
     setSelectedIds(new Set())
     setBulkLoading(false)
-    await fetchLeads()
   }
 
-  const bulkSendAgreement = async () => {
+  // Bulk SAM outreach
+  const bulkSendToSam = async () => {
     setBulkLoading(true)
-    const ids = Array.from(selectedIds)
+    const selectedLeadsList = filteredLeads.filter(
+      (l) => selectedIds.has(l.id) && hasPhone(l) && hasScore(l)
+    )
+    let successCount = 0
 
-    for (const id of ids) {
+    for (const lead of selectedLeadsList) {
       try {
-        await fetch(`/api/leads/${id}`, {
+        const res = await fetch('https://skooki.app.n8n.cloud/webhook/sam-outreach', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'generate-contract' }),
+          body: JSON.stringify({
+            lead_id: lead.id,
+            trigger: 'manual',
+          }),
         })
-      } catch (err) {
-        console.error('Bulk agreement error:', err)
+        if (res.ok) successCount++
+      } catch {
+        // Continue with next
       }
     }
 
+    showToast(`SAM outreach triggered for ${successCount} leads!`, successCount > 0 ? 'success' : 'error')
     setSelectedIds(new Set())
     setBulkLoading(false)
-    await fetchLeads()
+  }
+
+  // Save lead changes
+  const handleSaveLead = async (data: Partial<Lead>) => {
+    if (!editingLead) return
+    setSavingLead(true)
+
+    try {
+      const res = await fetch(`/api/leads/${editingLead.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      })
+
+      if (!res.ok) throw new Error('Failed to update lead')
+
+      showToast('Lead updated successfully!', 'success')
+      setEditingLead(null)
+
+      // Add to recently updated for green highlight
+      setRecentlyUpdated((prev) => new Set(prev).add(editingLead.id))
+      setTimeout(() => {
+        setRecentlyUpdated((prev) => {
+          const newSet = new Set(prev)
+          newSet.delete(editingLead.id)
+          return newSet
+        })
+      }, 3000)
+
+      // Refresh leads
+      await fetchLeads()
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Failed to update lead', 'error')
+    } finally {
+      setSavingLead(false)
+    }
   }
 
   // Filter leads by lead class on client side
@@ -588,11 +1010,34 @@ export default function LeadsDashboardPage() {
     })
   }, [leads, leadClassFilter])
 
+  const selectedLeadsList = useMemo(() => {
+    return filteredLeads.filter((l) => selectedIds.has(l.id))
+  }, [filteredLeads, selectedIds])
+
   const allSelected = filteredLeads.length > 0 && selectedIds.size === filteredLeads.length
   const someSelected = selectedIds.size > 0 && selectedIds.size < filteredLeads.length
 
   return (
     <div className="space-y-6">
+      {/* Toast */}
+      {toast && (
+        <Toast
+          message={toast.message}
+          type={toast.type}
+          onClose={() => setToast(null)}
+        />
+      )}
+
+      {/* Edit Modal */}
+      {editingLead && (
+        <LeadEditModal
+          lead={editingLead}
+          onClose={() => setEditingLead(null)}
+          onSave={handleSaveLead}
+          saving={savingLead}
+        />
+      )}
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -673,11 +1118,11 @@ export default function LeadsDashboardPage() {
             className="w-full h-9 px-3 rounded-md bg-zinc-950 border border-zinc-700 text-sm text-zinc-100"
           >
             <option value="all">All Statuses</option>
-            <option value="new">New</option>
-            <option value="contacted">Contacted</option>
-            <option value="agreement_sent">Agreement Sent</option>
-            <option value="signed">Signed</option>
-            <option value="opted_out">Opted Out</option>
+            {STATUS_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>
+                {opt.label}
+              </option>
+            ))}
           </select>
         </div>
 
@@ -738,6 +1183,16 @@ export default function LeadsDashboardPage() {
         </div>
       </div>
 
+      {/* Bulk Action Bar */}
+      <BulkActionBar
+        selectedCount={selectedIds.size}
+        selectedLeads={selectedLeadsList}
+        onSkipTrace={bulkSkipTrace}
+        onSendToSam={bulkSendToSam}
+        onClearSelection={() => setSelectedIds(new Set())}
+        loading={bulkLoading}
+      />
+
       {/* Error State */}
       {error && (
         <div className="p-4 bg-red-950/50 border border-red-800 rounded-xl text-red-200">
@@ -767,6 +1222,7 @@ export default function LeadsDashboardPage() {
               <SortableHeader label="Amount" field="excess_funds_amount" currentSort={sortBy} currentDirection={sortOrder} onSort={handleSort} className="text-right" />
               <SortableHeader label="Score" field="eleanor_score" currentSort={sortBy} currentDirection={sortOrder} onSort={handleSort} className="text-center" />
               <SortableHeader label="Status" field="status" currentSort={sortBy} currentDirection={sortOrder} onSort={handleSort} />
+              <th className="px-3 py-3 text-center text-xs font-medium text-zinc-400 uppercase">Notes</th>
               <SortableHeader label="Last Contact" field="last_contact_at" currentSort={sortBy} currentDirection={sortOrder} onSort={handleSort} />
               <th className="px-3 py-3 text-left text-xs font-medium text-zinc-400 uppercase">Actions</th>
             </tr>
@@ -774,7 +1230,7 @@ export default function LeadsDashboardPage() {
           <tbody>
             {loading ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center">
+                <td colSpan={10} className="px-4 py-12 text-center">
                   <div className="flex items-center justify-center gap-2">
                     <div className="animate-spin w-5 h-5 border-2 border-cyan-500 border-t-transparent rounded-full" />
                     <span className="text-zinc-400">Loading leads...</span>
@@ -783,7 +1239,7 @@ export default function LeadsDashboardPage() {
               </tr>
             ) : filteredLeads.length === 0 ? (
               <tr>
-                <td colSpan={9} className="px-4 py-12 text-center text-zinc-500">
+                <td colSpan={10} className="px-4 py-12 text-center text-zinc-500">
                   No leads found matching your criteria
                 </td>
               </tr>
@@ -794,10 +1250,12 @@ export default function LeadsDashboardPage() {
                   lead={lead}
                   isChecked={selectedIds.has(lead.id)}
                   onCheck={handleCheck}
-                  onSendSMS={handleSendSMS}
-                  onViewMessages={handleViewMessages}
-                  onSendAgreement={handleSendAgreement}
+                  onSkipTrace={triggerSkipTrace}
+                  onSendToSam={triggerSamOutreach}
+                  onEdit={setEditingLead}
+                  onNotesClick={setEditingLead}
                   actionLoading={actionLoading}
+                  recentlyUpdated={recentlyUpdated.has(lead.id)}
                 />
               ))
             )}
@@ -834,15 +1292,6 @@ export default function LeadsDashboardPage() {
           </div>
         </div>
       )}
-
-      {/* Bulk Action Bar */}
-      <BulkActionBar
-        selectedCount={selectedIds.size}
-        onSendSMS={bulkSendSMS}
-        onSendAgreement={bulkSendAgreement}
-        onClearSelection={() => setSelectedIds(new Set())}
-        loading={bulkLoading}
-      />
     </div>
   )
 }
