@@ -9,14 +9,3 @@ const nextConfig = {
 };
 
 export default nextConfig;
-```
-
-Save it, then run in terminal:
-```
-git add .
-```
-```
-git commit -m "Ignore TypeScript errors in build"
-```
-```
-git push
