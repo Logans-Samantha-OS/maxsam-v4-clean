@@ -69,6 +69,7 @@ export async function GET() {
         partner_email: config.partner_email || '',
         dallas_county_pdf_url: config.dallas_county_pdf_url || '',
         outreach_enabled: config.outreach_enabled === 'true',
+        outreach_approval_required: config.outreach_approval_required === 'true',
         max_daily_sms: config.max_daily_sms || '100',
         max_contact_attempts: config.max_contact_attempts || '5'
       },
@@ -99,6 +100,7 @@ export async function POST(request: NextRequest) {
       'autonomy_level',
       'ralph_enabled',
       'outreach_enabled',
+      'outreach_approval_required',
       'max_daily_sms',
       'max_contact_attempts'
     ];
@@ -149,6 +151,7 @@ export async function PUT(request: NextRequest) {
       'partner_email',
       'dallas_county_pdf_url',
       'outreach_enabled',
+      'outreach_approval_required',
       'max_daily_sms',
       'max_contact_attempts',
       'autonomy_level',

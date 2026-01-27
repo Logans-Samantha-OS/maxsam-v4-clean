@@ -143,7 +143,56 @@ export async function POST() {
     // Get all leads with details for Sam's call list and skip trace candidates
     const { data: leads } = await supabase
       .from('maxsam_leads')
-      .select('id, owner_name, excess_funds_amount, eleanor_score, last_contact_date, contact_attempts, status, phone, phone_1, phone_2, owner_phone, golden_lead, is_golden_lead');
+      .select('id, owner_name, excess_funds_amount, eleanor_score, last_contact_date, contact_attempts, status, phone, phone_1, phone_2, owner_phone, golden_lead, is_golden_lead, property_address, lead_class, excess_funds_expiry_date, days_until_expiration');
+
+    // EXPIRING LEADS - Leads with funds expiring in next 14 days
+    const expiringLeads = leads?.filter(l => {
+      if (!l.excess_funds_expiry_date) return false;
+      const expiryDate = new Date(l.excess_funds_expiry_date);
+      const daysUntil = Math.ceil((expiryDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+      return daysUntil > 0 && daysUntil <= 14 && !['closed', 'dead', 'contract_signed'].includes(l.status);
+    })
+    .sort((a, b) => new Date(a.excess_funds_expiry_date!).getTime() - new Date(b.excess_funds_expiry_date!).getTime())
+    .slice(0, 5)
+    .map(l => ({
+      name: l.owner_name || 'Unknown',
+      address: l.property_address || 'Unknown',
+      amount: l.excess_funds_amount || 0,
+      days_left: l.days_until_expiration || Math.ceil((new Date(l.excess_funds_expiry_date!).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    })) || [];
+
+    // TOP 3 FOCUS LEADS - Highest value leads that need action today
+    const top3Focus = leads?.filter(l => {
+      const hasPhone = l.phone || l.phone_1 || l.phone_2 || l.owner_phone;
+      const hasAmount = (l.excess_funds_amount || 0) >= 10000;
+      const needsAction = ['new', 'scored', 'contacted', 'qualified'].includes(l.status);
+      const notMaxedOut = (l.contact_attempts || 0) < 5;
+      return hasPhone && hasAmount && needsAction && notMaxedOut;
+    })
+    .sort((a, b) => {
+      // Priority: golden leads first, then by expiry, then by amount
+      const aGolden = a.golden_lead || a.is_golden_lead ? 1 : 0;
+      const bGolden = b.golden_lead || b.is_golden_lead ? 1 : 0;
+      if (aGolden !== bGolden) return bGolden - aGolden;
+
+      // Expiring sooner = higher priority
+      const aExpiry = a.excess_funds_expiry_date ? new Date(a.excess_funds_expiry_date).getTime() : Infinity;
+      const bExpiry = b.excess_funds_expiry_date ? new Date(b.excess_funds_expiry_date).getTime() : Infinity;
+      if (aExpiry !== bExpiry) return aExpiry - bExpiry;
+
+      // Higher amount = higher priority
+      return (b.excess_funds_amount || 0) - (a.excess_funds_amount || 0);
+    })
+    .slice(0, 3)
+    .map(l => ({
+      name: l.owner_name || 'Unknown',
+      address: l.property_address || 'Unknown',
+      amount: l.excess_funds_amount || 0,
+      score: l.eleanor_score || 0,
+      class: l.lead_class || (l.golden_lead || l.is_golden_lead ? 'GOLDEN' : 'B'),
+      status: l.status,
+      days_until_expiry: l.days_until_expiration
+    })) || [];
 
     const followUpsToday = leads?.filter(l => {
       if (!l.last_contact_date) return false;
@@ -200,13 +249,17 @@ export async function POST() {
       pendingInvoices: pendingInvoices || 0,
       totalPipeline,
       samCallingToday,
-      skipTraceCandidates
+      skipTraceCandidates,
+      top3Focus,
+      expiringLeads
     });
 
     return NextResponse.json({
       success: true,
       samCallingToday,
-      skipTraceCandidates
+      skipTraceCandidates,
+      top3Focus,
+      expiringLeads
     });
 
   } catch (error: unknown) {

@@ -3,6 +3,38 @@ import { createClient } from '@supabase/supabase-js';
 import { sendSMS, normalizePhone, isTwilioConfigured } from '@/lib/twilio';
 import { sendTelegramMessage } from '@/lib/telegram';
 
+// Check if approval mode is enabled
+async function isApprovalRequired(supabase: ReturnType<typeof createClient>): Promise<boolean> {
+  const { data } = await supabase
+    .from('system_config')
+    .select('value')
+    .eq('key', 'outreach_approval_required')
+    .single();
+  return data?.value === 'true';
+}
+
+// Queue message for approval instead of sending
+async function queueForApproval(
+  supabase: ReturnType<typeof createClient>,
+  lead: Lead,
+  phone: string,
+  message: string,
+  templateKey: string
+): Promise<{ success: boolean; queueId?: string; error?: string }> {
+  const { data, error } = await supabase.rpc('queue_outreach_message', {
+    p_lead_id: lead.id,
+    p_phone: phone,
+    p_message: message,
+    p_template_key: templateKey,
+    p_priority: lead.golden_lead || lead.is_golden_lead ? 'high' : 'normal'
+  });
+
+  if (error) {
+    return { success: false, error: error.message };
+  }
+  return { success: true, queueId: data };
+}
+
 /**
  * SAM Campaign Cron Job
  * Runs at 9 AM CT (15:00 UTC) Monday-Saturday
@@ -150,9 +182,13 @@ export async function GET(request: NextRequest) {
             });
         }
 
+        // Check if approval mode is enabled
+        const approvalRequired = await isApprovalRequired(supabase);
+
         const results = {
             success: 0,
             failed: 0,
+            queued: 0,
             errors: [] as string[],
             sent: [] as { name: string; amount: number; class: string }[]
         };
@@ -170,6 +206,24 @@ export async function GET(request: NextRequest) {
             const message = template(lead);
 
             try {
+                // If approval mode is on, queue instead of send
+                if (approvalRequired) {
+                    const queueResult = await queueForApproval(supabase, lead, phone, message, leadClass);
+                    if (queueResult.success) {
+                        results.queued++;
+                        results.sent.push({
+                            name: lead.owner_name,
+                            amount: lead.excess_funds_amount,
+                            class: leadClass.toUpperCase() + ' (QUEUED)'
+                        });
+                    } else {
+                        results.failed++;
+                        results.errors.push(`${lead.owner_name}: Queue failed - ${queueResult.error}`);
+                    }
+                    continue;
+                }
+
+                // Direct send mode
                 const smsResult = await sendSMS(phone, message, lead.id);
 
                 if (smsResult.success) {
@@ -211,7 +265,20 @@ export async function GET(request: NextRequest) {
             `${i + 1}. ${l.name} - $${Math.round(l.amount / 1000)}K (${l.class})`
         ).join('\n');
 
-        const summaryMessage = `🤖 <b>SAM CAMPAIGN COMPLETE</b>
+        const summaryMessage = approvalRequired
+            ? `🤖 <b>SAM CAMPAIGN - APPROVAL MODE</b>
+
+<b>9 AM Messages Queued for Review:</b>
+
+📋 Queued: <b>${results.queued}</b>
+❌ Failed: <b>${results.failed}</b>
+
+${results.sent.length > 0 ? `<b>Pending Approval:</b>\n${sentList}${results.sent.length > 5 ? `\n... +${results.sent.length - 5} more` : ''}` : 'No leads queued'}
+
+${results.errors.length > 0 ? `\n⚠️ Errors:\n${results.errors.slice(0, 3).join('\n')}` : ''}
+
+🔗 Review at /outreach-queue`
+            : `🤖 <b>SAM CAMPAIGN COMPLETE</b>
 
 <b>9 AM Auto-Outreach Results:</b>
 
@@ -228,7 +295,10 @@ Awaiting replies... 📱`;
 
         return NextResponse.json({
             success: true,
-            message: `Campaign complete: ${results.success} sent, ${results.failed} failed`,
+            message: approvalRequired
+                ? `Campaign complete: ${results.queued} queued for approval, ${results.failed} failed`
+                : `Campaign complete: ${results.success} sent, ${results.failed} failed`,
+            approval_mode: approvalRequired,
             results
         });
 

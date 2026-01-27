@@ -302,6 +302,21 @@ export async function notifyMorningBrief(brief: {
     class: string;
   }>;
   skipTraceCandidates?: number;
+  top3Focus?: Array<{
+    name: string;
+    address: string;
+    amount: number;
+    score: number;
+    class: string;
+    status: string;
+    days_until_expiry?: number;
+  }>;
+  expiringLeads?: Array<{
+    name: string;
+    address: string;
+    amount: number;
+    days_left: number;
+  }>;
 }): Promise<void> {
   const claimsLine = brief.pendingClaims !== undefined
     ? `🏛️ Claims Pending: <b>${brief.pendingClaims}</b>`
@@ -330,6 +345,33 @@ ${brief.samCallingToday.length > 5 ? `... +${brief.samCallingToday.length - 5} m
 `;
   }
 
+  // TOP 3 FOCUS LEADS - Priority leads for today
+  let top3Section = '';
+  if (brief.top3Focus && brief.top3Focus.length > 0) {
+    const focusList = brief.top3Focus
+      .map((l, i) => {
+        const expiry = l.days_until_expiry ? ` ⚠️${l.days_until_expiry}d` : '';
+        return `${i + 1}. ${l.name} - ${formatMoney(l.amount)} [${l.class}]${expiry}`;
+      })
+      .join('\n');
+    top3Section = `
+🎯 <b>TOP 3 FOCUS TODAY:</b>
+${focusList}
+`;
+  }
+
+  // EXPIRING LEADS - Urgent attention needed
+  let expiringSection = '';
+  if (brief.expiringLeads && brief.expiringLeads.length > 0) {
+    const expiringList = brief.expiringLeads
+      .map(l => `• ${l.name}: ${formatMoney(l.amount)} - <b>${l.days_left}d left!</b>`)
+      .join('\n');
+    expiringSection = `
+⏰ <b>EXPIRING SOON:</b>
+${expiringList}
+`;
+  }
+
   const message = `☀️ <b>Good Morning, Logan!</b>
 ${brief.date}
 
@@ -343,7 +385,7 @@ ${claimsLine}
 ${closingsLine}
 
 💰 <b>Pipeline Value:</b> ${formatMoney(brief.totalPipeline)}
-${samSection}${skipTraceSection}
+${top3Section}${expiringSection}${samSection}${skipTraceSection}
 Time to make money! 🚀`;
 
   await sendTelegramMessage(message);

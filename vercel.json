@@ -21,8 +21,16 @@
       "schedule": "0 14 * * 1-6"
     },
     {
+      "path": "/api/cron/golden-leads",
+      "schedule": "30 14 * * 1-6"
+    },
+    {
       "path": "/api/cron/sam-campaign",
       "schedule": "0 15 * * 1-6"
+    },
+    {
+      "path": "/api/cron/follow-up",
+      "schedule": "0 16 * * 1-6"
     }
   ]
 }

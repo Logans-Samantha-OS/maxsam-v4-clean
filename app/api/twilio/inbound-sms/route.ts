@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processInboundSMS } from '@/lib/sam-outreach';
 import { createClient } from '@supabase/supabase-js';
+import { sendTelegramMessage } from '@/lib/telegram';
 
 function getSupabase() {
   return createClient(
@@ -58,6 +59,43 @@ export async function POST(request: NextRequest) {
         received_at: new Date().toISOString(),
         created_at: new Date().toISOString()
       });
+
+      // Get lead details for notification
+      const { data: leadDetails } = await supabase
+        .from('maxsam_leads')
+        .select('owner_name, property_address, excess_funds_amount, is_golden_lead, golden_lead, eleanor_score')
+        .eq('id', lead.id)
+        .single();
+
+      // Instant Telegram notification for all inbound SMS
+      const isGolden = leadDetails?.is_golden_lead || leadDetails?.golden_lead;
+      const emoji = isGolden ? '🥇' : '📱';
+      const amount = leadDetails?.excess_funds_amount
+        ? `$${Math.round(leadDetails.excess_funds_amount / 1000)}K`
+        : 'Unknown';
+
+      await sendTelegramMessage(
+        `${emoji} <b>INBOUND SMS</b>
+
+<b>From:</b> ${leadDetails?.owner_name || 'Unknown'}${isGolden ? ' ⭐GOLDEN' : ''}
+<b>Amount:</b> ${amount}
+<b>Property:</b> ${leadDetails?.property_address || 'N/A'}
+
+💬 <i>"${body.length > 100 ? body.substring(0, 100) + '...' : body}"</i>
+
+${formattedPhone}`
+      );
+    } else {
+      // Unknown number - still notify
+      await sendTelegramMessage(
+        `📱 <b>INBOUND SMS - UNKNOWN</b>
+
+<b>From:</b> ${formattedPhone}
+
+💬 <i>"${body.length > 100 ? body.substring(0, 100) + '...' : body}"</i>
+
+⚠️ No matching lead found`
+      );
     }
 
     // Process the message (handles opt-outs, qualifications, etc.)
