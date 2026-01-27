@@ -1,109 +1,164 @@
-import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@supabase/supabase-js';
+import { NextRequest, NextResponse } from 'next/server'
+import { createClient } from '@supabase/supabase-js'
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
-const APIFY_TOKEN = process.env.APIFY_API_TOKEN;
+)
 
 export async function POST(request: NextRequest) {
   try {
-    const { leadId, name, address, cityStateZip } = await request.json();
+    const body = await request.json()
+    const { leadId, name, address, cityStateZip } = body
 
-    if (!leadId || (!name && !address)) {
-      return NextResponse.json({ error: 'Need leadId and name or address' }, { status: 400 });
+    if (!leadId || !name) {
+      return NextResponse.json(
+        { success: false, error: 'Missing required fields: leadId and name' },
+        { status: 400 }
+      )
     }
 
-    // Build Apify input
-    const apifyInput: any = { max_results: 1 };
-    if (name) {
-      apifyInput.name = cityStateZip ? [`${name}; ${cityStateZip}`] : [name];
-    }
-    if (address && cityStateZip) {
-      apifyInput.street_citystatezip = [`${address}; ${cityStateZip}`];
+    const apiToken = process.env.APIFY_API_TOKEN
+    if (!apiToken) {
+      console.error('APIFY_API_TOKEN not configured')
+      return NextResponse.json(
+        { success: false, error: 'Apify API not configured' },
+        { status: 500 }
+      )
     }
 
-    // Call Apify Skip Trace Actor
-    const response = await fetch(
-      `https://api.apify.com/v2/acts/one-api~skip-trace/runs?token=${APIFY_TOKEN}`,
+    // Format the search query for Apify one-api/skip-trace
+    // Format: "Full Name; City, State Zip" or just "Full Name"
+    const searchQuery = cityStateZip ? `${name}; ${cityStateZip}` : name
+
+    // Call Apify Actor with CORRECT input format
+    const apifyResponse = await fetch(
+      `https://api.apify.com/v2/acts/one-api~skip-trace/runs?token=${apiToken}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(apifyInput)
+        body: JSON.stringify({
+          name: [searchQuery],
+          max_results: 1
+        }),
       }
-    );
+    )
 
-    if (!response.ok) {
-      return NextResponse.json({ error: 'Apify API failed' }, { status: 503 });
+    if (!apifyResponse.ok) {
+      const errorText = await apifyResponse.text()
+      console.error('Apify API error:', apifyResponse.status, errorText)
+      return NextResponse.json(
+        { success: false, error: `Apify API failed: ${apifyResponse.status}` },
+        { status: 502 }
+      )
     }
 
-    const runData = await response.json();
-    const runId = runData.data.id;
+    const runData = await apifyResponse.json()
+    const runId = runData.data?.id
 
-    // Wait for completion (max 30 seconds)
-    let status = 'RUNNING';
-    let attempts = 0;
-    while (status === 'RUNNING' && attempts < 30) {
-      await new Promise(r => setTimeout(r, 1000));
-      const check = await fetch(`https://api.apify.com/v2/actor-runs/${runId}?token=${APIFY_TOKEN}`);
-      status = (await check.json()).data.status;
-      attempts++;
+    if (!runId) {
+      return NextResponse.json(
+        { success: false, error: 'No run ID returned from Apify' },
+        { status: 500 }
+      )
     }
 
-    if (status !== 'SUCCEEDED') {
-      return NextResponse.json({ error: 'Skip trace timed out' }, { status: 504 });
-    }
+    // Wait for the run to complete (poll for up to 60 seconds)
+    let results = null
+    const maxWaitTime = 60000
+    const pollInterval = 2000
+    const startTime = Date.now()
 
-    // Get results
-    const datasetId = runData.data.defaultDatasetId;
-    const results = await fetch(`https://api.apify.com/v2/datasets/${datasetId}/items?token=${APIFY_TOKEN}`);
-    const data = await results.json();
+    while (Date.now() - startTime < maxWaitTime) {
+      const statusResponse = await fetch(
+        `https://api.apify.com/v2/actor-runs/${runId}?token=${apiToken}`
+      )
+      const statusData = await statusResponse.json()
+      const status = statusData.data?.status
 
-    if (!data || data.length === 0) {
-      return NextResponse.json({ success: true, message: 'No results found', data: null });
-    }
-
-    const person = data[0];
-
-    // Extract phones
-    const allPhones = [];
-    let bestPhone = null;
-    for (let i = 1; i <= 5; i++) {
-      const phone = person[`Phone-${i}`];
-      const type = person[`Phone-${i} Type`];
-      if (phone) {
-        allPhones.push({ number: phone, type });
-        if (!bestPhone || type === 'Wireless') bestPhone = phone;
+      if (status === 'SUCCEEDED') {
+        // Get the dataset items
+        const datasetId = statusData.data?.defaultDatasetId
+        if (datasetId) {
+          const datasetResponse = await fetch(
+            `https://api.apify.com/v2/datasets/${datasetId}/items?token=${apiToken}`
+          )
+          results = await datasetResponse.json()
+        }
+        break
+      } else if (status === 'FAILED' || status === 'ABORTED' || status === 'TIMED-OUT') {
+        return NextResponse.json(
+          { success: false, error: `Apify run ${status}` },
+          { status: 500 }
+        )
       }
+
+      // Wait before polling again
+      await new Promise(resolve => setTimeout(resolve, pollInterval))
     }
 
-    // Extract emails
-    const allEmails = [];
-    for (let i = 1; i <= 5; i++) {
-      if (person[`Email-${i}`]) allEmails.push(person[`Email-${i}`]);
+    if (!results || results.length === 0) {
+      // Update lead status even if no results found
+      await supabase
+        .from('leads')
+        .update({ 
+          status: 'skip_traced',
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', leadId)
+
+      return NextResponse.json({
+        success: true,
+        message: 'Skip trace completed but no results found',
+        phone: null
+      })
     }
 
-    // Update lead in Supabase
-    await supabase.from('leads').update({
-      phone: bestPhone,
-      all_phones: allPhones,
-      email: allEmails[0] || null,
-      all_emails: allEmails,
-      current_address: person['Lives in'],
-      age: person['Age'] ? parseInt(person['Age']) : null,
-      skip_trace_completed_at: new Date().toISOString(),
-      skip_trace_raw: person
-    }).eq('id', leadId);
+    // Extract phone from first result
+    const firstResult = results[0]
+    const phone = firstResult['Phone-1'] || firstResult['Phone-2'] || null
+    const email = firstResult['Email-1'] || null
+
+    // Update lead in database
+    const updateData: Record<string, unknown> = {
+      status: 'skip_traced',
+      updated_at: new Date().toISOString()
+    }
+
+    if (phone) {
+      updateData.primary_phone = phone
+      updateData.phone = phone
+    }
+    if (email) {
+      updateData.primary_email = email
+    }
+
+    // Store full result in notes or a JSON field if available
+    updateData.notes = `Skip trace result: ${JSON.stringify(firstResult).slice(0, 500)}`
+
+    const { error: updateError } = await supabase
+      .from('leads')
+      .update(updateData)
+      .eq('id', leadId)
+
+    if (updateError) {
+      console.error('Database update error:', updateError)
+    }
 
     return NextResponse.json({
       success: true,
-      data: { phone: bestPhone, allPhones, email: allEmails[0], allEmails, address: person['Lives in'] }
-    });
+      phone,
+      email,
+      fullName: `${firstResult['First Name'] || ''} ${firstResult['Last Name'] || ''}`.trim(),
+      address: firstResult['Lives in'] || null,
+      message: phone ? `Found phone: ${phone}` : 'Skip trace completed'
+    })
 
   } catch (error) {
-    console.error('Skip trace error:', error);
-    return NextResponse.json({ error: 'Internal error' }, { status: 500 });
+    console.error('Skip trace error:', error)
+    return NextResponse.json(
+      { success: false, error: error instanceof Error ? error.message : 'Skip trace failed' },
+      { status: 500 }
+    )
   }
 }
