@@ -272,16 +272,12 @@ function LeadEditModal({
 
   return (
     <>
-      {/* Backdrop */}
       <div
         className="fixed inset-0 bg-black/60 z-[60]"
         onClick={onClose}
       />
-
-      {/* Modal */}
       <div className="fixed inset-0 z-[70] flex items-center justify-center p-4">
         <div className="bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto">
-          {/* Header */}
           <div className="flex items-center justify-between p-4 border-b border-zinc-800">
             <h2 className="text-xl font-bold text-white flex items-center gap-2">
               ✏️ Edit Lead
@@ -293,10 +289,7 @@ function LeadEditModal({
               ✕
             </button>
           </div>
-
-          {/* Form */}
           <form onSubmit={handleSubmit} className="p-6 space-y-6">
-            {/* Contact Information */}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
                 Contact Information
@@ -341,8 +334,6 @@ function LeadEditModal({
                 </div>
               </div>
             </div>
-
-            {/* Status & Classification */}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
                 Status & Classification
@@ -386,8 +377,6 @@ function LeadEditModal({
                 </div>
               </div>
             </div>
-
-            {/* Notes */}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
                 Notes & Comments
@@ -401,14 +390,10 @@ function LeadEditModal({
                 className="w-full px-3 py-2 rounded-md bg-zinc-950 border border-zinc-700 text-sm text-zinc-100 resize-none focus:outline-none focus:ring-2 focus:ring-yellow-500/50"
               />
             </div>
-
-            {/* Timestamps */}
             <div className="text-xs text-zinc-500 flex gap-6">
               <span>Created: {formatDate(lead.created_at)}</span>
               <span>Updated: {formatDate(lead.updated_at)}</span>
             </div>
-
-            {/* Actions */}
             <div className="flex justify-end gap-3 pt-4 border-t border-zinc-800">
               <Button
                 type="button"
@@ -583,7 +568,6 @@ function LeadRow({
         lead.is_golden ? 'bg-yellow-500/5' : ''
       } ${recentlyUpdated ? 'bg-green-500/10 animate-pulse' : ''}`}
     >
-      {/* Checkbox */}
       <td className="px-3 py-3">
         <input
           type="checkbox"
@@ -592,7 +576,6 @@ function LeadRow({
           className="w-4 h-4 rounded border-zinc-600 bg-zinc-800 text-yellow-500 focus:ring-yellow-500 focus:ring-offset-zinc-900 cursor-pointer"
         />
       </td>
-      {/* Name */}
       <td className="px-4 py-3">
         <button
           onClick={() => onEdit(lead)}
@@ -604,7 +587,6 @@ function LeadRow({
           <span className="ml-2 text-yellow-400" title="Golden Lead">⭐</span>
         )}
       </td>
-      {/* Phone */}
       <td className="px-4 py-3">
         {phone ? (
           <a
@@ -617,20 +599,17 @@ function LeadRow({
           <span className="text-red-400 text-sm">No phone</span>
         )}
       </td>
-      {/* Property */}
       <td className="px-4 py-3 max-w-xs">
         <div className="text-zinc-300 truncate">{lead.property_address}</div>
         <div className="text-xs text-zinc-500">
           {lead.property_city || lead.city}, {lead.county} County
         </div>
       </td>
-      {/* Amount */}
       <td className="px-4 py-3 text-right">
         <span className={`font-mono font-semibold ${(lead.excess_funds_amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
           ${(lead.excess_funds_amount || 0).toLocaleString()}
         </span>
       </td>
-      {/* Score */}
       <td className="px-4 py-3 text-center">
         <span className={`font-bold ${getScoreColor(lead.eleanor_score || 0)}`}>
           {lead.eleanor_score || 0}
@@ -641,11 +620,9 @@ function LeadRow({
           </span>
         )}
       </td>
-      {/* Status */}
       <td className="px-4 py-3">
         <StatusBadge status={lead.status} />
       </td>
-      {/* Notes */}
       <td className="px-3 py-3 text-center">
         <button
           onClick={() => onNotesClick(lead)}
@@ -659,7 +636,6 @@ function LeadRow({
           {lead.notes ? '📝' : '📄'}
         </button>
       </td>
-      {/* Last Contact */}
       <td className="px-4 py-3 text-zinc-400 text-sm">
         {getRelativeTime(lead.last_contact_at)}
         {lead.contact_attempts > 0 && (
@@ -668,10 +644,8 @@ function LeadRow({
           </span>
         )}
       </td>
-      {/* Actions */}
       <td className="px-3 py-3">
         <div className="flex items-center gap-1">
-          {/* Skip Trace - only show if no phone */}
           {!leadHasPhone && (
             <button
               onClick={() => onSkipTrace(lead)}
@@ -687,7 +661,6 @@ function LeadRow({
             </button>
           )}
 
-          {/* Send to SAM - only show if has phone AND score */}
           {leadHasPhone && leadHasScore && (
             <button
               onClick={() => onSendToSam(lead)}
@@ -703,7 +676,6 @@ function LeadRow({
             </button>
           )}
 
-          {/* Edit - always visible, opens modal */}
           <button
             onClick={() => onEdit(lead)}
             className="px-2 py-1 text-xs bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30 rounded border border-yellow-500/30 transition-colors"
@@ -728,17 +700,11 @@ export default function LeadsDashboardPage() {
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [bulkLoading, setBulkLoading] = useState(false)
 
-  // Toast state
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' | 'info' } | null>(null)
-
-  // Edit modal state
   const [editingLead, setEditingLead] = useState<Lead | null>(null)
   const [savingLead, setSavingLead] = useState(false)
-
-  // Recently updated leads (for green highlight)
   const [recentlyUpdated, setRecentlyUpdated] = useState<Set<string>>(new Set())
 
-  // Stats
   const [stats, setStats] = useState({
     total: 0,
     withPhone: 0,
@@ -747,7 +713,6 @@ export default function LeadsDashboardPage() {
     potentialFee: 0,
   })
 
-  // Filters
   const [search, setSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('all')
   const [leadClassFilter, setLeadClassFilter] = useState('all')
@@ -755,17 +720,14 @@ export default function LeadsDashboardPage() {
   const [minAmount, setMinAmount] = useState(0)
   const [minScore, setMinScore] = useState(0)
 
-  // Sorting
   const [sortBy, setSortBy] = useState<SortField>('eleanor_score')
   const [sortOrder, setSortOrder] = useState<SortOrder>('desc')
 
-  // Pagination
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
   const [total, setTotal] = useState(0)
   const limit = 50
 
-  // Selected leads for bulk actions
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
 
   const showToast = useCallback((message: string, type: 'success' | 'error' | 'info') => {
@@ -799,7 +761,6 @@ export default function LeadsDashboardPage() {
       setTotalPages(data.totalPages || 1)
       setTotal(data.total || 0)
 
-      // Calculate stats from leads
       const withPhone = fetchedLeads.filter((l: Lead) => hasPhone(l)).length
       const highScore = fetchedLeads.filter((l: Lead) => (l.eleanor_score || 0) >= 80).length
       const totalValue = fetchedLeads.reduce((sum: number, l: Lead) => sum + (l.excess_funds_amount || 0), 0)
@@ -850,32 +811,39 @@ export default function LeadsDashboardPage() {
     }
   }
 
-  // Skip Trace webhook
+  // ========================================================================
+  // SKIP TRACE - NOW USING APIFY API (NOT N8N)
+  // ========================================================================
   const triggerSkipTrace = async (lead: Lead) => {
     setActionLoading(lead.id)
     try {
-      const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
+      const res = await fetch('/api/skip-trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          lead_id: lead.id,
-          owner_name: lead.owner_name,
-          property_address: lead.property_address,
+          leadId: lead.id,
+          name: lead.owner_name,
+          address: lead.property_address,
+          cityStateZip: `${lead.property_city || lead.city || ''}, ${lead.state || 'TX'}`,
         }),
       })
-      if (res.ok) {
-        showToast('Skip trace triggered! Check Telegram for updates.', 'success')
+      
+      const data = await res.json()
+      
+      if (res.ok && data.success) {
+        showToast(`Found phone: ${data.phone || 'Check lead details'}`, 'success')
+        await fetchLeads()
       } else {
-        throw new Error('Failed')
+        throw new Error(data.error || 'Skip trace failed')
       }
-    } catch {
-      showToast('Skip trace failed - n8n may be at execution limit', 'error')
+    } catch (err) {
+      showToast(err instanceof Error ? err.message : 'Skip trace failed', 'error')
     } finally {
       setActionLoading(null)
     }
   }
 
-  // SAM Outreach webhook
+  // SAM Outreach webhook (still uses N8N for now)
   const triggerSamOutreach = async (lead: Lead) => {
     setActionLoading(lead.id)
     try {
@@ -899,7 +867,9 @@ export default function LeadsDashboardPage() {
     }
   }
 
-  // Bulk skip trace
+  // ========================================================================
+  // BULK SKIP TRACE - NOW USING APIFY API (NOT N8N)
+  // ========================================================================
   const bulkSkipTrace = async () => {
     setBulkLoading(true)
     const selectedLeadsList = filteredLeads.filter((l) => selectedIds.has(l.id) && !hasPhone(l))
@@ -907,27 +877,30 @@ export default function LeadsDashboardPage() {
 
     for (const lead of selectedLeadsList) {
       try {
-        const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace', {
+        const res = await fetch('/api/skip-trace', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            lead_id: lead.id,
-            owner_name: lead.owner_name,
-            property_address: lead.property_address,
+            leadId: lead.id,
+            name: lead.owner_name,
+            address: lead.property_address,
+            cityStateZip: `${lead.property_city || lead.city || ''}, ${lead.state || 'TX'}`,
           }),
         })
-        if (res.ok) successCount++
+        const data = await res.json()
+        if (res.ok && data.success) successCount++
       } catch {
         // Continue with next
       }
     }
 
-    showToast(`Skip trace triggered for ${successCount} leads!`, successCount > 0 ? 'success' : 'error')
+    showToast(`Skip trace completed for ${successCount} leads!`, successCount > 0 ? 'success' : 'error')
     setSelectedIds(new Set())
     setBulkLoading(false)
+    await fetchLeads()
   }
 
-  // Bulk SAM outreach
+  // Bulk SAM outreach (still uses N8N)
   const bulkSendToSam = async () => {
     setBulkLoading(true)
     const selectedLeadsList = filteredLeads.filter(
@@ -956,7 +929,6 @@ export default function LeadsDashboardPage() {
     setBulkLoading(false)
   }
 
-  // Save lead changes
   const handleSaveLead = async (data: Partial<Lead>) => {
     if (!editingLead) return
     setSavingLead(true)
@@ -973,7 +945,6 @@ export default function LeadsDashboardPage() {
       showToast('Lead updated successfully!', 'success')
       setEditingLead(null)
 
-      // Add to recently updated for green highlight
       setRecentlyUpdated((prev) => new Set(prev).add(editingLead.id))
       setTimeout(() => {
         setRecentlyUpdated((prev) => {
@@ -983,7 +954,6 @@ export default function LeadsDashboardPage() {
         })
       }, 3000)
 
-      // Refresh leads
       await fetchLeads()
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'Failed to update lead', 'error')
@@ -992,7 +962,6 @@ export default function LeadsDashboardPage() {
     }
   }
 
-  // Filter leads by lead class on client side
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
       if (leadClassFilter === 'golden') return lead.is_golden
@@ -1010,7 +979,6 @@ export default function LeadsDashboardPage() {
 
   return (
     <div className="space-y-6">
-      {/* Toast */}
       {toast && (
         <Toast
           message={toast.message}
@@ -1019,7 +987,6 @@ export default function LeadsDashboardPage() {
         />
       )}
 
-      {/* Edit Modal */}
       {editingLead && (
         <LeadEditModal
           lead={editingLead}
@@ -1029,7 +996,6 @@ export default function LeadsDashboardPage() {
         />
       )}
 
-      {/* Header */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-white flex items-center gap-2">
@@ -1044,7 +1010,6 @@ export default function LeadsDashboardPage() {
         </Button>
       </div>
 
-      {/* Stats Grid */}
       <div className="grid grid-cols-5 gap-4">
         <StatsCard
           label="Total Leads"
@@ -1083,7 +1048,6 @@ export default function LeadsDashboardPage() {
         />
       </div>
 
-      {/* Filters */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-4 p-4 bg-zinc-900/50 rounded-xl border border-zinc-800">
         <div>
           <label className="text-xs text-zinc-400 mb-1 block">Search</label>
@@ -1174,7 +1138,6 @@ export default function LeadsDashboardPage() {
         </div>
       </div>
 
-      {/* Bulk Action Bar */}
       <BulkActionBar
         selectedCount={selectedIds.size}
         selectedLeads={selectedLeadsList}
@@ -1184,14 +1147,12 @@ export default function LeadsDashboardPage() {
         loading={bulkLoading}
       />
 
-      {/* Error State */}
       {error && (
         <div className="p-4 bg-red-950/50 border border-red-800 rounded-xl text-red-200">
           {error}
         </div>
       )}
 
-      {/* Table */}
       <div className="bg-zinc-900/50 border border-zinc-800 rounded-xl overflow-hidden">
         <table className="w-full">
           <thead>
@@ -1254,7 +1215,6 @@ export default function LeadsDashboardPage() {
         </table>
       </div>
 
-      {/* Pagination */}
       {totalPages > 1 && (
         <div className="flex items-center justify-between">
           <p className="text-sm text-zinc-400">
