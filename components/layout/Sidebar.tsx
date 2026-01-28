@@ -4,17 +4,31 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
-  { label: 'Dashboard', href: '/dashboard' },
-  { label: 'CEO Control', href: '/Executive' },
-  { label: 'Command Center', href: '/dashboard/command-center' },
-  { label: 'Leads', href: '/dashboard/leads' },
-  { label: 'Lead Health', href: '/dashboard/lead-health' },
-  { label: 'Pipeline', href: '/dashboard/pipeline' },
-  { label: 'Golden Leads', href: '/dashboard/golden-leads' },
-  { label: 'Messages', href: '/dashboard/messages' },
-  { label: 'Governance', href: '/dashboard/governance' },
-  { label: 'Smart Import', href: '/dashboard/upload' },
-  { label: 'Stats', href: '/dashboard/stats' },
+  // Core Operations
+  { label: '📊 Dashboard', href: '/dashboard' },
+  { label: '🎯 CEO Control', href: '/Executive' },
+  { label: '🎮 Command Center', href: '/dashboard/command-center' },
+  
+  // Lead Management
+  { label: '📋 All Leads', href: '/dashboard/leads' },
+  { label: '🩺 Lead Health', href: '/dashboard/lead-health' },
+  { label: '⭐ Golden Leads', href: '/dashboard/golden-leads' },
+  { label: '🏦 Lead Bank', href: '/lead-bank' },
+  
+  // Revenue Generation
+  { label: '💰 Marketplace', href: '/marketplace' },
+  { label: '👥 Buyers', href: '/buyers' },
+  { label: '📈 Pipeline', href: '/dashboard/pipeline' },
+  
+  // Communication
+  { label: '💬 Messages', href: '/dashboard/messages' },
+  
+  // Data & Import
+  { label: '📤 Smart Import', href: '/dashboard/upload' },
+  { label: '📉 Stats', href: '/dashboard/stats' },
+  
+  // System
+  { label: '⚙️ Governance', href: '/dashboard/governance' },
 ]
 
 export default function Sidebar() {

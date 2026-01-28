@@ -100,9 +100,12 @@ export async function POST(request: NextRequest) {
     if (!results || results.length === 0) {
       // Update lead status even if no results found
       await supabase
-        .from('leads')
+        .from('maxsam_leads')
         .update({ 
           status: 'skip_traced',
+          skip_traced: true,
+          skip_traced_at: new Date().toISOString(),
+          skip_trace_success: false,
           updated_at: new Date().toISOString()
         })
         .eq('id', leadId)
@@ -122,22 +125,27 @@ export async function POST(request: NextRequest) {
     // Update lead in database
     const updateData: Record<string, unknown> = {
       status: 'skip_traced',
+      skip_traced: true,
+      skip_traced_at: new Date().toISOString(),
+      skip_trace_success: !!phone,
       updated_at: new Date().toISOString()
     }
 
     if (phone) {
       updateData.primary_phone = phone
       updateData.phone = phone
+      updateData.phone_1 = phone
     }
     if (email) {
       updateData.primary_email = email
+      updateData.email = email
     }
 
     // Store full result in notes or a JSON field if available
     updateData.notes = `Skip trace result: ${JSON.stringify(firstResult).slice(0, 500)}`
 
     const { error: updateError } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .update(updateData)
       .eq('id', leadId)
 

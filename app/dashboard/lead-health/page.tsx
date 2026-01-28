@@ -434,16 +434,16 @@ function LeadTable({
   )
 }
 
-function N8NWarningBanner() {
+function SystemStatusBanner() {
   return (
-    <div className="bg-gradient-to-r from-orange-500/10 to-red-500/10 border border-orange-500/30 rounded-xl p-4 mt-6">
+    <div className="bg-gradient-to-r from-emerald-500/10 to-cyan-500/10 border border-emerald-500/30 rounded-xl p-4 mt-6">
       <div className="flex items-start gap-3">
-        <span className="text-2xl">⚠️</span>
+        <span className="text-2xl">✅</span>
         <div>
-          <h4 className="text-orange-400 font-semibold mb-1">N8N Execution Limit Reached</h4>
+          <h4 className="text-emerald-400 font-semibold mb-1">System Running Direct APIs</h4>
           <p className="text-zinc-400 text-sm">
-            You&apos;ve used 2,500/2,500 executions for January. Workflows won&apos;t run until February
-            1st unless you upgrade your n8n plan or self-host.
+            All workflows now use direct API calls (Apify, Twilio, OpenAI) - no N8N dependency.
+            Skip Trace, Eleanor Scoring, and SAM Outreach are fully operational.
           </p>
         </div>
       </div>
@@ -527,22 +527,28 @@ export default function LeadHealthPage() {
   const getStageValue = (stage: PipelineStage) =>
     leadsByStage[stage].reduce((sum, lead) => sum + (lead.excess_funds_amount || 0), 0)
 
-  // N8N webhook handlers
+  // Direct API handlers (no N8N dependency)
   const triggerSkipTrace = async () => {
     setActionLoading('needs_skip_trace')
     try {
-      const res = await fetch('https://skooki.app.n8n.cloud/webhook/skip-trace-now', {
+      const res = await fetch('/api/cron/alex-skip-trace', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', source: 'lead-health' }),
+        body: JSON.stringify({ limit: 25 }),
       })
+      const data = await res.json()
       if (res.ok) {
-        setToastMessage({ type: 'success', message: 'Skip trace triggered! Check Telegram for updates.' })
+        setToastMessage({ 
+          type: 'success', 
+          message: `Skip trace complete: ${data.successful || 0} found, ${data.failed || 0} failed` 
+        })
+        // Refresh leads after skip trace
+        setTimeout(fetchLeads, 2000)
       } else {
-        throw new Error('Failed')
+        throw new Error(data.error || 'Failed')
       }
-    } catch {
-      setToastMessage({ type: 'error', message: 'Failed - n8n may be at execution limit (2500/2500)' })
+    } catch (err) {
+      setToastMessage({ type: 'error', message: err instanceof Error ? err.message : 'Skip trace failed' })
     } finally {
       setActionLoading(null)
     }
@@ -551,18 +557,24 @@ export default function LeadHealthPage() {
   const triggerEleanor = async () => {
     setActionLoading('needs_scoring')
     try {
-      const res = await fetch('https://skooki.app.n8n.cloud/webhook/eleanor-score', {
+      const res = await fetch('/api/eleanor/score-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', source: 'lead-health' }),
+        body: JSON.stringify({ status: ['new', 'skip_traced'], limit: 100 }),
       })
+      const data = await res.json()
       if (res.ok) {
-        setToastMessage({ type: 'success', message: 'ELEANOR scoring triggered! Check Telegram for updates.' })
+        setToastMessage({ 
+          type: 'success', 
+          message: `ELEANOR scored ${data.scored || 0} leads` 
+        })
+        // Refresh leads after scoring
+        setTimeout(fetchLeads, 1000)
       } else {
-        throw new Error('Failed')
+        throw new Error(data.error || 'Failed')
       }
-    } catch {
-      setToastMessage({ type: 'error', message: 'Failed - n8n may be at execution limit (2500/2500)' })
+    } catch (err) {
+      setToastMessage({ type: 'error', message: err instanceof Error ? err.message : 'Scoring failed' })
     } finally {
       setActionLoading(null)
     }
@@ -571,18 +583,30 @@ export default function LeadHealthPage() {
   const triggerSamOutreach = async () => {
     setActionLoading('ready_for_outreach')
     try {
-      const res = await fetch('https://skooki.app.n8n.cloud/webhook/sam-outreach', {
+      const res = await fetch('/api/sam/campaign', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ trigger: 'manual', source: 'lead-health' }),
+        body: JSON.stringify({ 
+          target_class: 'all', 
+          limit: 25,
+          min_score: 50,
+          require_amount: true 
+        }),
       })
+      const data = await res.json()
       if (res.ok) {
-        setToastMessage({ type: 'success', message: 'SAM outreach triggered! Check Telegram for updates.' })
+        const results = data.results || {}
+        setToastMessage({ 
+          type: 'success', 
+          message: `SAM sent ${results.success || 0} SMS, ${results.failed || 0} failed` 
+        })
+        // Refresh leads after outreach
+        setTimeout(fetchLeads, 2000)
       } else {
-        throw new Error('Failed')
+        throw new Error(data.error || 'Failed')
       }
-    } catch {
-      setToastMessage({ type: 'error', message: 'Failed - n8n may be at execution limit (2500/2500)' })
+    } catch (err) {
+      setToastMessage({ type: 'error', message: err instanceof Error ? err.message : 'Outreach failed' })
     } finally {
       setActionLoading(null)
     }
@@ -697,8 +721,8 @@ export default function LeadHealthPage() {
         />
       )}
 
-      {/* N8N Warning Banner */}
-      <N8NWarningBanner />
+      {/* System Status Banner */}
+      <SystemStatusBanner />
     </div>
   )
 }
