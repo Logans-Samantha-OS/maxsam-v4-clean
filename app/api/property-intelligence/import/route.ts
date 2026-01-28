@@ -1,6 +1,6 @@
 // MaxSam V4 - Property Intelligence Import API
 // Imports Propwire JSON data into property_intelligence table
-// Supports both Apify scraper format and CSV-converted format
+// Updated to match existing Supabase schema
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
@@ -80,8 +80,8 @@ function normalizeLeadTypes(leadTypes: string[]): string[] {
 }
 
 // Transform property data to database schema
+// ONLY includes columns that exist in Supabase table
 function transformProperty(prop: any) {
-  // Handle both formats (Apify detailed and CSV-converted)
   const leadTypes = normalizeLeadTypes(prop.lead_types || prop.leadTypes || []);
   const equityPercent = prop.equity_percent || prop.equityPercent || 0;
   const distressScore = calculateDistressScore(leadTypes, equityPercent);
@@ -93,55 +93,30 @@ function transformProperty(prop: any) {
     estimatedEquity = Math.round(estimatedValue * (equityPercent / 100));
   }
   
+  // Use property_id as the unique identifier
+  const propwireId = prop.property_id || prop.propwire_id || `prop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+  
+  // Return ONLY fields that exist in the Supabase table
   return {
-    propwire_id: prop.property_id || prop.propwire_id || prop.id?.toString() || `prop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-    
-    // Address
+    property_id: propwireId,
     address: prop.address || null,
     city: prop.city || null,
     state: prop.state || 'TX',
-    zip: prop.zip_code || prop.zip || null,
+    zip_code: prop.zip_code || prop.zip || null,
     county: prop.county || 'Dallas',
-    
-    // Property details
     property_type: prop.property_type || prop.propertyType || 'Single Family',
-    sqft: prop.sqft || prop.living_area_sf || null,
-    lot_sqft: prop.lot_sqft || prop.lot_size_sf || null,
-    bedrooms: prop.bedrooms || null,
-    bathrooms: prop.bathrooms || null,
-    year_built: prop.year_built || null,
-    
-    // Owner info
-    owner_name: prop.owner_name || prop.ownerName || null,
-    borrower_name: prop.borrower_name || null,
-    owner_occupied: prop.ownership_type !== 'Absentee' && !leadTypes.includes('ABSENTEE_OWNER'),
-    
-    // Values
+    ownership_type: prop.ownership_type || null,
     estimated_value: estimatedValue || null,
     estimated_equity: estimatedEquity || null,
     equity_percent: equityPercent || null,
-    
-    // Distress signals
+    sqft: prop.sqft || null,
     lead_types: leadTypes,
-    is_preforeclosure: leadTypes.some(t => t.includes('PREFORECLOSURE')),
-    is_foreclosure: leadTypes.some(t => t.includes('FORECLOSURE') && !t.includes('PRE')),
-    is_auction: leadTypes.some(t => t.includes('AUCTION')),
-    is_vacant: leadTypes.some(t => t.includes('VACANT')),
-    is_absentee: leadTypes.some(t => t.includes('ABSENTEE')),
-    is_high_equity: leadTypes.some(t => t.includes('HIGH_EQUITY')) || equityPercent >= 50,
-    
-    // Foreclosure details (if available)
-    foreclosure_auction_date: prop.foreclosure_details?.auction_date || prop.auction_date || null,
-    foreclosure_case_number: prop.foreclosure_details?.case_number || null,
-    
+    source: prop.source || 'propwire',
+    scraped_at: prop.scraped_at || new Date().toISOString().split('T')[0],
     // Calculated fields
     distress_score: distressScore,
     situation_type: determineSituationType(leadTypes),
     opportunity_tier: determineOpportunityTier(distressScore, equityPercent),
-    
-    // Metadata
-    data_source: prop.source || 'propwire',
-    imported_at: new Date().toISOString(),
   };
 }
 
@@ -157,8 +132,7 @@ export async function POST(request: Request) {
     const results = {
       total: properties.length,
       imported: 0,
-      updated: 0,
-      errors: [] as { index: number; error: string }[],
+      errors: [] as { index: number; address: string; error: string }[],
     };
     
     // Process in batches of 50
@@ -170,20 +144,25 @@ export async function POST(request: Request) {
       const { data, error } = await supabase
         .from('property_intelligence')
         .upsert(transformedBatch, { 
-          onConflict: 'propwire_id',
+          onConflict: 'property_id',
           ignoreDuplicates: false 
         })
-        .select('id');
+        .select('property_id');
       
       if (error) {
         // Try inserting one by one to identify problematic records
         for (let j = 0; j < transformedBatch.length; j++) {
+          const prop = transformedBatch[j];
           const { error: singleError } = await supabase
             .from('property_intelligence')
-            .upsert(transformedBatch[j], { onConflict: 'propwire_id' });
+            .upsert(prop, { onConflict: 'property_id' });
           
           if (singleError) {
-            results.errors.push({ index: i + j, error: singleError.message });
+            results.errors.push({ 
+              index: i + j, 
+              address: prop.address || 'unknown',
+              error: singleError.message 
+            });
           } else {
             results.imported++;
           }
@@ -196,9 +175,7 @@ export async function POST(request: Request) {
     // Get summary stats
     const { data: stats } = await supabase
       .from('property_intelligence')
-      .select('opportunity_tier, distress_score, estimated_equity')
-      .order('imported_at', { ascending: false })
-      .limit(properties.length);
+      .select('opportunity_tier, distress_score, estimated_equity');
     
     const tierCounts = {
       golden: stats?.filter(s => s.opportunity_tier === 'golden').length || 0,
@@ -214,6 +191,7 @@ export async function POST(request: Request) {
       message: `Imported ${results.imported} of ${results.total} properties`,
       ...results,
       summary: {
+        totalProperties: stats?.length || 0,
         tierCounts,
         totalEquity,
         avgDistressScore: stats?.length 
