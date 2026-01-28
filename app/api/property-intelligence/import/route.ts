@@ -1,5 +1,6 @@
 // MaxSam V4 - Property Intelligence Import API
 // Imports Propwire JSON data into property_intelligence table
+// Supports both Apify scraper format and CSV-converted format
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
@@ -9,84 +10,32 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-interface PropwireProperty {
-  id: number;
-  property_details?: {
-    address_details?: {
-      address?: string;
-      city?: string;
-      state?: string;
-      zip?: string;
-      county?: string;
-      label?: string;
-    };
-    building_details?: {
-      bedrooms?: number;
-      bathrooms?: number;
-      building_area_sf?: number;
-      living_area_sf?: number;
-      year_built?: number;
-      stories?: number;
-    };
-    building_interior_details?: {
-      bedrooms?: number;
-      bathrooms?: number;
-    };
-  };
-  parcel_details?: {
-    property_type?: string;
-    lot_size_sf?: number;
-    lot_size_acres?: string;
-  };
-  owner_details?: {
-    owner_names?: string[];
-    owner_occupied?: boolean;
-    owner_mailing_address_details?: {
-      label?: string;
-    };
-  };
-  equity_details?: {
-    estimated_equity?: number;
-    estimated_equity_percentage?: number;
-    estimated_value?: number;
-  };
-  lead_type?: string[];
-  foreclosure_details?: {
-    active?: boolean;
-    auction_date?: string;
-    auction_time?: string;
-    borrower_name?: string;
-    lender_name?: string;
-    case_number?: string;
-    opening_bid?: number;
-    default_amount?: number;
-  };
-  current_mortgages?: Array<{
-    loan_balance?: string;
-    lender_name?: string;
-    interest_rate?: string;
-    loan_type?: string;
-  }>;
-}
-
 // Calculate distress score based on lead types
-function calculateDistressScore(leadTypes: string[]): number {
+function calculateDistressScore(leadTypes: string[], equityPercent: number): number {
   let score = 0;
   
-  if (leadTypes.includes('PREFORECLOSURE')) score += 30;
-  if (leadTypes.includes('FORECLOSURE')) score += 35;
-  if (leadTypes.includes('AUCTION')) score += 25;
-  if (leadTypes.includes('TAX_LIEN')) score += 25;
-  if (leadTypes.includes('PROBATE')) score += 20;
-  if (leadTypes.includes('DIVORCE')) score += 20;
-  if (leadTypes.includes('BANKRUPTCY')) score += 20;
-  if (leadTypes.includes('VACANT')) score += 15;
-  if (leadTypes.includes('TIRED_LANDLORD')) score += 10;
-  if (leadTypes.includes('ABSENTEE_OWNER')) score += 10;
-  if (leadTypes.includes('HIGH_EQUITY')) score += 10;
-  if (leadTypes.includes('FREE_AND_CLEAR')) score += 5;
-  if (leadTypes.includes('CASH_BUYER')) score += 5;
-  if (leadTypes.includes('ASSUMABLE_LOAN')) score += 5;
+  const types = leadTypes.map(t => t.toUpperCase().replace(/\s+/g, '_'));
+  
+  if (types.some(t => t.includes('PREFORECLOSURE'))) score += 30;
+  if (types.some(t => t.includes('FORECLOSURE') && !t.includes('PRE'))) score += 35;
+  if (types.some(t => t.includes('AUCTION'))) score += 25;
+  if (types.some(t => t.includes('TAX_LIEN') || t.includes('TAX'))) score += 25;
+  if (types.some(t => t.includes('PROBATE'))) score += 20;
+  if (types.some(t => t.includes('DIVORCE'))) score += 20;
+  if (types.some(t => t.includes('BANKRUPTCY'))) score += 20;
+  if (types.some(t => t.includes('VACANT'))) score += 15;
+  if (types.some(t => t.includes('TIRED_LANDLORD') || t.includes('TIRED'))) score += 10;
+  if (types.some(t => t.includes('ABSENTEE'))) score += 10;
+  if (types.some(t => t.includes('HIGH_EQUITY') || t.includes('HIGH'))) score += 10;
+  if (types.some(t => t.includes('FREE_AND_CLEAR') || t.includes('FREE'))) score += 5;
+  if (types.some(t => t.includes('CASH_BUYER'))) score += 5;
+  if (types.some(t => t.includes('ASSUMABLE'))) score += 5;
+  if (types.some(t => t.includes('BARGAIN'))) score += 15;
+  
+  // Equity bonus
+  if (equityPercent >= 80) score += 15;
+  else if (equityPercent >= 60) score += 10;
+  else if (equityPercent >= 40) score += 5;
   
   return Math.min(score, 100);
 }
@@ -101,86 +50,89 @@ function determineOpportunityTier(distressScore: number, equityPercent: number):
 
 // Determine situation type from lead types
 function determineSituationType(leadTypes: string[]): string {
-  if (leadTypes.includes('PREFORECLOSURE')) return 'preforeclosure';
-  if (leadTypes.includes('FORECLOSURE')) return 'foreclosure';
-  if (leadTypes.includes('AUCTION')) return 'auction';
-  if (leadTypes.includes('TAX_LIEN')) return 'tax_lien';
-  if (leadTypes.includes('PROBATE')) return 'probate';
-  if (leadTypes.includes('DIVORCE')) return 'divorce';
-  if (leadTypes.includes('VACANT')) return 'vacant';
-  if (leadTypes.includes('ABSENTEE_OWNER')) return 'absentee';
-  if (leadTypes.includes('HIGH_EQUITY')) return 'high_equity';
+  const types = leadTypes.map(t => t.toUpperCase());
+  
+  if (types.some(t => t.includes('PREFORECLOSURE'))) return 'preforeclosure';
+  if (types.some(t => t.includes('FORECLOSURE'))) return 'foreclosure';
+  if (types.some(t => t.includes('AUCTION'))) return 'auction';
+  if (types.some(t => t.includes('TAX'))) return 'tax_lien';
+  if (types.some(t => t.includes('PROBATE'))) return 'probate';
+  if (types.some(t => t.includes('DIVORCE'))) return 'divorce';
+  if (types.some(t => t.includes('VACANT'))) return 'vacant';
+  if (types.some(t => t.includes('ABSENTEE'))) return 'absentee';
+  if (types.some(t => t.includes('HIGH_EQUITY') || t.includes('HIGH'))) return 'high_equity';
   return 'unknown';
 }
 
-// Transform Propwire data to property_intelligence schema
-function transformPropwireData(prop: PropwireProperty) {
-  const address = prop.property_details?.address_details;
-  const building = prop.property_details?.building_details;
-  const interior = prop.property_details?.building_interior_details;
-  const owner = prop.owner_details;
-  const equity = prop.equity_details;
-  const foreclosure = prop.foreclosure_details;
-  const leadTypes = prop.lead_type || [];
+// Normalize lead types
+function normalizeLeadTypes(leadTypes: string[]): string[] {
+  return leadTypes
+    .filter(t => t && !t.match(/^\d+\+?$/)) // Remove "4+", "7+" etc
+    .map(t => t.toUpperCase().replace(/\s+/g, '_')
+      .replace('PREFORECLOSURES', 'PREFORECLOSURE')
+      .replace('AUCTIONS', 'AUCTION')
+      .replace('ABSENTEE_OWNERS', 'ABSENTEE_OWNER')
+      .replace('CASH_BUYERS', 'CASH_BUYER')
+      .replace('EMPTY_NESTERS', 'EMPTY_NESTER')
+      .replace('TIRED_LANDLORDS', 'TIRED_LANDLORD')
+      .replace('BARGAIN_PROPERTIES', 'BARGAIN')
+    );
+}
+
+// Transform property data to database schema
+function transformProperty(prop: any) {
+  // Handle both formats (Apify detailed and CSV-converted)
+  const leadTypes = normalizeLeadTypes(prop.lead_types || prop.leadTypes || []);
+  const equityPercent = prop.equity_percent || prop.equityPercent || 0;
+  const distressScore = calculateDistressScore(leadTypes, equityPercent);
   
-  const distressScore = calculateDistressScore(leadTypes);
-  const equityPercent = equity?.estimated_equity_percentage || 0;
+  // Get estimated equity - calculate if not provided
+  let estimatedEquity = prop.estimated_equity || prop.estimatedEquity || 0;
+  const estimatedValue = prop.estimated_value || prop.estimatedValue || 0;
+  if (!estimatedEquity && equityPercent > 0 && estimatedValue > 0) {
+    estimatedEquity = Math.round(estimatedValue * (equityPercent / 100));
+  }
   
   return {
-    propwire_id: String(prop.id),
+    propwire_id: prop.property_id || prop.propwire_id || prop.id?.toString() || `prop_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
     
     // Address
-    address: address?.address || address?.label?.split(',')[0] || null,
-    city: address?.city || null,
-    state: address?.state || 'TX',
-    zip: address?.zip || null,
-    county: address?.county || 'Dallas',
-    
-    // Owner
-    owner_name: owner?.owner_names?.[0] || null,
-    borrower_name: foreclosure?.borrower_name || null,
-    mailing_address: owner?.owner_mailing_address_details?.label || null,
-    owner_occupied: owner?.owner_occupied || false,
+    address: prop.address || null,
+    city: prop.city || null,
+    state: prop.state || 'TX',
+    zip: prop.zip_code || prop.zip || null,
+    county: prop.county || 'Dallas',
     
     // Property details
-    property_type: prop.parcel_details?.property_type || 'SFR',
-    bedrooms: interior?.bedrooms || building?.bedrooms || null,
-    bathrooms: interior?.bathrooms || building?.bathrooms || null,
-    sqft: building?.living_area_sf || building?.building_area_sf || null,
-    lot_sqft: prop.parcel_details?.lot_size_sf || null,
-    year_built: building?.year_built || null,
-    stories: building?.stories || null,
+    property_type: prop.property_type || prop.propertyType || 'Single Family',
+    sqft: prop.sqft || prop.living_area_sf || null,
+    lot_sqft: prop.lot_sqft || prop.lot_size_sf || null,
+    bedrooms: prop.bedrooms || null,
+    bathrooms: prop.bathrooms || null,
+    year_built: prop.year_built || null,
+    
+    // Owner info
+    owner_name: prop.owner_name || prop.ownerName || null,
+    borrower_name: prop.borrower_name || null,
+    owner_occupied: prop.ownership_type !== 'Absentee' && !leadTypes.includes('ABSENTEE_OWNER'),
     
     // Values
-    estimated_value: equity?.estimated_value || null,
-    estimated_equity: equity?.estimated_equity || null,
-    equity_percent: equityPercent,
-    
-    // Mortgage info
-    mortgage_balance: prop.current_mortgages?.[0]?.loan_balance 
-      ? parseFloat(prop.current_mortgages[0].loan_balance) 
-      : null,
-    lender_name: prop.current_mortgages?.[0]?.lender_name || foreclosure?.lender_name || null,
-    interest_rate: prop.current_mortgages?.[0]?.interest_rate 
-      ? parseFloat(prop.current_mortgages[0].interest_rate) 
-      : null,
-    loan_type: prop.current_mortgages?.[0]?.loan_type || null,
+    estimated_value: estimatedValue || null,
+    estimated_equity: estimatedEquity || null,
+    equity_percent: equityPercent || null,
     
     // Distress signals
     lead_types: leadTypes,
-    is_preforeclosure: leadTypes.includes('PREFORECLOSURE'),
-    is_foreclosure: leadTypes.includes('FORECLOSURE'),
-    is_auction: foreclosure?.active || false,
-    is_vacant: leadTypes.includes('VACANT'),
-    is_absentee: leadTypes.includes('ABSENTEE_OWNER'),
-    is_high_equity: leadTypes.includes('HIGH_EQUITY'),
+    is_preforeclosure: leadTypes.some(t => t.includes('PREFORECLOSURE')),
+    is_foreclosure: leadTypes.some(t => t.includes('FORECLOSURE') && !t.includes('PRE')),
+    is_auction: leadTypes.some(t => t.includes('AUCTION')),
+    is_vacant: leadTypes.some(t => t.includes('VACANT')),
+    is_absentee: leadTypes.some(t => t.includes('ABSENTEE')),
+    is_high_equity: leadTypes.some(t => t.includes('HIGH_EQUITY')) || equityPercent >= 50,
     
-    // Foreclosure details
-    foreclosure_auction_date: foreclosure?.auction_date || null,
-    foreclosure_auction_time: foreclosure?.auction_time || null,
-    foreclosure_case_number: foreclosure?.case_number || null,
-    opening_bid: foreclosure?.opening_bid || null,
-    default_amount: foreclosure?.default_amount || null,
+    // Foreclosure details (if available)
+    foreclosure_auction_date: prop.foreclosure_details?.auction_date || prop.auction_date || null,
+    foreclosure_case_number: prop.foreclosure_details?.case_number || null,
     
     // Calculated fields
     distress_score: distressScore,
@@ -188,16 +140,15 @@ function transformPropwireData(prop: PropwireProperty) {
     opportunity_tier: determineOpportunityTier(distressScore, equityPercent),
     
     // Metadata
-    data_source: 'propwire',
+    data_source: prop.source || 'propwire',
     imported_at: new Date().toISOString(),
-    raw_data: prop,
   };
 }
 
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    const properties: PropwireProperty[] = Array.isArray(body) ? body : [body];
+    const properties: any[] = Array.isArray(body) ? body : [body];
     
     if (properties.length === 0) {
       return NextResponse.json({ error: 'No properties provided' }, { status: 400 });
@@ -206,38 +157,69 @@ export async function POST(request: Request) {
     const results = {
       total: properties.length,
       imported: 0,
-      errors: [] as { id: number; error: string }[],
-      imported_ids: [] as string[],
+      updated: 0,
+      errors: [] as { index: number; error: string }[],
     };
     
-    for (const prop of properties) {
-      try {
-        const transformed = transformPropwireData(prop);
-        
-        const { data, error } = await supabase
-          .from('property_intelligence')
-          .upsert(transformed, { 
-            onConflict: 'propwire_id',
-            ignoreDuplicates: false 
-          })
-          .select('id, propwire_id')
-          .single();
-        
-        if (error) {
-          results.errors.push({ id: prop.id, error: error.message });
-        } else {
-          results.imported++;
-          results.imported_ids.push(data.id);
+    // Process in batches of 50
+    const batchSize = 50;
+    for (let i = 0; i < properties.length; i += batchSize) {
+      const batch = properties.slice(i, i + batchSize);
+      const transformedBatch = batch.map(transformProperty);
+      
+      const { data, error } = await supabase
+        .from('property_intelligence')
+        .upsert(transformedBatch, { 
+          onConflict: 'propwire_id',
+          ignoreDuplicates: false 
+        })
+        .select('id');
+      
+      if (error) {
+        // Try inserting one by one to identify problematic records
+        for (let j = 0; j < transformedBatch.length; j++) {
+          const { error: singleError } = await supabase
+            .from('property_intelligence')
+            .upsert(transformedBatch[j], { onConflict: 'propwire_id' });
+          
+          if (singleError) {
+            results.errors.push({ index: i + j, error: singleError.message });
+          } else {
+            results.imported++;
+          }
         }
-      } catch (err: any) {
-        results.errors.push({ id: prop.id, error: err.message });
+      } else {
+        results.imported += data?.length || batch.length;
       }
     }
+    
+    // Get summary stats
+    const { data: stats } = await supabase
+      .from('property_intelligence')
+      .select('opportunity_tier, distress_score, estimated_equity')
+      .order('imported_at', { ascending: false })
+      .limit(properties.length);
+    
+    const tierCounts = {
+      golden: stats?.filter(s => s.opportunity_tier === 'golden').length || 0,
+      hot: stats?.filter(s => s.opportunity_tier === 'hot').length || 0,
+      warm: stats?.filter(s => s.opportunity_tier === 'warm').length || 0,
+      cold: stats?.filter(s => s.opportunity_tier === 'cold').length || 0,
+    };
+    
+    const totalEquity = stats?.reduce((sum, s) => sum + (s.estimated_equity || 0), 0) || 0;
     
     return NextResponse.json({
       success: true,
       message: `Imported ${results.imported} of ${results.total} properties`,
       ...results,
+      summary: {
+        tierCounts,
+        totalEquity,
+        avgDistressScore: stats?.length 
+          ? Math.round(stats.reduce((sum, s) => sum + (s.distress_score || 0), 0) / stats.length)
+          : 0,
+      }
     });
     
   } catch (error: any) {
