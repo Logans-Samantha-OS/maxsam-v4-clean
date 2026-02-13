@@ -1,5 +1,5 @@
 // MaxSam V4 - Property Intelligence Import API
-// Imports Propwire JSON data into property_intelligence table
+// Imports Propwire JSON data with foreclosure_borrower for golden lead matching
 
 import { createClient } from '@supabase/supabase-js';
 import { NextResponse } from 'next/server';
@@ -9,7 +9,7 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// Calculate distress score based on lead types
+// Calculate distress score
 function calculateDistressScore(leadTypes: string[], equityPercent: number): number {
   let score = 0;
   const types = leadTypes.map(t => t.toUpperCase().replace(/\s+/g, '_'));
@@ -19,14 +19,10 @@ function calculateDistressScore(leadTypes: string[], equityPercent: number): num
   if (types.some(t => t.includes('AUCTION'))) score += 25;
   if (types.some(t => t.includes('TAX'))) score += 25;
   if (types.some(t => t.includes('PROBATE'))) score += 20;
-  if (types.some(t => t.includes('DIVORCE'))) score += 20;
   if (types.some(t => t.includes('VACANT'))) score += 15;
-  if (types.some(t => t.includes('TIRED'))) score += 10;
   if (types.some(t => t.includes('ABSENTEE'))) score += 10;
   if (types.some(t => t.includes('HIGH_EQUITY') || t.includes('HIGH'))) score += 10;
   if (types.some(t => t.includes('BARGAIN'))) score += 15;
-  if (types.some(t => t.includes('CASH_BUYER'))) score += 5;
-  if (types.some(t => t.includes('ASSUMABLE'))) score += 5;
   
   if (equityPercent >= 80) score += 15;
   else if (equityPercent >= 60) score += 10;
@@ -49,8 +45,6 @@ function determineSituationType(leadTypes: string[]): string {
   if (types.some(t => t.includes('PREFORECLOSURE'))) return 'preforeclosure';
   if (types.some(t => t.includes('FORECLOSURE'))) return 'foreclosure';
   if (types.some(t => t.includes('AUCTION'))) return 'auction';
-  if (types.some(t => t.includes('TAX'))) return 'tax_lien';
-  if (types.some(t => t.includes('PROBATE'))) return 'probate';
   if (types.some(t => t.includes('VACANT'))) return 'vacant';
   if (types.some(t => t.includes('ABSENTEE'))) return 'absentee';
   if (types.some(t => t.includes('HIGH_EQUITY'))) return 'high_equity';
@@ -65,14 +59,10 @@ function normalizeLeadTypes(leadTypes: string[]): string[] {
       .replace('PREFORECLOSURES', 'PREFORECLOSURE')
       .replace('AUCTIONS', 'AUCTION')
       .replace('ABSENTEE_OWNERS', 'ABSENTEE_OWNER')
-      .replace('CASH_BUYERS', 'CASH_BUYER')
-      .replace('EMPTY_NESTERS', 'EMPTY_NESTER')
-      .replace('TIRED_LANDLORDS', 'TIRED_LANDLORD')
-      .replace('BARGAIN_PROPERTIES', 'BARGAIN')
     );
 }
 
-// Transform property - ONLY include columns that exist in Supabase
+// Transform property data
 function transformProperty(prop: any) {
   const leadTypes = normalizeLeadTypes(prop.lead_types || []);
   const equityPercent = Math.max(0, prop.equity_percent || 0);
@@ -84,6 +74,41 @@ function transformProperty(prop: any) {
   const estimatedValue = prop.estimated_value || 0;
   if (!estimatedEquity && equityPercent > 0 && estimatedValue > 0) {
     estimatedEquity = Math.round(estimatedValue * (equityPercent / 100));
+  }
+  
+  // Extract foreclosure_borrower from various possible locations in Propwire data
+  const foreclosureBorrower = 
+    prop.foreclosure_borrower ||
+    prop.foreclosure_details?.borrower_name ||
+    prop.foreclosure_details?.borrower ||
+    prop.borrower_name ||
+    prop.borrower ||
+    null;
+  
+  // Extract owner_name
+  const ownerName = 
+    prop.owner_name ||
+    prop.basicInfo?.owner_name?.[0] ||
+    prop.owner_details?.owner_names?.[0] ||
+    prop.owner_details?.owner_name ||
+    null;
+  
+  // Extract auction_date
+  const auctionDateRaw = 
+    prop.auction_date ||
+    prop.foreclosure_details?.auction_date ||
+    prop.foreclosure_details?.sale_date ||
+    null;
+  
+  // Parse auction date
+  let auctionDate = null;
+  if (auctionDateRaw) {
+    try {
+      const parsed = new Date(auctionDateRaw);
+      if (!isNaN(parsed.getTime())) {
+        auctionDate = parsed.toISOString().split('T')[0];
+      }
+    } catch {}
   }
   
   return {
@@ -102,6 +127,10 @@ function transformProperty(prop: any) {
     lead_types: leadTypes,
     source: prop.source || 'propwire',
     scraped_at: prop.scraped_at || new Date().toISOString().split('T')[0],
+    // NEW: Foreclosure/owner fields for golden lead matching
+    foreclosure_borrower: foreclosureBorrower,
+    owner_name: ownerName,
+    auction_date: auctionDate,
     // Calculated fields
     distress_score: distressScore,
     situation_type: determineSituationType(leadTypes),
@@ -121,6 +150,7 @@ export async function POST(request: Request) {
     const results = {
       total: properties.length,
       imported: 0,
+      withBorrower: 0,
       errors: [] as { index: number; address: string; error: string }[],
     };
     
@@ -129,6 +159,9 @@ export async function POST(request: Request) {
     for (let i = 0; i < properties.length; i += batchSize) {
       const batch = properties.slice(i, i + batchSize);
       const transformedBatch = batch.map(transformProperty);
+      
+      // Count how many have borrower names
+      results.withBorrower += transformedBatch.filter(p => p.foreclosure_borrower).length;
       
       const { data, error } = await supabase
         .from('property_intelligence')
@@ -139,7 +172,7 @@ export async function POST(request: Request) {
         .select('property_id');
       
       if (error) {
-        // Try one by one
+        // Try one by one to identify issues
         for (let j = 0; j < transformedBatch.length; j++) {
           const prop = transformedBatch[j];
           const { error: singleError } = await supabase
@@ -164,7 +197,7 @@ export async function POST(request: Request) {
     // Get summary stats
     const { data: stats } = await supabase
       .from('property_intelligence')
-      .select('opportunity_tier, distress_score, estimated_equity, situation_type');
+      .select('opportunity_tier, distress_score, estimated_equity, situation_type, foreclosure_borrower');
     
     const tierCounts = {
       golden: stats?.filter(s => s.opportunity_tier === 'golden').length || 0,
@@ -173,6 +206,7 @@ export async function POST(request: Request) {
       cold: stats?.filter(s => s.opportunity_tier === 'cold').length || 0,
     };
     
+    const withBorrowerTotal = stats?.filter(s => s.foreclosure_borrower).length || 0;
     const preforeclosures = stats?.filter(s => s.situation_type === 'preforeclosure').length || 0;
     const totalEquity = stats?.reduce((sum, s) => sum + (s.estimated_equity || 0), 0) || 0;
     
@@ -182,6 +216,7 @@ export async function POST(request: Request) {
       ...results,
       summary: {
         totalProperties: stats?.length || 0,
+        withForeclosureBorrower: withBorrowerTotal,
         preforeclosures,
         tierCounts,
         totalEquity,

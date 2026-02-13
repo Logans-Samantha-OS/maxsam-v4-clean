@@ -25,8 +25,9 @@ export async function GET(request: NextRequest) {
   const useLegacy = searchParams.get('use_legacy') === 'true'
 
   try {
-    // Check if new unified tables exist
-    const useUnifiedTables = !useLegacy && await checkUnifiedTablesExist(supabase)
+    // FORCE LEGACY: All SMS data lives in sms_messages table
+    // Unified tables exist but are empty scaffolding
+    const useUnifiedTables = false
 
     if (leadId) {
       // Get messages for a specific lead/conversation
@@ -423,9 +424,11 @@ async function getConversationMessages(
     .eq('id', leadId)
     .single()
 
-  // Add channel field for consistency
+  // Add channel field and normalize body field for consistency
+  // sms_messages table uses 'message' column, but frontend expects 'body'
   const transformedMessages = (messages || []).map(msg => ({
     ...msg,
+    body: msg.body || msg.message || '',
     channel: 'sms',
   }))
 
@@ -533,6 +536,7 @@ async function getConversationsList(
       id,
       lead_id,
       direction,
+      message,
       body,
       from_number,
       to_number,
@@ -583,7 +587,7 @@ async function getConversationsList(
     if (!existing) {
       conversationMap.set(msg.lead_id, {
         lead_id: msg.lead_id,
-        last_message: msg.body || '',
+        last_message: msg.body || msg.message || '',
         last_message_time: msg.created_at,
         last_direction: msg.direction,
         unread_count: isUnread ? 1 : 0,
