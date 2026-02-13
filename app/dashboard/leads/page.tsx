@@ -8,6 +8,19 @@ import { Input } from '@/components/ui/input'
 // TYPES
 // ============================================================================
 
+interface Relative {
+  name: string
+  age?: number
+}
+
+interface PreviousAddress {
+  street?: string
+  city?: string
+  state?: string
+  zip?: string
+  county?: string
+}
+
 interface Lead {
   id: string
   owner_name: string
@@ -16,6 +29,7 @@ interface Lead {
   phone_2: string | null
   primary_phone: string | null
   primary_email: string | null
+  phone_type: string | null
   property_address: string
   property_city: string | null
   city: string | null
@@ -23,17 +37,27 @@ interface Lead {
   state: string
   excess_funds_amount: number
   eleanor_score: number
+  eleanor_grade: string | null
   priority_score: number | null
   value_score: number | null
   deal_grade: string
   is_golden: boolean
+  is_golden_lead: boolean | null
   lead_class: string
   status: string
+  skip_trace_status: string | null
   last_contact_at: string | null
   contact_attempts: number
   created_at: string
   updated_at: string
   notes: string | null
+  expiry_date: string | null
+  excess_funds_expiry_date: string | null
+  relatives: Relative[] | string | null
+  previous_addresses: PreviousAddress[] | string | null
+  case_number: string | null
+  sms_sent_count: number | null
+  email: string | null
 }
 
 type SortField = 'owner_name' | 'excess_funds_amount' | 'eleanor_score' | 'created_at' | 'last_contact_at' | 'status'
@@ -67,6 +91,34 @@ function hasPhone(lead: Lead): boolean {
 
 function hasScore(lead: Lead): boolean {
   return !!(lead.eleanor_score || lead.priority_score || lead.value_score)
+}
+
+function parseRelatives(val: Relative[] | string | null | undefined): Relative[] {
+  if (!val) return []
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
+}
+
+function parsePreviousAddresses(val: PreviousAddress[] | string | null | undefined): PreviousAddress[] {
+  if (!val) return []
+  if (Array.isArray(val)) return val
+  if (typeof val === 'string') {
+    try {
+      const parsed = JSON.parse(val)
+      return Array.isArray(parsed) ? parsed : []
+    } catch {
+      return []
+    }
+  }
+  return []
 }
 
 // ============================================================================
@@ -377,6 +429,39 @@ function LeadEditModal({
                 </div>
               </div>
             </div>
+            {(parseRelatives(lead.relatives).length > 0 || parsePreviousAddresses(lead.previous_addresses).length > 0) && (
+              <div>
+                <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
+                  Enriched Data
+                </h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {parseRelatives(lead.relatives).length > 0 && (
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-2">Known Relatives</label>
+                      <div className="space-y-1">
+                        {parseRelatives(lead.relatives).map((rel, i) => (
+                          <div key={i} className="text-sm text-zinc-300 bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
+                            {rel.name}{rel.age ? `, age ${rel.age}` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {parsePreviousAddresses(lead.previous_addresses).length > 0 && (
+                    <div>
+                      <label className="block text-xs text-zinc-400 mb-2">Previous Addresses</label>
+                      <div className="space-y-1">
+                        {parsePreviousAddresses(lead.previous_addresses).map((addr, i) => (
+                          <div key={i} className="text-sm text-zinc-300 bg-zinc-950 px-2 py-1 rounded border border-zinc-800">
+                            {[addr.street, addr.city, addr.state, addr.zip].filter(Boolean).join(', ')}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
             <div>
               <h3 className="text-sm font-semibold text-zinc-300 uppercase tracking-wider mb-4">
                 Notes & Comments
@@ -565,7 +650,7 @@ function LeadRow({
   return (
     <tr
       className={`border-b border-zinc-800/50 hover:bg-zinc-800/30 transition-all ${
-        lead.is_golden ? 'bg-yellow-500/5' : ''
+        (lead.is_golden || lead.is_golden_lead) ? 'bg-yellow-500/5' : ''
       } ${recentlyUpdated ? 'bg-green-500/10 animate-pulse' : ''}`}
     >
       <td className="px-3 py-3">
@@ -577,26 +662,60 @@ function LeadRow({
         />
       </td>
       <td className="px-4 py-3">
-        <button
-          onClick={() => onEdit(lead)}
-          className="font-medium text-white hover:text-yellow-400 hover:underline text-left"
-        >
-          {lead.owner_name || 'Unknown'}
-        </button>
-        {lead.is_golden && (
-          <span className="ml-2 text-yellow-400" title="Golden Lead">⭐</span>
-        )}
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => onEdit(lead)}
+            className="font-medium text-white hover:text-yellow-400 hover:underline text-left"
+          >
+            {lead.owner_name || 'Unknown'}
+          </button>
+          {(lead.is_golden || lead.is_golden_lead) && (
+            <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-yellow-500/20 text-yellow-400 border border-yellow-500/30 animate-pulse" title="Golden Lead — Dual Opportunity">
+              GOLDEN
+            </span>
+          )}
+        </div>
+        <div className="flex items-center gap-1.5 mt-0.5">
+          {lead.skip_trace_status && (
+            <span className={`text-[10px] px-1 py-0.5 rounded ${
+              lead.skip_trace_status === 'found' ? 'bg-green-500/15 text-green-400' :
+              lead.skip_trace_status === 'not_found' ? 'bg-red-500/15 text-red-400' :
+              'bg-zinc-700/30 text-zinc-500'
+            }`}>
+              {lead.skip_trace_status === 'found' ? 'Traced' : lead.skip_trace_status}
+            </span>
+          )}
+          {parseRelatives(lead.relatives).length > 0 && (
+            <span className="text-[10px] px-1 py-0.5 rounded bg-purple-500/15 text-purple-400" title={parseRelatives(lead.relatives).map(r => r.name).join(', ')}>
+              {parseRelatives(lead.relatives).length} relative{parseRelatives(lead.relatives).length !== 1 ? 's' : ''}
+            </span>
+          )}
+        </div>
       </td>
       <td className="px-4 py-3">
         {phone ? (
-          <a
-            href={`tel:${phone}`}
-            className="text-cyan-400 hover:text-cyan-300 hover:underline"
-          >
-            {formatPhone(phone)}
-          </a>
+          <div>
+            <a
+              href={`tel:${phone}`}
+              className="text-cyan-400 hover:text-cyan-300 hover:underline"
+            >
+              {formatPhone(phone)}
+            </a>
+            {lead.phone_type && (
+              <span className={`ml-1.5 text-[10px] px-1 py-0.5 rounded ${
+                lead.phone_type === 'Wireless' ? 'bg-green-500/15 text-green-400' : 'bg-zinc-700/30 text-zinc-500'
+              }`}>
+                {lead.phone_type}
+              </span>
+            )}
+          </div>
         ) : (
           <span className="text-red-400 text-sm">No phone</span>
+        )}
+        {(lead.email || lead.primary_email) && (
+          <div className="text-[10px] text-zinc-500 truncate max-w-[140px]" title={lead.email || lead.primary_email || ''}>
+            {lead.email || lead.primary_email}
+          </div>
         )}
       </td>
       <td className="px-4 py-3 max-w-xs">
@@ -604,19 +723,33 @@ function LeadRow({
         <div className="text-xs text-zinc-500">
           {lead.property_city || lead.city}, {lead.county} County
         </div>
+        {lead.case_number && (
+          <div className="text-[10px] text-zinc-600 font-mono">
+            Case {lead.case_number}
+          </div>
+        )}
       </td>
       <td className="px-4 py-3 text-right">
         <span className={`font-mono font-semibold ${(lead.excess_funds_amount || 0) > 0 ? 'text-green-400' : 'text-zinc-500'}`}>
           ${(lead.excess_funds_amount || 0).toLocaleString()}
         </span>
+        {(() => {
+          const expiry = lead.expiry_date || lead.excess_funds_expiry_date
+          if (!expiry) return null
+          const days = Math.ceil((new Date(expiry).getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+          if (days <= 0) return <div className="text-[10px] text-red-500 font-bold">EXPIRED</div>
+          if (days <= 30) return <div className="text-[10px] text-red-400">{days}d left</div>
+          if (days <= 90) return <div className="text-[10px] text-orange-400">{days}d left</div>
+          return <div className="text-[10px] text-zinc-500">{days}d left</div>
+        })()}
       </td>
       <td className="px-4 py-3 text-center">
         <span className={`font-bold ${getScoreColor(lead.eleanor_score || 0)}`}>
           {lead.eleanor_score || 0}
         </span>
-        {lead.deal_grade && (
+        {(lead.eleanor_grade || lead.deal_grade) && (
           <span className="ml-1 text-xs text-zinc-500">
-            ({lead.deal_grade})
+            ({lead.eleanor_grade || lead.deal_grade})
           </span>
         )}
       </td>
@@ -964,8 +1097,8 @@ export default function LeadsDashboardPage() {
 
   const filteredLeads = useMemo(() => {
     return leads.filter(lead => {
-      if (leadClassFilter === 'golden') return lead.is_golden
-      if (leadClassFilter === 'B') return !lead.is_golden
+      if (leadClassFilter === 'golden') return lead.is_golden || lead.is_golden_lead
+      if (leadClassFilter === 'B') return !lead.is_golden && !lead.is_golden_lead
       return true
     })
   }, [leads, leadClassFilter])

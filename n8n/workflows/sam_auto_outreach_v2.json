@@ -1,0 +1,252 @@
+{
+  "_comment": "SAM • Auto Outreach v2 — Updated with tiered templates & enriched data. Apply to N8N workflow ID: t3cgqw7BvswrKIfu",
+  "name": "SAM • Auto Outreach v2",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 14-2 * * 1-6"
+            }
+          ]
+        }
+      },
+      "id": "schedule-trigger",
+      "name": "Hourly 8AM-8PM CT",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [100, 300],
+      "notes": "Runs every hour from 8AM to 8PM Central (14:00-02:00 UTC) Mon-Sat"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "SELECT\n  id,\n  owner_name,\n  phone,\n  phone_type,\n  email,\n  property_address,\n  county,\n  case_number,\n  excess_funds_amount,\n  expiry_date,\n  eleanor_score,\n  eleanor_grade,\n  status,\n  is_golden_lead,\n  lead_type,\n  sam_enabled,\n  sms_sent_count,\n  last_sms_at,\n  sms_opt_out,\n  relatives,\n  previous_addresses,\n  skip_trace_status,\n  created_at\nFROM leads\nWHERE\n  phone IS NOT NULL\n  AND phone != ''\n  AND (sms_opt_out IS NULL OR sms_opt_out = false)\n  AND (sms_sent_count IS NULL OR sms_sent_count < 5)\n  AND status IN ('new', 'scored', 'skip_traced', 'contacted', 'ready_for_outreach')\n  AND (sam_enabled IS NULL OR sam_enabled = true)\n  AND (\n    sms_sent_count IS NULL\n    OR sms_sent_count = 0\n    OR (\n      sms_sent_count = 1 AND last_sms_at < NOW() - INTERVAL '3 days'\n    )\n    OR (\n      sms_sent_count = 2 AND last_sms_at < NOW() - INTERVAL '7 days'\n    )\n    OR (\n      sms_sent_count = 3 AND last_sms_at < NOW() - INTERVAL '14 days'\n    )\n    OR (\n      sms_sent_count >= 4 AND last_sms_at < NOW() - INTERVAL '14 days'\n    )\n  )\nORDER BY\n  is_golden_lead DESC NULLS LAST,\n  eleanor_score DESC NULLS LAST,\n  excess_funds_amount DESC NULLS LAST\nLIMIT 20;",
+        "options": {}
+      },
+      "id": "query-leads",
+      "name": "Query Leads Ready for Outreach",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [300, 300],
+      "credentials": {
+        "postgres": {
+          "id": "QIXalm1aLdF2HOpo",
+          "name": "Supabase Postgres"
+        }
+      },
+      "notes": "Selects enriched leads ready for outreach with cadence timing. Includes relatives, previous_addresses, is_golden_lead, case_number, expiry_date."
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-results",
+              "leftValue": "={{ $json.id }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "check-leads",
+      "name": "Has Leads?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [500, 300],
+      "notes": "Check if the query returned any leads"
+    },
+    {
+      "parameters": {
+        "jsCode": "// ============================================================================\n// SAM Auto Outreach — Tiered SMS Template Builder (v2)\n// Mirrors sam-outreach-templates.js from MaxSam V4 codebase\n// ============================================================================\n\nfunction firstName(lead) {\n  if (!lead.owner_name) return 'there';\n  const name = lead.owner_name.trim();\n  if (name.includes(',')) {\n    const parts = name.split(',');\n    const first = (parts[1] || '').trim().split(/\\s+/)[0];\n    if (first) return titleCase(first);\n  }\n  return titleCase(name.split(/\\s+/)[0]);\n}\n\nfunction titleCase(s) {\n  if (!s) return '';\n  return s.charAt(0).toUpperCase() + s.slice(1).toLowerCase();\n}\n\nfunction fmtAmount(amount) {\n  if (!amount || amount <= 0) return '$0';\n  return '$' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });\n}\n\nfunction fmtDate(dateStr) {\n  if (!dateStr) return null;\n  try {\n    const d = new Date(dateStr);\n    if (isNaN(d.getTime())) return null;\n    return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });\n  } catch { return null; }\n}\n\nfunction daysUntilExpiry(dateStr) {\n  if (!dateStr) return null;\n  try {\n    const d = new Date(dateStr);\n    if (isNaN(d.getTime())) return null;\n    const diff = Math.ceil((d.getTime() - Date.now()) / (1000 * 60 * 60 * 24));\n    return diff > 0 ? diff : null;\n  } catch { return null; }\n}\n\nfunction urgencyLine(lead) {\n  const days = daysUntilExpiry(lead.expiry_date);\n  const formatted = fmtDate(lead.expiry_date);\n  if (days !== null && days <= 30) return `The filing deadline is ${formatted} — only ${days} days remain.`;\n  if (days !== null && days <= 90) return `The deadline to claim is ${formatted}.`;\n  if (formatted) return `This must be claimed before ${formatted}.`;\n  return 'There is a deadline to file, and unclaimed funds revert to the county.';\n}\n\nfunction parseJsonbArray(val) {\n  if (!val) return [];\n  if (Array.isArray(val)) return val;\n  if (typeof val === 'string') { try { const p = JSON.parse(val); return Array.isArray(p) ? p : []; } catch { return []; } }\n  return [];\n}\n\nfunction getTier(lead) {\n  if (lead.is_golden_lead) return 1;\n  const amt = Number(lead.excess_funds_amount) || 0;\n  if (amt >= 5000) return 2;\n  if (amt >= 1000) return 3;\n  return 4;\n}\n\nfunction buildGoldenLeadSMS(lead) {\n  const name = firstName(lead);\n  const amt = fmtAmount(lead.excess_funds_amount);\n  const county = lead.county || 'Dallas';\n  const addr = lead.property_address || 'your former property';\n  const caseNum = lead.case_number;\n  let msg = `${name}, this is Sam with MaxSam Recovery Services. I have two items regarding ${addr}:\\n\\n`;\n  msg += `1) ${county} County is holding ${amt} from the tax sale`;\n  if (caseNum) msg += ` (Case ${caseNum})`;\n  const expiryFormatted = fmtDate(lead.expiry_date);\n  if (expiryFormatted) msg += ` — deadline: ${expiryFormatted}`;\n  msg += '. This is owed to you as the prior owner.\\n\\n';\n  msg += '2) I also have cash buyers interested in properties in your area — quick close, no repairs needed.\\n\\n';\n  msg += 'I can help with either or both at no upfront cost.\\n\\n';\n  msg += 'Reply 1 for the funds recovery agreement, or reply with any questions.\\n\\n';\n  msg += 'Reply STOP to opt out';\n  return msg;\n}\n\nfunction buildInitialSMS(lead) {\n  const tier = getTier(lead);\n  if (tier === 1) return buildGoldenLeadSMS(lead);\n  const name = firstName(lead);\n  const amt = fmtAmount(lead.excess_funds_amount);\n  const county = lead.county || 'Dallas';\n  const addr = lead.property_address || 'your former property';\n  const caseNum = lead.case_number;\n  if (tier === 2) {\n    let msg = `${name}, this is Sam with MaxSam Recovery Services. `;\n    msg += `${county} County is holding ${amt} in surplus funds from the tax sale of ${addr}`;\n    if (caseNum) msg += ` (Case ${caseNum})`;\n    msg += `. This money belongs to you as the former owner.\\n\\n`;\n    msg += urgencyLine(lead) + '\\n\\n';\n    msg += 'We handle the entire claims process at no upfront cost — our fee is only collected when you receive your funds.\\n\\n';\n    msg += 'Reply 1 to receive your recovery agreement.\\n\\n';\n    msg += 'Reply STOP to opt out';\n    return msg;\n  }\n  if (tier === 3) {\n    let msg = `${name}, this is Sam with MaxSam Recovery Services. `;\n    msg += `${county} County has ${amt} from the sale of ${addr} that may belong to you.\\n\\n`;\n    msg += urgencyLine(lead) + '\\n\\n';\n    msg += 'We handle the paperwork at no upfront cost.\\n\\n';\n    msg += 'Reply 1 to receive your recovery agreement.\\n\\n';\n    msg += 'Reply STOP to opt out';\n    return msg;\n  }\n  let msg = `${name}, ${county} County may be holding ${amt} from a property sale that belongs to you.\\n\\n`;\n  msg += 'We can recover it at no upfront cost.\\n\\n';\n  msg += 'Reply 1 for details.\\n\\n';\n  msg += 'Reply STOP to opt out';\n  return msg;\n}\n\nfunction buildFollowUp1(lead) {\n  const name = firstName(lead);\n  const amt = fmtAmount(lead.excess_funds_amount);\n  const county = lead.county || 'Dallas';\n  const addr = lead.property_address || 'your former property';\n  const caseNum = lead.case_number;\n  let msg = `${name}, following up regarding the ${amt} that ${county} County is holding from the sale of ${addr}`;\n  if (caseNum) msg += ` (Case ${caseNum})`;\n  msg += '.\\n\\n';\n  msg += 'This is your money from the foreclosure surplus. I handle the full claims process — no upfront cost, and I only get paid when you do.\\n\\n';\n  msg += urgencyLine(lead) + '\\n\\n';\n  msg += 'Reply 1 to receive your recovery agreement.\\n\\n';\n  msg += '-Sam, MaxSam Recovery\\n';\n  msg += 'Reply STOP to opt out';\n  return msg;\n}\n\nfunction buildFollowUp2(lead) {\n  const name = firstName(lead);\n  const amt = fmtAmount(lead.excess_funds_amount);\n  const county = lead.county || 'Dallas';\n  const addr = lead.property_address || 'your former property';\n  let msg = `${name}, I want to make sure you received my previous messages about the ${amt} from ${addr}.\\n\\n`;\n  const relatives = parseJsonbArray(lead.relatives);\n  if (relatives.length > 0 && relatives[0].name) {\n    const relName = relatives[0].name.split(/\\s+/).map(w => titleCase(w)).join(' ');\n    msg += `I reached out because our records associate you and ${relName} with this property. `;\n  }\n  const prevAddrs = parseJsonbArray(lead.previous_addresses);\n  if (prevAddrs.length > 0 && prevAddrs[0].city) {\n    msg += `Our records show your connection to the ${prevAddrs[0].city} area. `;\n  }\n  msg += `${county} County will not notify you about this — unclaimed funds eventually revert to the county.\\n\\n`;\n  msg += urgencyLine(lead) + '\\n\\n';\n  msg += 'Reply 1 to claim your funds, or reply with any questions.\\n\\n';\n  msg += '-Sam, MaxSam Recovery\\n';\n  msg += 'Reply STOP to opt out';\n  return msg;\n}\n\nfunction buildFinalNotice(lead) {\n  const name = firstName(lead);\n  const amt = fmtAmount(lead.excess_funds_amount);\n  const county = lead.county || 'Dallas';\n  const caseNum = lead.case_number;\n  let msg = `${name}, this is my final message regarding the ${amt} held by ${county} County`;\n  if (caseNum) msg += ` under Case ${caseNum}`;\n  msg += '.\\n\\n';\n  const days = daysUntilExpiry(lead.expiry_date);\n  if (days !== null && days <= 60) msg += `You have ${days} days before the filing deadline. `;\n  msg += \"If I don't hear back, I'll close your file and this money may go unclaimed.\\n\\n\";\n  msg += 'Reply 1 to start your claim, or STOP to opt out.\\n\\n';\n  msg += '-Sam, MaxSam Recovery';\n  return msg;\n}\n\n// ---- Main logic: select template based on sms_sent_count ----\nconst items = $input.all();\nconst output = [];\n\nfor (const item of items) {\n  const lead = item.json;\n  const count = Number(lead.sms_sent_count) || 0;\n  let smsBody;\n\n  switch (count) {\n    case 0: smsBody = buildInitialSMS(lead); break;\n    case 1: smsBody = buildFollowUp1(lead); break;\n    case 2: smsBody = buildFollowUp2(lead); break;\n    default: smsBody = buildFinalNotice(lead); break;\n  }\n\n  output.push({\n    json: {\n      ...lead,\n      sms_body: smsBody,\n      sms_tier: getTier(lead),\n      sms_template: count === 0 ? 'initial' : count === 1 ? 'followUp1' : count === 2 ? 'followUp2' : 'finalNotice',\n    }\n  });\n}\n\nreturn output;"
+      },
+      "id": "build-sms",
+      "name": "Build Tiered SMS",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [700, 200],
+      "notes": "Tiered template builder. Selects Initial/FollowUp1/FollowUp2/FinalNotice based on sms_sent_count. Tier 1=Golden, Tier 2=$5K+, Tier 3=$1K-$5K, Tier 4=<$1K."
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "from": "+18449632549",
+        "to": "={{ $json.phone }}",
+        "body": "={{ $json.sms_body }}"
+      },
+      "id": "send-twilio",
+      "name": "Send SMS via Twilio",
+      "type": "n8n-nodes-base.twilio",
+      "typeVersion": 1,
+      "position": [900, 200],
+      "credentials": {
+        "twilioApi": {
+          "id": "twilio-cred-id",
+          "name": "Twilio MaxSam"
+        }
+      },
+      "notes": "Sends personalized SMS from +18449632549 (Sam outbound number)"
+    },
+    {
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "=UPDATE leads SET\n  sms_sent_count = COALESCE(sms_sent_count, 0) + 1,\n  last_sms_at = NOW(),\n  sam_enabled = true,\n  status = CASE\n    WHEN status IN ('new', 'scored', 'skip_traced', 'ready_for_outreach') THEN 'contacted'\n    ELSE status\n  END,\n  updated_at = NOW()\nWHERE id = '{{ $json.id }}'::uuid\nRETURNING id, owner_name, sms_sent_count, status;",
+        "options": {}
+      },
+      "id": "update-lead",
+      "name": "Update Lead Status",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "position": [1100, 200],
+      "credentials": {
+        "postgres": {
+          "id": "QIXalm1aLdF2HOpo",
+          "name": "Supabase Postgres"
+        }
+      },
+      "notes": "Increment sms_sent_count, set last_sms_at, update status to contacted if first touch"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=https://api.telegram.org/bot{{ $env.TELEGRAM_BOT_TOKEN }}/sendMessage",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"chat_id\": \"{{ $env.TELEGRAM_CHAT_ID }}\",\n  \"text\": \"📱 SAM sent {{ $input.all().length }} SMS messages this hour.\\n\\nNext run in 1 hour.\",\n  \"parse_mode\": \"HTML\"\n}",
+        "options": {}
+      },
+      "id": "notify-telegram",
+      "name": "Notify Logan via Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1300, 200],
+      "notes": "Send batch summary to Logan via Telegram"
+    },
+    {
+      "parameters": {},
+      "id": "no-leads",
+      "name": "No Leads Ready",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [700, 400],
+      "notes": "No leads matched the outreach criteria this hour"
+    }
+  ],
+  "connections": {
+    "Hourly 8AM-8PM CT": {
+      "main": [
+        [
+          {
+            "node": "Query Leads Ready for Outreach",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query Leads Ready for Outreach": {
+      "main": [
+        [
+          {
+            "node": "Has Leads?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has Leads?": {
+      "main": [
+        [
+          {
+            "node": "Build Tiered SMS",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Leads Ready",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Tiered SMS": {
+      "main": [
+        [
+          {
+            "node": "Send SMS via Twilio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send SMS via Twilio": {
+      "main": [
+        [
+          {
+            "node": "Update Lead Status",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Update Lead Status": {
+      "main": [
+        [
+          {
+            "node": "Notify Logan via Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "pinData": {},
+  "settings": {
+    "executionOrder": "v1",
+    "saveManualExecutions": true,
+    "callerPolicy": "workflowsFromSameOwner",
+    "errorWorkflow": ""
+  },
+  "staticData": null,
+  "tags": [
+    { "name": "sam", "id": "sam-tag" },
+    { "name": "outreach", "id": "outreach-tag" },
+    { "name": "maxsam", "id": "maxsam-tag" },
+    { "name": "production", "id": "production-tag" }
+  ],
+  "triggerCount": 1,
+  "active": true,
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "maxsam-v4"
+  }
+}
