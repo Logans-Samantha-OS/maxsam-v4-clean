@@ -78,14 +78,17 @@ export async function GET(request: NextRequest) {
       }, { status: 409 })
     }
 
-    // Fetch lead data
+    // Fetch lead data — select all available fields for maximum agreement specificity
     const { data: lead, error: leadErr } = await supabase
       .from('leads')
       .select(`
-        id, owner_name, property_address, property_city, property_zip,
+        id, owner_name, property_address, property_city, property_zip, zip_code,
         excess_amount, excess_funds_amount, case_number, cause_number,
+        excess_funds_case_number,
         county, county_name, phone, primary_phone, email, primary_email,
-        state, status, expiry_date, expiration_date
+        state, status, expiry_date, expiration_date, days_until_expiration,
+        sale_date, deal_type, city,
+        estimated_arv, estimated_equity, estimated_repair_cost
       `)
       .eq('id', leadId)
       .single()
@@ -95,19 +98,29 @@ export async function GET(request: NextRequest) {
     }
 
     const excessAmount = lead.excess_amount || lead.excess_funds_amount || 0
-    const caseNumber = lead.case_number || lead.cause_number || ''
+    const caseNumber = lead.case_number || lead.cause_number || lead.excess_funds_case_number || ''
     const countyName = lead.county || lead.county_name || 'Dallas'
     const phone = lead.phone || lead.primary_phone || ''
     const email = lead.email || lead.primary_email || ''
-    const city = lead.property_city || 'Dallas'
+    const city = lead.property_city || lead.city || 'Dallas'
     const state = lead.state || 'TX'
+    const zip = lead.property_zip || lead.zip_code || ''
+    const expiryDate = lead.expiry_date || lead.expiration_date || null
+    const saleDate = lead.sale_date || null
+
+    // Compute days until expiration if not stored
+    let daysUntilExpiration = lead.days_until_expiration ?? null
+    if (daysUntilExpiration == null && expiryDate) {
+      const expDate = new Date(expiryDate)
+      daysUntilExpiration = Math.ceil((expDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+    }
 
     // Fee calculation
     let feePercent = 25
     let calculatedFee = excessAmount * 0.25
     if (agreementType === 'wholesale') {
       feePercent = 10
-      calculatedFee = excessAmount * 0.10 // Uses excess as proxy if no equity data
+      calculatedFee = (lead.estimated_equity || excessAmount) * 0.10
     }
 
     return NextResponse.json({
@@ -119,13 +132,19 @@ export async function GET(request: NextRequest) {
         property_address: lead.property_address,
         city,
         state,
-        zip: lead.property_zip || '',
+        zip,
         excess_amount: excessAmount,
         case_number: caseNumber,
         county: countyName,
         phone,
         email,
-        expiry_date: lead.expiry_date || lead.expiration_date,
+        expiry_date: expiryDate,
+        sale_date: saleDate,
+        days_until_expiration: daysUntilExpiration,
+        deal_type: lead.deal_type || null,
+        estimated_arv: lead.estimated_arv || null,
+        estimated_equity: lead.estimated_equity || null,
+        estimated_repair_cost: lead.estimated_repair_cost || null,
       },
       fee_percent: feePercent,
       calculated_fee: calculatedFee,
