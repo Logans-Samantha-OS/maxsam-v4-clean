@@ -20,6 +20,12 @@ interface LeadData {
   phone: string
   email: string
   expiry_date: string | null
+  sale_date: string | null
+  days_until_expiration: number | null
+  deal_type: string | null
+  estimated_arv: number | null
+  estimated_equity: number | null
+  estimated_repair_cost: number | null
 }
 
 interface ValidateResponse {
@@ -42,124 +48,269 @@ function buildExcessFundsText(lead: LeadData, feePercent: number, calculatedFee:
   const d = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
   const amt = `$${lead.excess_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
   const fee = `$${calculatedFee.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+  const clientPortion = `$${(lead.excess_amount - calculatedFee).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
+  // Format property address block
+  const addressParts = [lead.property_address, lead.city, lead.state].filter(Boolean)
+  const fullAddress = addressParts.length > 0
+    ? `${lead.property_address || ''}${lead.city ? `, ${lead.city}` : ''}${lead.state ? `, ${lead.state}` : ''} ${lead.zip || ''}`.trim()
+    : 'As identified in county records'
+
+  // Format sale date
+  const saleDateStr = lead.sale_date
+    ? new Date(lead.sale_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null
+
+  // Format expiry date
+  const expiryDateStr = lead.expiry_date
+    ? new Date(lead.expiry_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null
+
+  // Build urgency clause
+  let urgencyClause = ''
+  if (lead.days_until_expiration != null && lead.days_until_expiration > 0) {
+    urgencyClause = `\n\nIMPORTANT DEADLINE: Per ${lead.county} County records, Client's right to claim these excess funds expires on or about ${expiryDateStr || 'the date specified in county records'} (approximately ${lead.days_until_expiration} days from today). Failure to act before this deadline may result in permanent forfeiture of these funds to the county. Agent will prioritize timely filing to preserve Client's claim.`
+  } else if (expiryDateStr) {
+    urgencyClause = `\n\nIMPORTANT DEADLINE: Per county records, Client's right to claim these excess funds expires on or about ${expiryDateStr}. Agent will prioritize timely filing to preserve Client's claim.`
+  }
+
+  // Property valuation section (if ARV/equity data available)
+  let propertyValuation = ''
+  if (lead.estimated_arv || lead.estimated_equity) {
+    const parts: string[] = []
+    if (lead.estimated_arv) {
+      parts.push(`Estimated After-Repair Value (ARV): $${lead.estimated_arv.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    }
+    if (lead.estimated_equity) {
+      parts.push(`Estimated Property Equity: $${lead.estimated_equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    }
+    if (lead.estimated_repair_cost) {
+      parts.push(`Estimated Repair Cost: $${lead.estimated_repair_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+    }
+    propertyValuation = `\n\nPROPERTY VALUATION DATA (for reference only; does not affect excess funds claim):\n${parts.join('\n')}`
+  }
+
   return `EXCESS FUNDS RECOVERY SERVICES AGREEMENT
 
-This Agreement is entered into as of ${d} by and between:
+This Agreement ("Agreement") is entered into as of ${d} ("Effective Date") by and between the following parties:
 
 OWNER/CLAIMANT ("Client"):
-Name: ${lead.owner_name}
-Property: ${lead.property_address || 'As identified in county records'}${lead.city ? `, ${lead.city}` : ''}${lead.state ? `, ${lead.state}` : ''} ${lead.zip || ''}
+Full Legal Name: ${lead.owner_name}
+Contact Phone: ${lead.phone || 'On file'}
+Contact Email: ${lead.email || 'On file'}
+
+SUBJECT PROPERTY:
+Property Address: ${fullAddress}
+County: ${lead.county} County, ${lead.state || 'Texas'}${lead.case_number ? `\nCase/Cause Number: ${lead.case_number}` : ''}${saleDateStr ? `\nForeclosure/Tax Sale Date: ${saleDateStr}` : ''}${expiryDateStr ? `\nExcess Funds Claim Deadline: ${expiryDateStr}` : ''}
 
 RECOVERY AGENT ("Agent"):
 MaxSam Real Estate LLC
-Richardson, TX
+Richardson, Texas 75080
 Managing Member
+
+═══════════════════════════════════════════════════
 
 RECITALS
 
-WHEREAS, Client is entitled to receive excess funds from a foreclosure or tax sale proceeding in ${lead.county} County;
+WHEREAS, a foreclosure or tax sale proceeding occurred${saleDateStr ? ` on or about ${saleDateStr}` : ''} involving real property located at ${fullAddress}, situated in ${lead.county} County, ${lead.state || 'Texas'}${lead.case_number ? `, under Case/Cause Number ${lead.case_number}` : ''};
 
-WHEREAS, the relevant case number is: ${lead.case_number || 'To be determined'};
+WHEREAS, said proceeding generated excess proceeds in the amount of ${amt} ("Excess Funds"), which are currently held by ${lead.county} County or the applicable court registry, pending rightful claim;
 
-WHEREAS, the estimated excess funds amount is: ${amt};
+WHEREAS, Client, as the former owner of the subject property or their lawful successor in interest, is believed to be entitled to receive said Excess Funds pursuant to Texas Property Tax Code §34.04 and/or applicable provisions of the Texas Rules of Civil Procedure;
 
-WHEREAS, Client desires to engage Agent to assist in the recovery of said excess funds;
+WHEREAS, Client desires to engage Agent to research, prepare, file, and prosecute the claim for recovery of said Excess Funds on Client's behalf;
 
-NOW, THEREFORE, in consideration of the mutual covenants herein, the parties agree as follows:
+NOW, THEREFORE, in consideration of the mutual covenants and agreements herein set forth, and for other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:
 
-1. SCOPE OF SERVICES
+═══════════════════════════════════════════════════
 
-Agent agrees to:
-• Research and verify Client's claim to excess funds
-• Prepare and file all necessary claim documents with the appropriate county or court
-• Communicate with county officials and court clerks on Client's behalf
-• Track the claim through to final disbursement
-• Provide Client with updates on claim status
+1. SUBJECT PROPERTY AND CLAIM IDENTIFICATION
 
-2. COMPENSATION
+The subject claim pertains to excess funds generated from the sale of the following property:
 
-Client agrees to pay Agent a contingency fee of ${feePercent}% of the total excess funds recovered.
+Address: ${fullAddress}
+County: ${lead.county} County, ${lead.state || 'Texas'}${lead.case_number ? `\nCase/Cause Number: ${lead.case_number}` : ''}${saleDateStr ? `\nSale Date: ${saleDateStr}` : ''}
+Excess Funds on Deposit: ${amt}${expiryDateStr ? `\nClaim Expiration Date: ${expiryDateStr}` : ''}${propertyValuation}
 
-Estimated Excess Funds: ${amt}
-Estimated Fee (${feePercent}%): ${fee}
+2. SCOPE OF SERVICES
 
-NO RECOVERY, NO FEE: Client owes Agent nothing if no funds are recovered. There are no upfront costs or expenses charged to Client.
+Agent agrees to perform the following services on Client's behalf:
+(a) Conduct thorough research to verify Client's entitlement to the Excess Funds, including chain of title review and lien analysis within ${lead.county} County records;
+(b) Prepare, compile, and file all necessary claim documentation with the ${lead.county} County Tax Office, District Clerk, or applicable court;
+(c) Serve as Client's authorized representative for all communications with ${lead.county} County officials, court clerks, and any third parties relevant to the claim;
+(d) Monitor claim status and pursue resolution through all administrative and legal channels;
+(e) Coordinate disbursement of funds upon approval of the claim; and
+(f) Provide Client with written status updates at reasonable intervals throughout the process.
 
-3. PAYMENT TERMS
+3. COMPENSATION
 
-Upon successful recovery of excess funds:
-• Agent will invoice Client for the ${feePercent}% fee
-• Payment is due within fifteen (15) days of Client receiving funds
-• Client authorizes Agent to receive funds directly if permitted by the disbursing authority
+Client agrees to pay Agent a contingency fee equal to ${feePercent}% (${feePercent === 25 ? 'twenty-five percent' : `${feePercent} percent`}) of the total Excess Funds actually recovered and received.
 
-4. CLIENT RESPONSIBILITIES
+Financial Summary:
+Excess Funds on Deposit:        ${amt}
+Agent's Fee (${feePercent}%):              ${fee}
+Estimated Client Net Proceeds:  ${clientPortion}
 
-Client agrees to:
-• Provide accurate information regarding the property and claim
-• Timely execute any documents required for the claim
-• Not engage another party to pursue the same claim during this Agreement
-• Notify Agent of any changes in contact information
+NO RECOVERY, NO FEE: Client shall owe Agent absolutely nothing if no funds are recovered. There are no upfront costs, retainer fees, filing fees, or expenses of any kind charged to Client. Agent assumes all risk and cost of pursuing this claim.
 
-5. TERM AND TERMINATION
+4. PAYMENT TERMS
 
-This Agreement shall remain in effect until the claim is resolved or for a period of two (2) years from the date hereof, whichever occurs first. Either party may terminate with thirty (30) days written notice; however, if funds are subsequently recovered as a result of Agent's efforts, the fee shall still be owed.
+Upon successful recovery and disbursement of Excess Funds:
+(a) If the disbursing authority remits payment directly to Client, Client agrees to pay Agent's ${feePercent}% fee within fifteen (15) business days of Client's receipt of funds;
+(b) If permitted by the disbursing authority, Client authorizes Agent to receive funds directly, deduct the ${feePercent}% fee, and remit the remaining ${100 - feePercent}% to Client within ten (10) business days;
+(c) Payment shall be made by certified check, wire transfer, or other mutually agreed method.
 
-NOTICE OF RIGHT TO CANCEL
+5. CLIENT REPRESENTATIONS AND RESPONSIBILITIES
 
-You, the Client, may cancel this Agreement within THREE (3) BUSINESS DAYS from the date you sign this Agreement. To cancel, send written notice to MaxSam Real Estate LLC, Richardson, TX. If you cancel within this period, you owe nothing.
+Client represents and warrants that:
+(a) Client is the former owner of the subject property or a lawful successor in interest entitled to claim the Excess Funds;
+(b) Client has not previously assigned, pledged, or encumbered their right to the Excess Funds;
+(c) To the best of Client's knowledge, all information provided is true and accurate;
+(d) Client shall promptly provide any documentation reasonably requested by Agent to support the claim, including but not limited to identification, proof of ownership, and any recorded instruments;
+(e) Client shall not engage another party, agent, or attorney to pursue the same Excess Funds claim during the term of this Agreement; and
+(f) Client shall promptly notify Agent of any change in contact information, mailing address, or legal status.${urgencyClause}
 
-6. GOVERNING LAW
+6. TERM AND TERMINATION
 
-This Agreement shall be governed by the laws of the State of Texas. Any disputes shall be resolved in the courts of Dallas County, Texas.
+This Agreement shall remain in effect until the earlier of: (a) successful recovery and disbursement of the Excess Funds; or (b) two (2) years from the Effective Date.
 
-7. ENTIRE AGREEMENT
+Either party may terminate this Agreement with thirty (30) days' prior written notice; provided, however, that if Excess Funds are subsequently recovered as a direct or indirect result of Agent's efforts, research, or filings made during the term of this Agreement, the contingency fee shall remain due and payable.
 
-This Agreement constitutes the entire understanding between the parties and supersedes all prior agreements. Any modifications must be in writing and signed by both parties.`
+7. NOTICE OF RIGHT TO CANCEL
+
+You, the Client, have the right to cancel this Agreement within THREE (3) BUSINESS DAYS from the date you sign this Agreement, without penalty or obligation. To cancel, send written notice to: MaxSam Real Estate LLC, Richardson, TX 75080. If you cancel within this period, you owe nothing and this Agreement shall be void.
+
+8. GOVERNING LAW AND VENUE
+
+This Agreement shall be governed by and construed in accordance with the laws of the State of Texas. Any dispute arising under or in connection with this Agreement shall be resolved exclusively in the state or federal courts located in Dallas County, Texas.
+
+9. ENTIRE AGREEMENT
+
+This Agreement constitutes the entire understanding between the parties with respect to the subject matter hereof and supersedes all prior negotiations, representations, warranties, commitments, offers, and agreements, whether written or oral. No amendment, modification, or waiver of any provision of this Agreement shall be effective unless in writing and signed by both parties.
+
+10. ELECTRONIC SIGNATURE
+
+Both parties acknowledge and agree that this Agreement may be executed electronically pursuant to the Texas Uniform Electronic Transactions Act (Tex. Bus. & Com. Code §322.001 et seq.) and the Federal Electronic Signatures in Global and National Commerce Act (15 U.S.C. §7001 et seq.). Electronic signatures shall have the same legal force and effect as original ink signatures.`
 }
 
 function buildWholesaleText(lead: LeadData): string {
   const d = new Date().toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
-  return `WHOLESALE / FINDER SERVICES AGREEMENT
 
-This Agreement is entered into as of ${d} by and between:
+  // Format property address block
+  const fullAddress = [lead.property_address, lead.city, lead.state].filter(Boolean).length > 0
+    ? `${lead.property_address || ''}${lead.city ? `, ${lead.city}` : ''}${lead.state ? `, ${lead.state}` : ''} ${lead.zip || ''}`.trim()
+    : 'As identified in county records'
+
+  // Format sale date
+  const saleDateStr = lead.sale_date
+    ? new Date(lead.sale_date).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : null
+
+  // Property valuation section
+  let valuationSection = ''
+  const valuationParts: string[] = []
+  if (lead.estimated_arv) {
+    valuationParts.push(`Estimated After-Repair Value (ARV): $${lead.estimated_arv.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  }
+  if (lead.estimated_equity) {
+    valuationParts.push(`Estimated Equity: $${lead.estimated_equity.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  }
+  if (lead.estimated_repair_cost) {
+    valuationParts.push(`Estimated Repair/Renovation Cost: $${lead.estimated_repair_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  }
+  if (lead.excess_amount > 0) {
+    valuationParts.push(`Excess Funds on Record: $${lead.excess_amount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`)
+  }
+  if (valuationParts.length > 0) {
+    valuationSection = `\n\nPROPERTY VALUATION DATA (estimates only; not warranties of value):\n${valuationParts.join('\n')}`
+  }
+
+  return `WHOLESALE REAL ESTATE PURCHASE AND ASSIGNMENT AGREEMENT
+
+This Agreement ("Agreement") is entered into as of ${d} ("Effective Date") by and between the following parties:
 
 SELLER:
-Name: ${lead.owner_name}
+Full Legal Name: ${lead.owner_name}
+Contact Phone: ${lead.phone || 'On file'}
+Contact Email: ${lead.email || 'On file'}
 
 BUYER/ASSIGNOR:
 MaxSam Real Estate LLC and/or Assigns
-Richardson, TX
+Richardson, Texas 75080
+Managing Member
 
-PROPERTY DESCRIPTION
+═══════════════════════════════════════════════════
 
-Property Address: ${lead.property_address || 'As identified in county records'}
-City, State, ZIP: ${lead.city || 'Dallas'}, ${lead.state || 'TX'} ${lead.zip || ''}
-Legal Description: As recorded in the deed records of ${lead.county} County, Texas
+SUBJECT PROPERTY
 
-1. ASSIGNMENT RIGHTS
+Property Address: ${fullAddress}
+County: ${lead.county} County, ${lead.state || 'Texas'}
+Legal Description: As recorded in the Official Public Records and/or Deed Records of ${lead.county} County, ${lead.state || 'Texas'}${lead.case_number ? `\nRelated Case/Cause Number: ${lead.case_number}` : ''}${saleDateStr ? `\nPrior Sale/Foreclosure Date: ${saleDateStr}` : ''}${valuationSection}
 
-Buyer shall have the right to assign this Agreement to a third party (the "Assignee") without the consent of Seller. Upon assignment, Assignee shall assume all obligations of Buyer under this Agreement.
+═══════════════════════════════════════════════════
 
-2. PROPERTY CONDITION
+RECITALS
 
-The Property is being sold "AS-IS, WHERE-IS" with all faults. Seller makes no warranties or representations regarding the condition of the Property.
+WHEREAS, Seller is the owner of or holds equitable interest in the real property located at ${fullAddress}, situated in ${lead.county} County, ${lead.state || 'Texas'}${lead.case_number ? `, associated with Case/Cause Number ${lead.case_number}` : ''};
 
-3. SELLER'S DISCLOSURES
+WHEREAS, Buyer desires to purchase the Property${lead.estimated_arv ? `, which has an estimated after-repair value of $${lead.estimated_arv.toLocaleString('en-US')}` : ''}, and Seller desires to sell the Property, under the terms and conditions set forth herein;
 
-Seller represents that:
-• Seller has the authority to sell the Property
-• There are no undisclosed liens or encumbrances
-• Seller will not further encumber the Property before closing
-• All information provided to Buyer is accurate to Seller's knowledge
+NOW, THEREFORE, in consideration of the mutual covenants herein and for Ten Dollars ($10.00) and other good and valuable consideration, the receipt and sufficiency of which are hereby acknowledged, the parties agree as follows:
 
-4. DEFAULT
+1. PURCHASE AND SALE
 
-If Seller defaults, Buyer may seek specific performance or terminate.
-If Buyer defaults after the inspection period, Seller may retain the Earnest Money as liquidated damages.
+Seller agrees to sell and convey, and Buyer agrees to purchase, the Property described above, together with all improvements, fixtures, and appurtenances thereto. Purchase price and closing terms shall be established in a separate addendum or amendment to this Agreement prior to closing.
 
-5. GOVERNING LAW
+2. ASSIGNMENT RIGHTS
 
-This Agreement shall be governed by the laws of the State of Texas. Venue for any dispute shall be Dallas County, Texas.`
+Buyer shall have the unconditional right to assign this Agreement, in whole or in part, to a third party (the "Assignee") without the prior consent of Seller. Upon valid assignment:
+(a) Assignee shall assume all rights and obligations of Buyer under this Agreement;
+(b) The assignment fee shall be payable by Assignee at closing through the title company; and
+(c) Seller shall not be responsible for any assignment fee or additional cost arising from such assignment.
+
+3. PROPERTY CONDITION
+
+THE PROPERTY IS BEING SOLD AND CONVEYED "AS-IS, WHERE-IS, WITH ALL FAULTS." Seller makes no warranties, representations, or guarantees, express or implied, regarding the condition, fitness, habitability, environmental status, or suitability of the Property for any particular purpose.${lead.estimated_repair_cost ? ` Buyer acknowledges that the Property may require repairs estimated at approximately $${lead.estimated_repair_cost.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}, and accepts the Property in its present condition.` : ''}
+
+Buyer shall have a ten (10) day inspection period from the Effective Date to conduct, at Buyer's sole cost and expense, any inspections, surveys, environmental assessments, or investigations deemed necessary.
+
+4. SELLER REPRESENTATIONS AND WARRANTIES
+
+Seller represents and warrants that:
+(a) Seller has the full legal authority and capacity to enter into this Agreement and to convey the Property;
+(b) To the best of Seller's knowledge, there are no undisclosed liens, encumbrances, easements, or claims against the Property other than those of public record;
+(c) Seller shall not further encumber, lease, or convey the Property or any interest therein during the term of this Agreement;
+(d) All information provided by Seller to Buyer regarding the Property is true, accurate, and complete to the best of Seller's knowledge; and
+(e) Seller shall maintain the Property in its current condition through closing and shall not remove any fixtures or improvements.
+
+5. CLOSING
+
+Closing shall occur at a licensed title company in ${lead.county} County, ${lead.state || 'Texas'}, or at such other location as mutually agreed by the parties. At closing:
+(a) Seller shall deliver a General Warranty Deed or Special Warranty Deed conveying marketable title;
+(b) All closing costs shall be allocated per standard ${lead.county} County practice; and
+(c) Title company shall handle all disbursements, including any assignment fee.
+
+6. DEFAULT AND REMEDIES
+
+If Seller defaults under this Agreement, Buyer may, at Buyer's sole election: (a) seek specific performance compelling Seller to convey the Property; or (b) terminate this Agreement and receive a return of any Earnest Money deposited.
+
+If Buyer defaults after expiration of the inspection period, Seller's sole and exclusive remedy shall be to retain any Earnest Money deposited as liquidated damages, and both parties shall be released from further obligation.
+
+7. NOTICE OF RIGHT TO CANCEL
+
+Seller has the right to cancel this Agreement within THREE (3) BUSINESS DAYS from the date of Seller's signature, without penalty or obligation. To cancel, send written notice to: MaxSam Real Estate LLC, Richardson, TX 75080.
+
+8. GOVERNING LAW AND VENUE
+
+This Agreement shall be governed by and construed in accordance with the laws of the State of Texas. Any dispute shall be resolved exclusively in the state or federal courts of Dallas County, Texas.
+
+9. ENTIRE AGREEMENT
+
+This Agreement, together with any addenda or amendments executed by both parties, constitutes the entire agreement between the parties. No oral representations, warranties, or agreements shall be binding. Modifications must be in writing and signed by both parties.
+
+10. ELECTRONIC SIGNATURE
+
+Both parties acknowledge and agree that this Agreement may be executed electronically pursuant to the Texas Uniform Electronic Transactions Act (Tex. Bus. & Com. Code §322.001 et seq.) and the Federal Electronic Signatures in Global and National Commerce Act (15 U.S.C. §7001 et seq.). Electronic signatures shall have the same legal force and effect as original ink signatures.`
 }
 
 // =============================================================================
@@ -584,11 +735,23 @@ export default function SignPageContent() {
             {amt && (
               <KeyTerm label={data!.agreement_type === 'wholesale' ? 'Property Value' : 'Excess Funds'} value={amt} highlight />
             )}
+            <KeyTerm label="Fee" value={`${data!.fee_percent}% (${fee || 'contingency'})`} />
+            {lead.property_address && (
+              <KeyTerm label="Property" value={`${lead.property_address}${lead.city ? `, ${lead.city}` : ''}`} />
+            )}
             {lead.case_number && (
               <KeyTerm label="Case #" value={lead.case_number} />
             )}
-            <KeyTerm label="County" value={lead.county} />
-            <KeyTerm label="Fee" value={`${data!.fee_percent}% (${fee || 'contingency'})`} />
+            <KeyTerm label="County" value={`${lead.county} County, ${lead.state || 'TX'}`} />
+            {lead.expiry_date && (
+              <KeyTerm label="Claim Deadline" value={new Date(lead.expiry_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} />
+            )}
+            {lead.sale_date && (
+              <KeyTerm label="Sale Date" value={new Date(lead.sale_date).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })} />
+            )}
+            {lead.estimated_arv && (
+              <KeyTerm label="Est. Property Value" value={`$${lead.estimated_arv.toLocaleString('en-US')}`} />
+            )}
           </div>
           {data!.agreement_type === 'excess_funds' && (
             <div style={{
@@ -596,6 +759,16 @@ export default function SignPageContent() {
               padding: '10px 12px', marginTop: 12, fontSize: 13, color: '#166534',
             }}>
               No recovery, no fee. You pay nothing unless funds are recovered.
+            </div>
+          )}
+          {lead.days_until_expiration != null && lead.days_until_expiration > 0 && lead.days_until_expiration < 180 && (
+            <div style={{
+              background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 8,
+              padding: '10px 12px', marginTop: 8, fontSize: 13, color: '#92400E',
+            }}>
+              {lead.days_until_expiration < 90
+                ? `Urgent: Only ${lead.days_until_expiration} days remain to file your claim before these funds may be forfeited.`
+                : `Note: ${lead.days_until_expiration} days remain before the claim filing deadline.`}
             </div>
           )}
         </div>
