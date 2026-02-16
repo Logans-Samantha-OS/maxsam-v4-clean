@@ -7,8 +7,8 @@
  *
  * Provider Selection:
  *   Set PRIMARY_SIGN_PROVIDER env var to one of:
- *   - gmail_link (MVP - works without external providers!)
- *   - jotform_sign
+ *   - self_hosted (default - HMAC-signed tokens at /sign)
+ *   - gmail_link (link-based signing via email)
  *   - signwell
  *   - dropbox_sign
  *   - docusign
@@ -22,12 +22,10 @@ export * from './adapter';
 
 // Import adapters to trigger registration
 import './providers/gmail-link';
-import './adapters/jotform-adapter';
 import './adapters/signwell-adapter';
 
 // Re-export individual adapters for direct access if needed
 export { gmailLinkAdapter } from './providers/gmail-link';
-export { jotformAdapter } from './adapters/jotform-adapter';
 export { signwellAdapter } from './adapters/signwell-adapter';
 
 import { createClient } from '../supabase/server';

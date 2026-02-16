@@ -1,6 +1,6 @@
 /**
  * Send Contract API
- * POST: Send a contract for signing (via DocuSign/BoldSign)
+ * POST: Send a contract for signing via N8N document generator workflow
  */
 
 import { NextRequest, NextResponse } from 'next/server';

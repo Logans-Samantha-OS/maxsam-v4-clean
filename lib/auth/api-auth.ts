@@ -33,7 +33,7 @@ const DEFAULT_CONFIG: ApiAuthConfig = {
     '/api/twilio/inbound-sms',
     '/api/twilio/status',
     '/api/docusign/webhook',
-    '/api/jotform/webhook',
+    '/api/sign',
     '/api/stripe/webhook',
     '/api/health',
     '/api/cron', // Cron jobs use CRON_SECRET separately

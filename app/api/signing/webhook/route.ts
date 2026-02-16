@@ -1,22 +1,25 @@
 /**
  * POST /api/signing/webhook
- * Unified webhook endpoint for all signing providers
+ * Unified webhook endpoint for signing providers
  *
  * Query params:
- * - provider: 'jotform_sign' | 'signwell' | 'dropbox_sign' | 'docusign'
+ * - provider: 'self_hosted' | 'signwell' | 'dropbox_sign' | 'docusign'
  *
  * This endpoint:
  * 1. Identifies provider from query param or payload
  * 2. Verifies webhook signature/authenticity
  * 3. Normalizes event to canonical format
  * 4. Updates packet status and triggers downstream actions
+ *
+ * Note: Self-hosted signing (HMAC tokens at /sign) handles events directly
+ * via /api/sign/validate. This endpoint is for external provider webhooks.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import { processWebhook } from '@/lib/signing';
 import { SigningProvider } from '@/lib/signing/types';
 
-const VALID_PROVIDERS = ['jotform_sign', 'signwell', 'dropbox_sign', 'docusign'];
+const VALID_PROVIDERS = ['self_hosted', 'signwell', 'dropbox_sign', 'docusign'];
 
 export async function POST(request: NextRequest) {
   try {
@@ -80,11 +83,6 @@ export async function POST(request: NextRequest) {
  * Attempt to detect provider from webhook payload structure
  */
 function detectProvider(payload: Record<string, unknown>): SigningProvider | null {
-  // JotForm Sign detection
-  if (payload.formID || payload.submissionID || payload.rawRequest) {
-    return SigningProvider.JOTFORM_SIGN;
-  }
-
   // SignWell detection
   if (payload.event && typeof payload.event === 'string' && payload.event.startsWith('document')) {
     return SigningProvider.SIGNWELL;
@@ -114,9 +112,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const provider = searchParams.get('provider');
 
-  // JotForm doesn't require verification
-  // SignWell may send a verification request
-  // Return challenge response if present
+  // Return challenge response if present (for provider verification)
   const challenge = searchParams.get('challenge') || searchParams.get('hub.challenge');
 
   if (challenge) {
