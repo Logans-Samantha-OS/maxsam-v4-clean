@@ -420,9 +420,25 @@ async function getConversationMessages(
   // Get lead info
   const { data: lead } = await supabase
     .from('maxsam_leads')
-    .select('id, owner_name, property_address, city, state, excess_funds_amount, eleanor_score, deal_grade, status, phone, phone_1, phone_2')
+    .select('id, owner_name, property_address, city, state, excess_funds_amount, eleanor_score, deal_grade, status, phone, phone_1, phone_2, last_contact_date, contact_attempts')
     .eq('id', leadId)
     .single()
+
+  // Fetch agreement info for this lead
+  const { data: agreementData } = await supabase
+    .from('agreement_packets')
+    .select('status, created_at, signed_at')
+    .eq('lead_id', leadId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+
+  const agreement = agreementData?.[0] || null
+  const leadWithAgreement = lead ? {
+    ...lead,
+    agreement_status: agreement?.status || null,
+    agreement_sent_at: agreement?.created_at || null,
+    agreement_signed_at: agreement?.signed_at || null,
+  } : null
 
   // Add channel field and normalize body field for consistency
   // sms_messages table uses 'message' column, but frontend expects 'body'
@@ -435,7 +451,7 @@ async function getConversationMessages(
   return NextResponse.json({
     success: true,
     messages: transformedMessages,
-    lead,
+    lead: leadWithAgreement,
     source: 'legacy'
   })
 }
@@ -491,7 +507,7 @@ async function getConversationsList(
     if (leadIds.length > 0) {
       const { data } = await supabase
         .from('maxsam_leads')
-        .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, status')
+        .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, deal_grade, status, last_contact_date, contact_attempts')
         .in('id', leadIds)
       leads = data || []
     }
@@ -618,16 +634,35 @@ async function getConversationsList(
 
   const { data: leads } = await supabase
     .from('maxsam_leads')
-    .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, status')
+    .select('id, owner_name, property_address, excess_funds_amount, eleanor_score, deal_grade, status, last_contact_date, contact_attempts')
     .in('id', leadIds)
+
+  // Fetch agreement packets for these leads
+  const { data: agreements } = await supabase
+    .from('agreement_packets')
+    .select('lead_id, status, created_at, signed_at')
+    .in('lead_id', leadIds)
+    .order('created_at', { ascending: false })
+
+  // Build agreement status map (latest agreement per lead)
+  const agreementMap = new Map<string, { status: string; created_at: string; signed_at: string | null }>()
+  for (const agr of agreements || []) {
+    if (agr.lead_id && !agreementMap.has(agr.lead_id)) {
+      agreementMap.set(agr.lead_id, { status: agr.status, created_at: agr.created_at, signed_at: agr.signed_at })
+    }
+  }
 
   const leadMap = new Map(leads?.map(l => [l.id, l]) || [])
 
   // Build final list
-  const conversations = Array.from(conversationMap.values()).map(conv => ({
-    ...conv,
-    lead: leadMap.get(conv.lead_id) || null
-  }))
+  const conversations = Array.from(conversationMap.values()).map(conv => {
+    const lead = leadMap.get(conv.lead_id)
+    const agreement = agreementMap.get(conv.lead_id)
+    return {
+      ...conv,
+      lead: lead ? { ...lead, agreement_status: agreement?.status || null, agreement_sent_at: agreement?.created_at || null, agreement_signed_at: agreement?.signed_at || null } : null,
+    }
+  })
 
   conversations.sort((a, b) =>
     new Date(b.last_message_time).getTime() - new Date(a.last_message_time).getTime()
