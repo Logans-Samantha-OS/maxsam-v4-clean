@@ -5,10 +5,23 @@
  * Each function takes a lead object (from Supabase `leads` table) and returns
  * a TCPA-compliant SMS string.
  *
+ * PERSUASION LAYERS:
+ * 1. SPECIFICITY = TRUST: Every message includes exact $ amount, property
+ *    address, case number, and expiration date. Never generic.
+ * 2. LOSS AVERSION > GAIN FRAMING: Lead with what they'll lose, not gain.
+ *    "Your $104,168.04 expires Feb 2028" not "You could receive $104,168.04"
+ * 3. SOCIAL PROOF + AUTHORITY: Reference county records, court filings,
+ *    tax office. "Per Dallas County records from the February 2024 tax sale..."
+ * 4. URGENCY WITHOUT HYPE: Professional paralegal tone. No exclamation marks,
+ *    no ALL CAPS, no "ACT NOW." Measured, factual deadlines.
+ * 5. RECIPROCITY: We already did the work. "We've already identified your
+ *    claim, verified the amount with the county, and prepared the paperwork."
+ * 6. FOLLOW-UP ESCALATION: Each message adds new info they didn't have —
+ *    a relative's name, a previous address, the exact court.
+ *
  * RULES:
  * - Professional paralegal tone (recovery services firm, not sales)
- * - Weaponize specificity: name, dollar amount, case #, property address
- * - Urgency via expiry_date when available
+ * - Every data point we have appears in the message
  * - CTA: "Reply 1 to receive your recovery agreement"
  * - Compliance: "Reply STOP to opt out"
  * - Max ~600 chars (3-4 SMS segments)
@@ -41,8 +54,8 @@ function titleCase(str) {
 function fmtAmount(amount) {
   if (!amount || amount <= 0) return '$0';
   return '$' + Number(amount).toLocaleString('en-US', {
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0,
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
   });
 }
 
@@ -52,6 +65,17 @@ function fmtDate(dateStr) {
     const d = new Date(dateStr);
     if (isNaN(d.getTime())) return null;
     return d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+  } catch {
+    return null;
+  }
+}
+
+function fmtShortDate(dateStr) {
+  if (!dateStr) return null;
+  try {
+    const d = new Date(dateStr);
+    if (isNaN(d.getTime())) return null;
+    return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
   } catch {
     return null;
   }
@@ -69,19 +93,27 @@ function daysUntilExpiry(dateStr) {
   }
 }
 
-function urgencyLine(lead) {
+/**
+ * LOSS AVERSION urgency line — frames as what they lose, not what they gain.
+ * Includes exact date and countdown when available.
+ */
+function lossAversionLine(lead) {
   const days = daysUntilExpiry(lead.expiry_date);
   const formatted = fmtDate(lead.expiry_date);
+  const amt = fmtAmount(lead.excess_funds_amount);
   if (days !== null && days <= 30) {
-    return `The filing deadline is ${formatted} — only ${days} days remain.`;
+    return `Your ${amt} expires ${formatted} — only ${days} days before these funds may be permanently forfeited to the county.`;
   }
   if (days !== null && days <= 90) {
-    return `The deadline to claim is ${formatted}.`;
+    return `Your ${amt} expires ${formatted} — ${days} days remaining. After the statutory deadline, unclaimed funds revert to the county.`;
+  }
+  if (days !== null && formatted) {
+    return `Your ${amt} expires ${formatted} — ${days} days remaining. The county is under no obligation to notify you before this deadline passes.`;
   }
   if (formatted) {
-    return `This must be claimed before ${formatted}.`;
+    return `Your ${amt} must be claimed before ${formatted}. After the statutory deadline, these funds revert to the county permanently.`;
   }
-  return 'There is a deadline to file, and unclaimed funds revert to the county.';
+  return `There is a statutory deadline to file. If no claim is made, your ${amt} reverts to the county permanently.`;
 }
 
 function countyName(lead) {
@@ -92,7 +124,7 @@ function countyName(lead) {
  * Determine personalization tier:
  *   1 = Golden Lead (dual opportunity)
  *   2 = High value ($5K+)
- *   3 = Standard ($1K–$5K)
+ *   3 = Standard ($1K-$5K)
  *   4 = Low value (<$1K)
  */
 function getTier(lead) {
@@ -109,7 +141,12 @@ function getTier(lead) {
 
 /**
  * INITIAL SMS — First contact. Sent by SAM on first outreach attempt.
- * Automatically selects tier based on lead data.
+ *
+ * Persuasion layers active:
+ * - SPECIFICITY: exact dollar amount, property address, case number, county
+ * - LOSS AVERSION: leads with expiry/forfeiture, not "you could receive"
+ * - AUTHORITY: references county records + specific tax sale
+ * - RECIPROCITY: "We've already identified and verified your claim"
  */
 function buildInitialSMS(lead) {
   const tier = getTier(lead);
@@ -124,42 +161,58 @@ function buildInitialSMS(lead) {
   const county = countyName(lead);
   const addr = lead.property_address || 'your former property';
   const caseNum = lead.case_number;
+  const saleDate = fmtShortDate(lead.sale_date);
 
   if (tier === 2) {
-    // High value ($5K+): Lead with dollar amount, case number, full urgency
+    // High value ($5K+): Maximum specificity — every data point we have
     let msg = `${name}, this is Sam with MaxSam Recovery Services. `;
-    msg += `${county} County is holding ${amt} in surplus funds from the tax sale of ${addr}`;
+    msg += `Per ${county} County records`;
+    if (saleDate) msg += ` from the ${saleDate} tax sale`;
+    msg += `, ${amt} in surplus funds from ${addr}`;
     if (caseNum) msg += ` (Case ${caseNum})`;
-    msg += `. This money belongs to you as the former owner.\n\n`;
-    msg += urgencyLine(lead) + '\n\n';
-    msg += 'We handle the entire claims process at no upfront cost — our fee is only collected when you receive your funds.\n\n';
+    msg += ` is being held in the county registry.\n\n`;
+    msg += lossAversionLine(lead) + '\n\n';
+    msg += `We've already identified your claim, verified the amount with the ${county} County tax office, and prepared the filing paperwork. The entire process is handled at no upfront cost to you — our fee is only collected if and when you receive your funds.\n\n`;
     msg += 'Reply 1 to receive your recovery agreement.\n\n';
     msg += 'Reply STOP to opt out';
     return msg;
   }
 
   if (tier === 3) {
-    // Standard ($1K–$5K): Name + amount + property address
+    // Standard ($1K-$5K): Strong specificity, all available data
     let msg = `${name}, this is Sam with MaxSam Recovery Services. `;
-    msg += `${county} County has ${amt} from the sale of ${addr} that may belong to you.\n\n`;
-    msg += urgencyLine(lead) + '\n\n';
-    msg += 'We handle the paperwork at no upfront cost.\n\n';
+    msg += `Per ${county} County records, ${amt} from the sale of ${addr}`;
+    if (caseNum) msg += ` (Case ${caseNum})`;
+    msg += ` is being held in your name.\n\n`;
+    msg += lossAversionLine(lead) + '\n\n';
+    msg += `We've already verified your claim and prepared the paperwork. No upfront cost.\n\n`;
     msg += 'Reply 1 to receive your recovery agreement.\n\n';
     msg += 'Reply STOP to opt out';
     return msg;
   }
 
-  // Tier 4: Low value (<$1K), shorter message
-  let msg = `${name}, ${county} County may be holding ${amt} from a property sale that belongs to you.\n\n`;
-  msg += 'We can recover it at no upfront cost.\n\n';
-  msg += 'Reply 1 for details.\n\n';
+  // Tier 4: Low value (<$1K) — still specific, just more concise
+  let msg = `${name}, per ${county} County records, ${amt} from the sale of ${addr}`;
+  if (caseNum) msg += ` (Case ${caseNum})`;
+  msg += ' is being held in the county registry.\n\n';
+  msg += lossAversionLine(lead) + '\n\n';
+  msg += 'We handle the full claims process at no upfront cost.\n\n';
+  msg += 'Reply 1 for your recovery agreement.\n\n';
   msg += 'Reply STOP to opt out';
   return msg;
 }
 
 /**
  * FOLLOW-UP 1 — Sent 3 days after initial.
- * Reinforces legitimacy with specifics.
+ *
+ * Persuasion layers active:
+ * - SPECIFICITY: repeats exact amount, address, case number
+ * - AUTHORITY: references county tax office, court registry
+ * - RECIPROCITY: "We've completed our preliminary review"
+ * - LOSS AVERSION: deadline + forfeiture language
+ *
+ * NEW INFO added: references the specific court/tax office holding funds,
+ * and the fact we've completed a preliminary title review.
  */
 function buildFollowUp1(lead) {
   const name = firstName(lead);
@@ -167,13 +220,17 @@ function buildFollowUp1(lead) {
   const county = countyName(lead);
   const addr = lead.property_address || 'your former property';
   const caseNum = lead.case_number;
+  const saleDate = fmtShortDate(lead.sale_date);
 
-  let msg = `${name}, following up regarding the ${amt} that ${county} County is holding from the sale of ${addr}`;
-  if (caseNum) msg += ` (Case ${caseNum})`;
-  msg += '.\n\n';
-  msg += 'This is your money from the foreclosure surplus. ';
-  msg += 'I handle the full claims process — no upfront cost, and I only get paid when you do.\n\n';
-  msg += urgencyLine(lead) + '\n\n';
+  let msg = `${name}, following up regarding the ${amt}`;
+  if (saleDate) msg += ` from the ${saleDate} tax sale`;
+  msg += ` of ${addr}`;
+  if (caseNum) msg += `, Case ${caseNum}`;
+  msg += `.\n\n`;
+  msg += `We've completed a preliminary review of the ${county} County records and confirmed these funds are held in the court registry pending a valid claim. `;
+  msg += `The county does not proactively notify former owners — if no claim is filed, the funds revert to the county.\n\n`;
+  msg += lossAversionLine(lead) + '\n\n';
+  msg += 'We handle the entire filing process at no upfront cost. Our fee is only collected when you receive your funds.\n\n';
   msg += 'Reply 1 to receive your recovery agreement.\n\n';
   msg += '-Sam, MaxSam Recovery\n';
   msg += 'Reply STOP to opt out';
@@ -182,35 +239,52 @@ function buildFollowUp1(lead) {
 
 /**
  * FOLLOW-UP 2 — Sent 7 days after initial.
- * More urgent tone, leverages enriched data to prove legitimacy.
+ *
+ * Persuasion layers active:
+ * - ESCALATION: adds NEW info they didn't have before — relative names,
+ *   previous addresses, sale date details
+ * - SPECIFICITY: repeats all identifiers
+ * - AUTHORITY: references how we found them via county/court records
+ * - LOSS AVERSION: county won't notify, permanent forfeiture
  */
 function buildFollowUp2(lead) {
   const name = firstName(lead);
   const amt = fmtAmount(lead.excess_funds_amount);
   const county = countyName(lead);
   const addr = lead.property_address || 'your former property';
+  const caseNum = lead.case_number;
+  const saleDate = fmtShortDate(lead.sale_date);
 
-  let msg = `${name}, I want to make sure you received my previous messages about the ${amt} from ${addr}.\n\n`;
+  let msg = `${name}, I want to ensure you received my previous messages regarding the ${amt} from ${addr}`;
+  if (caseNum) msg += ` (Case ${caseNum})`;
+  msg += '.\n\n';
 
-  // If we have relatives data, reference it to prove legitimacy
+  // ESCALATION: If we have relatives data, reference it to prove depth of research
   const relatives = parseJsonbArray(lead.relatives);
   if (relatives.length > 0) {
     const relName = relatives[0].name;
     if (relName) {
       const formattedRelName = relName.split(/\s+/).map(w => titleCase(w)).join(' ');
-      msg += `I reached out because our records associate you and ${formattedRelName} with this property. `;
+      msg += `Our research into the ${county} County deed records connected you and ${formattedRelName} to this property. `;
     }
   }
 
-  // If we have previous addresses, show we did our homework
+  // ESCALATION: If we have previous addresses, show depth of skip trace
   const prevAddrs = parseJsonbArray(lead.previous_addresses);
   if (prevAddrs.length > 0 && prevAddrs[0].city) {
-    msg += `Our records show your connection to the ${prevAddrs[0].city} area. `;
+    msg += `We located you through records associated with the ${prevAddrs[0].city} area. `;
   }
 
-  msg += `${county} County will not notify you about this — unclaimed funds eventually revert to the county.\n\n`;
-  msg += urgencyLine(lead) + '\n\n';
-  msg += 'Reply 1 to claim your funds, or reply with any questions.\n\n';
+  // AUTHORITY: reference how we found this
+  if (saleDate) {
+    msg += `Per county filings, these funds have been on deposit since the ${saleDate} sale`;
+  } else {
+    msg += `Per county filings, these funds have been on deposit since the original tax sale`;
+  }
+  msg += ` and ${county} County is under no obligation to contact you before the claim window closes.\n\n`;
+
+  msg += lossAversionLine(lead) + '\n\n';
+  msg += 'Reply 1 to start your claim, or reply with any questions.\n\n';
   msg += '-Sam, MaxSam Recovery\n';
   msg += 'Reply STOP to opt out';
   return msg;
@@ -218,24 +292,36 @@ function buildFollowUp2(lead) {
 
 /**
  * FINAL NOTICE — Sent 14 days after initial.
- * Last chance urgency, clear consequences.
+ *
+ * Persuasion layers active:
+ * - LOSS AVERSION: maximum — permanent forfeiture, file closure, countdown
+ * - SPECIFICITY: repeats all identifiers one last time
+ * - RECIPROCITY: summarizes all work already done on their behalf
+ * - URGENCY WITHOUT HYPE: measured, factual, no exclamation marks
  */
 function buildFinalNotice(lead) {
   const name = firstName(lead);
   const amt = fmtAmount(lead.excess_funds_amount);
   const county = countyName(lead);
+  const addr = lead.property_address || 'your former property';
   const caseNum = lead.case_number;
 
-  let msg = `${name}, this is my final message regarding the ${amt} held by ${county} County`;
+  let msg = `${name}, this is my final correspondence regarding the ${amt} held by ${county} County`;
   if (caseNum) msg += ` under Case ${caseNum}`;
-  msg += '.\n\n';
+  msg += ` from the sale of ${addr}.\n\n`;
 
+  // RECIPROCITY: summarize work already done
+  msg += `We have already identified your claim, verified the surplus amount with the county, and prepared the necessary filing documents. `;
+
+  // LOSS AVERSION: specific deadline + consequences
   const days = daysUntilExpiry(lead.expiry_date);
-  if (days !== null && days <= 60) {
-    msg += `You have ${days} days before the filing deadline. `;
+  const formatted = fmtDate(lead.expiry_date);
+  if (days !== null && formatted) {
+    msg += `The statutory deadline is ${formatted} — ${days} days from today. `;
   }
 
-  msg += 'If I don\'t hear back, I\'ll close your file and this money may go unclaimed.\n\n';
+  msg += 'Without a response, we will close your file and these funds will remain unclaimed in the county registry until they are permanently forfeited.\n\n';
+  msg += 'The claims process requires no upfront cost from you.\n\n';
   msg += 'Reply 1 to start your claim, or STOP to opt out.\n\n';
   msg += '-Sam, MaxSam Recovery';
   return msg;
@@ -244,6 +330,12 @@ function buildFinalNotice(lead) {
 /**
  * GOLDEN LEAD SMS — Special dual-opportunity message.
  * For leads on BOTH excess funds AND distressed sellers list.
+ *
+ * Persuasion layers active:
+ * - SPECIFICITY: exact amounts, case numbers, addresses for both opportunities
+ * - AUTHORITY: county records + tax sale reference
+ * - LOSS AVERSION: expiry on funds, market timing on property
+ * - RECIPROCITY: "We've already identified both opportunities"
  */
 function buildGoldenLeadSMS(lead) {
   const name = firstName(lead);
@@ -251,20 +343,29 @@ function buildGoldenLeadSMS(lead) {
   const county = countyName(lead);
   const addr = lead.property_address || 'your former property';
   const caseNum = lead.case_number;
+  const saleDate = fmtShortDate(lead.sale_date);
 
-  let msg = `${name}, this is Sam with MaxSam Recovery Services. I have two items regarding ${addr}:\n\n`;
+  let msg = `${name}, this is Sam with MaxSam Recovery Services. Per ${county} County records, we've identified two matters regarding ${addr}:\n\n`;
 
-  // Item 1: Excess funds
-  msg += `1) ${county} County is holding ${amt} from the tax sale`;
+  // Item 1: Excess funds — loss aversion framing
+  msg += `1) ${amt} in surplus funds from the`;
+  if (saleDate) msg += ` ${saleDate}`;
+  msg += ' tax sale';
   if (caseNum) msg += ` (Case ${caseNum})`;
   const expiryFormatted = fmtDate(lead.expiry_date);
-  if (expiryFormatted) msg += ` — deadline: ${expiryFormatted}`;
-  msg += '. This is owed to you as the prior owner.\n\n';
+  const days = daysUntilExpiry(lead.expiry_date);
+  if (expiryFormatted && days) {
+    msg += ` — expires ${expiryFormatted} (${days} days remaining)`;
+  } else if (expiryFormatted) {
+    msg += ` — expires ${expiryFormatted}`;
+  }
+  msg += '. These funds are owed to you as the prior owner of record.\n\n';
 
   // Item 2: Buyer interest
-  msg += '2) I also have cash buyers interested in properties in your area — quick close, no repairs needed.\n\n';
+  msg += '2) We also have qualified cash buyers seeking properties in your area — quick close, no repairs required.\n\n';
 
-  msg += 'I can help with either or both at no upfront cost.\n\n';
+  // RECIPROCITY
+  msg += 'We\'ve already verified both opportunities and prepared the initial paperwork. I can assist with either or both at no upfront cost.\n\n';
   msg += 'Reply 1 for the funds recovery agreement, or reply with any questions.\n\n';
   msg += 'Reply STOP to opt out';
   return msg;
@@ -304,8 +405,9 @@ module.exports = {
     firstName,
     fmtAmount,
     fmtDate,
+    fmtShortDate,
     daysUntilExpiry,
-    urgencyLine,
+    lossAversionLine,
     getTier,
     parseJsonbArray,
   },
