@@ -420,7 +420,7 @@ async function getConversationMessages(
   // Get lead info
   const { data: lead } = await supabase
     .from('maxsam_leads')
-    .select('id, owner_name, property_address, city, state, excess_funds_amount, eleanor_score, deal_grade, status, phone, phone_1, phone_2, last_contact_date, contact_attempts')
+    .select('id, owner_name, property_address, city, state, excess_funds_amount, eleanor_score, eleanor_grade, deal_grade, status, phone, phone_1, phone_2, email, last_contact_date, contact_attempts, case_number, excess_funds_case_number, county, days_until_expiration, expiration_date, excess_funds_expiry_date')
     .eq('id', leadId)
     .single()
 
