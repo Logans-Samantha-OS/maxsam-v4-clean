@@ -951,25 +951,56 @@ export default function MessagesPage() {
   // ========================================================================
   // FILTERING
   // ========================================================================
+  // Filter helper: Needs Follow-Up = last_contact_date > 24hrs ago AND not opted_out AND has been contacted
+  const isNeedsFollowUp = (conv: Conversation): boolean => {
+    const lead = conv.lead;
+    if (!lead) return false;
+    if (lead.status === 'opted_out') return false;
+    const contacted = (lead.contact_attempts && lead.contact_attempts > 0) || conv.total_messages > 0;
+    if (!contacted) return false;
+    if (!lead.last_contact_date) return true; // contacted but no date = needs follow-up
+    const lastContact = new Date(lead.last_contact_date);
+    const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    return lastContact < twentyFourHoursAgo;
+  };
+
+  // Filter helper: Agreement Sent = lead status is agreement_sent OR agreement_status is sent/pending/viewed
+  const isAgreementSent = (conv: Conversation): boolean => {
+    const lead = conv.lead;
+    if (!lead) return false;
+    return lead.status === 'agreement_sent' ||
+      lead.agreement_status === 'sent' ||
+      lead.agreement_status === 'pending' ||
+      lead.agreement_status === 'viewed';
+  };
+
+  // Filter helper: Agreement Signed = lead status is agreement_signed OR agreement_status is signed/completed
+  const isAgreementSigned = (conv: Conversation): boolean => {
+    const lead = conv.lead;
+    if (!lead) return false;
+    return lead.status === 'agreement_signed' ||
+      lead.agreement_status === 'signed' ||
+      lead.agreement_status === 'completed';
+  };
+
   const filteredConversations = conversations.filter(conv => {
-    // Pipeline stage filter
+    // Pipeline stage filter (overrides tab filter)
     if (activePipelineStage) {
       const lead = conv.lead;
       switch (activePipelineStage) {
         case 'outreach': return lead?.status === 'contacted' || lead?.status === 'ready_for_outreach' || (lead?.contact_attempts && lead.contact_attempts > 0);
         case 'replied': return conv.last_direction === 'inbound';
-        case 'agreement': return lead?.agreement_status === 'sent' || lead?.agreement_status === 'pending' || lead?.agreement_status === 'signed';
+        case 'agreement': return isAgreementSent(conv) || isAgreementSigned(conv);
         case 'closed': return lead?.status === 'closed' || lead?.status === 'won';
         default: return true;
       }
     }
 
     if (activeFilter === 'all') return true;
-    const lead = conv.lead;
     switch (activeFilter) {
-      case 'needs_followup': { const fu = getNextFollowUp(lead); return fu ? new Date(fu) <= new Date() : false; }
-      case 'agreement_sent': return lead?.agreement_status === 'sent' || lead?.agreement_status === 'pending' || lead?.agreement_status === 'viewed';
-      case 'agreement_signed': return lead?.agreement_status === 'signed' || lead?.agreement_status === 'completed';
+      case 'needs_followup': return isNeedsFollowUp(conv);
+      case 'agreement_sent': return isAgreementSent(conv);
+      case 'agreement_signed': return isAgreementSigned(conv);
       case 'no_response': return conv.total_messages > 0 && conv.last_direction === 'outbound' && conv.unread_count === 0;
       default: return true;
     }
@@ -977,9 +1008,9 @@ export default function MessagesPage() {
 
   const filterCounts: Record<FilterTab, number> = {
     all: conversations.length,
-    needs_followup: conversations.filter(c => { const fu = getNextFollowUp(c.lead); return fu ? new Date(fu) <= new Date() : false; }).length,
-    agreement_sent: conversations.filter(c => c.lead?.agreement_status === 'sent' || c.lead?.agreement_status === 'pending' || c.lead?.agreement_status === 'viewed').length,
-    agreement_signed: conversations.filter(c => c.lead?.agreement_status === 'signed' || c.lead?.agreement_status === 'completed').length,
+    needs_followup: conversations.filter(isNeedsFollowUp).length,
+    agreement_sent: conversations.filter(isAgreementSent).length,
+    agreement_signed: conversations.filter(isAgreementSigned).length,
     no_response: conversations.filter(c => c.total_messages > 0 && c.last_direction === 'outbound' && c.unread_count === 0).length,
   };
 
