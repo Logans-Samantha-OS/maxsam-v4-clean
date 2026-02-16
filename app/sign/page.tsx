@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useRef, useCallback } from 'react'
+import { useState, useEffect, useRef, useCallback, Suspense } from 'react'
 import { useSearchParams } from 'next/navigation'
 
 // =============================================================================
@@ -253,7 +253,7 @@ function SignatureCanvas({ onSignature }: { onSignature: (data: string) => void 
 // MAIN SIGNING PAGE
 // =============================================================================
 
-export default function SignPage() {
+function SignPageContent() {
   const params = useSearchParams()
   const token = params.get('token')
 
@@ -687,6 +687,29 @@ export default function SignPage() {
         rel="stylesheet"
       />
     </Page>
+  )
+}
+
+// =============================================================================
+// DEFAULT EXPORT — Suspense boundary for useSearchParams()
+// =============================================================================
+
+export default function SignPage() {
+  return (
+    <Suspense fallback={
+      <Page>
+        <div style={{ textAlign: 'center', padding: '80px 20px' }}>
+          <div style={{
+            width: 48, height: 48, border: '3px solid #C8952E', borderTopColor: 'transparent',
+            borderRadius: '50%', animation: 'spin 1s linear infinite', margin: '0 auto 16px',
+          }} />
+          <p style={{ color: '#C8952E', fontSize: 16 }}>Loading your agreement...</p>
+          <style>{`@keyframes spin { to { transform: rotate(360deg) } }`}</style>
+        </div>
+      </Page>
+    }>
+      <SignPageContent />
+    </Suspense>
   )
 }
 
