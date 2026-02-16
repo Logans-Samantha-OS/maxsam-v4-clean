@@ -1,16 +1,18 @@
 /**
  * Single Agreement Packet API
  * GET /api/agreements/[id] - Get packet details
- * POST /api/agreements/[id] - Perform actions (resend, remind, void)
+ * POST /api/agreements/[id] - Perform actions (resend, void)
+ *
+ * Uses self-hosted e-signature system. Sends via Twilio SMS.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { sendSigningLink, sendReminder } from '@/lib/jotform-sign';
 import { createClient } from '@/lib/supabase/server';
+import { sendSMS } from '@/lib/twilio';
 
 /**
  * GET /api/agreements/[id]
- * Get agreement packet details with documents and events
+ * Get agreement packet details with events
  */
 export async function GET(
   request: NextRequest,
@@ -22,11 +24,7 @@ export async function GET(
 
     const { data: packet, error } = await supabase
       .from('agreement_packets')
-      .select(`
-        *,
-        agreement_documents(*),
-        agreement_events(*)
-      `)
+      .select('*')
       .eq('id', id)
       .single();
 
@@ -56,7 +54,7 @@ export async function GET(
  * Perform actions on an agreement packet
  *
  * Body:
- * - action: 'resend' | 'remind' | 'void'
+ * - action: 'resend' | 'void'
  */
 export async function POST(
   request: NextRequest,
@@ -85,7 +83,7 @@ export async function POST(
 
     switch (action) {
       case 'resend': {
-        // Resend signing link
+        // Resend signing link via SMS
         if (!['sent', 'viewed'].includes(packet.status)) {
           return NextResponse.json(
             { success: false, error: `Cannot resend packet in status: ${packet.status}` },
@@ -93,46 +91,41 @@ export async function POST(
           );
         }
 
-        const result = await sendSigningLink(id);
-
-        if (!result.success) {
+        if (!packet.signing_link) {
           return NextResponse.json(
-            { success: false, error: result.error },
-            { status: 500 }
-          );
-        }
-
-        // Log event
-        await supabase.from('agreement_events').insert({
-          packet_id: id,
-          event_type: 'sent',
-          source: 'api',
-          event_data: { action: 'resend', sms_sent: result.smsSent, email_sent: result.emailSent },
-        });
-
-        return NextResponse.json({
-          success: true,
-          action: 'resend',
-          sms_sent: result.smsSent,
-          email_sent: result.emailSent,
-        });
-      }
-
-      case 'remind': {
-        // Send reminder
-        const result = await sendReminder(id);
-
-        if (!result.success) {
-          return NextResponse.json(
-            { success: false, error: result.error },
+            { success: false, error: 'No signing link found for this packet' },
             { status: 400 }
           );
         }
 
+        if (!packet.client_phone) {
+          return NextResponse.json(
+            { success: false, error: 'No phone number on file for this packet' },
+            { status: 400 }
+          );
+        }
+
+        const firstName = packet.client_name?.split(/[,\s]+/)[0] || 'there';
+        const smsMessage = `${firstName}, resending your agreement signing link. Sign on your phone in 60 seconds: ${packet.signing_link}\n\nNo upfront cost.\n\n-Sam, MaxSam Recovery`;
+
+        const smsResult = await sendSMS(packet.client_phone, smsMessage, packet.lead_id);
+
+        // Log event
+        try {
+          await supabase.from('agreement_events').insert({
+            packet_id: id,
+            event_type: 'sent',
+            source: 'api',
+            event_data: { action: 'resend', sms_sent: smsResult.success },
+          });
+        } catch {
+          // Non-critical
+        }
+
         return NextResponse.json({
           success: true,
-          action: 'remind',
-          reminder_count: packet.reminder_count + 1,
+          action: 'resend',
+          sms_sent: smsResult.success,
         });
       }
 
@@ -145,13 +138,22 @@ export async function POST(
           );
         }
 
-        await supabase.rpc('update_agreement_status', {
+        // Try RPC first, fall back to direct update
+        const { error: rpcError } = await supabase.rpc('update_agreement_status', {
           p_packet_id: id,
           p_new_status: 'voided',
           p_event_type: 'voided',
           p_event_data: { reason: body.reason || 'Manually voided via API' },
           p_source: 'api',
         });
+
+        if (rpcError) {
+          // Fallback: direct update
+          await supabase
+            .from('agreement_packets')
+            .update({ status: 'voided' })
+            .eq('id', id);
+        }
 
         return NextResponse.json({
           success: true,

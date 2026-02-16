@@ -1,21 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { createClient } from '@supabase/supabase-js'
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
-}
-
-// JotForm IDs
-const JOTFORM_IDS = {
-  excess_funds: '260227337890056',
-  distressed_property: '260227208476053',
-}
+import { createClient } from '@/lib/supabase/server'
+import { sendSMS } from '@/lib/twilio'
+import crypto from 'crypto'
 
 /**
- * POST /api/leads/[id]/agreement - Send agreement link to lead
+ * POST /api/leads/[id]/agreement - Generate and send agreement signing link
+ *
+ * Uses self-hosted e-signature system (/sign page with HMAC tokens).
+ * Sends signing link via Twilio SMS.
+ *
+ * Body:
+ * - type: 'excess_funds' | 'wholesale' | 'both' (default: 'excess_funds')
  */
 export async function POST(
   request: NextRequest,
@@ -26,7 +21,15 @@ export async function POST(
     const body = await request.json()
     const { type = 'excess_funds' } = body
 
-    const supabase = getSupabase()
+    const secret = process.env.SIGNING_SECRET
+    if (!secret) {
+      return NextResponse.json({ error: 'Signing system not configured. Set SIGNING_SECRET.' }, { status: 500 })
+    }
+
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
+
+    const supabase = createClient()
 
     // Get lead info
     const { data: lead, error: leadError } = await supabase
@@ -44,89 +47,72 @@ export async function POST(
       return NextResponse.json({ error: 'No phone number for this lead' }, { status: 400 })
     }
 
-    // Build JotForm pre-fill URL(s)
-    const buildJotFormUrl = (formId: string) => {
-      const params = new URLSearchParams({
-        'ownerName': lead.owner_name || '',
-        'propertyAddress': lead.property_address || '',
-        'city': lead.city || '',
-        'county': lead.county || '',
-        'state': lead.state || 'TX',
-        'excessFundsAmount': String(lead.excess_funds_amount || 0),
-        'caseNumber': lead.excess_funds_case_number || lead.case_number || '',
-      })
-      return `https://form.jotform.com/${formId}?${params.toString()}`
+    // Generate signing URL
+    function makeSigningUrl(agreementType: string): string {
+      const expires = Date.now() + 30 * 24 * 60 * 60 * 1000 // 30 days
+      const payload = `${id}:${agreementType}:${expires}`
+      const hmac = crypto.createHmac('sha256', secret!).update(payload).digest('hex')
+      const token = Buffer.from(`${payload}:${hmac}`).toString('base64url')
+      return `${baseUrl}/sign?token=${token}`
     }
 
-    let message = ''
+    // Extract first name
+    let firstName = 'there'
+    if (lead.owner_name) {
+      const name = lead.owner_name.trim()
+      if (name.includes(',')) {
+        const parts = name.split(',')
+        const first = (parts[1] || '').trim().split(/\s+/)[0]
+        if (first) firstName = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
+      } else {
+        const first = name.split(/\s+/)[0]
+        firstName = first.charAt(0).toUpperCase() + first.slice(1).toLowerCase()
+      }
+    }
+
+    const excessAmount = lead.excess_funds_amount || 0
+    const amt = excessAmount > 0
+      ? `$${Number(excessAmount).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+      : ''
+
     const links: string[] = []
+    let smsMessage = ''
 
     if (type === 'excess_funds' || type === 'both') {
-      const excessFundsUrl = buildJotFormUrl(JOTFORM_IDS.excess_funds)
-      links.push(excessFundsUrl)
-      message = `Hi ${lead.owner_name?.split(' ')[0] || 'there'}! Here's your Excess Funds Recovery Agreement. It only takes a minute to complete: ${excessFundsUrl}`
-    }
+      const excessUrl = makeSigningUrl('excess_funds')
+      links.push(excessUrl)
 
-    if (type === 'distressed_property' || type === 'both') {
-      const distressedPropertyUrl = buildJotFormUrl(JOTFORM_IDS.distressed_property)
-      links.push(distressedPropertyUrl)
       if (type === 'both') {
-        message += `\n\nAnd here's the Real Estate Purchase Agreement: ${distressedPropertyUrl}`
+        const wholesaleUrl = makeSigningUrl('wholesale')
+        links.push(wholesaleUrl)
+        smsMessage = `${firstName}, your recovery agreements for ${lead.property_address || 'your property'} are ready to sign.`
+        if (amt) smsMessage += ` Est. recovery: ${amt}.`
+        smsMessage += `\n\nExcess Funds Agreement: ${excessUrl}`
+        smsMessage += `\n\nWholesale Agreement: ${wholesaleUrl}`
+        smsMessage += `\n\nSign on your phone in 60 seconds. No upfront cost.\n\n-Sam, MaxSam Recovery`
       } else {
-        message = `Hi ${lead.owner_name?.split(' ')[0] || 'there'}! Here's your Real Estate Purchase & Assignment Agreement: ${distressedPropertyUrl}`
+        smsMessage = `${firstName}, your Excess Funds Recovery Agreement for ${lead.property_address || 'your property'} is ready to sign.`
+        if (amt) smsMessage += ` Est. recovery: ${amt}.`
+        smsMessage += `\n\nSign on your phone in 60 seconds: ${excessUrl}`
+        smsMessage += `\n\nNo upfront cost — we only get paid when you do.\n\n-Sam, MaxSam Recovery`
       }
+    } else if (type === 'wholesale' || type === 'distressed_property') {
+      const wholesaleUrl = makeSigningUrl('wholesale')
+      links.push(wholesaleUrl)
+      smsMessage = `${firstName}, your Wholesale Agreement for ${lead.property_address || 'your property'} is ready to sign.`
+      smsMessage += `\n\nSign on your phone in 60 seconds: ${wholesaleUrl}`
+      smsMessage += `\n\nNo upfront cost.\n\n-Sam, MaxSam Recovery`
     }
 
-    // Format phone number
-    const formattedPhone = phone.startsWith('+')
-      ? phone
-      : phone.startsWith('1')
-        ? `+${phone}`
-        : `+1${phone.replace(/\D/g, '')}`
-
-    // Send via N8N webhook
-    const webhookUrl = 'https://skooki.app.n8n.cloud/webhook/sam-initial-outreach'
-
-    try {
-      const webhookResponse = await fetch(webhookUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          lead_id: id,
-          owner_name: lead.owner_name,
-          phone: formattedPhone,
-          message,
-          source: 'agreement_sender',
-        }),
-      })
-
-      if (!webhookResponse.ok) {
-        console.warn('N8N webhook failed, continuing anyway')
-      }
-    } catch (webhookError) {
-      console.error('N8N webhook error:', webhookError)
-    }
-
-    // Log the outbound message
-    await supabase
-      .from('sms_messages')
-      .insert({
-        lead_id: id,
-        direction: 'outbound',
-        message,
-        from_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
-        to_number: formattedPhone,
-        status: 'sent',
-        intent: 'agreement_sent',
-        created_at: new Date().toISOString(),
-      })
+    // Send SMS
+    const smsResult = await sendSMS(phone, smsMessage, id)
 
     // Update lead status
     await supabase
       .from('maxsam_leads')
       .update({
         status: 'agreement_sent',
-        agreement_type: type,
+        agreement_type: type === 'both' ? 'both' : type === 'distressed_property' ? 'wholesale' : type,
         last_contact_at: new Date().toISOString(),
         contact_attempts: (lead.contact_attempts || 0) + 1,
         updated_at: new Date().toISOString(),
@@ -138,6 +124,7 @@ export async function POST(
       message: `Agreement link(s) sent to ${lead.owner_name}`,
       links,
       type,
+      sms_sent: smsResult.success,
     })
 
   } catch (error: unknown) {

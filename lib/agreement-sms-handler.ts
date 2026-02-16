@@ -9,8 +9,8 @@
  */
 
 import { createClient } from './supabase/server';
-import { createSigningPacket, sendSigningLink } from './jotform-sign';
 import { normalizePhone } from './twilio';
+import crypto from 'crypto';
 
 interface AgreementSelectionResult {
   handled: boolean;
@@ -133,24 +133,11 @@ export async function processAgreementSelection(
     };
   }
 
-  // Create new agreement packet
+  // Create signing URL using self-hosted system
   try {
-    const result = await createSigningPacket({
-      leadId: lead.id,
-      clientName: lead.owner_name || 'Property Owner',
-      clientEmail: lead.email,
-      clientPhone: normalizedPhone,
-      propertyAddress: lead.property_address,
-      caseNumber: lead.case_number,
-      selectionCode: selection,
-      excessFundsAmount: lead.excess_funds_amount,
-      estimatedEquity: lead.estimated_equity,
-      triggeredBy: 'sms',
-      sourceMessageSid: messageSid,
-    });
-
-    if (!result.success) {
-      console.error('Failed to create signing packet:', result.error);
+    const secret = process.env.SIGNING_SECRET;
+    if (!secret) {
+      console.error('SIGNING_SECRET not configured');
       return {
         handled: true,
         response: "I'm having trouble preparing your agreement. A team member will reach out shortly.",
@@ -158,10 +145,59 @@ export async function processAgreementSelection(
       };
     }
 
-    // Send the signing link
-    if (result.packetId) {
-      await sendSigningLink(result.packetId);
+    const baseUrl = process.env.NEXT_PUBLIC_APP_URL
+      || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000');
+
+    // Map selection to agreement type
+    const agreementType = selection === 1 ? 'excess_funds'
+      : selection === 2 ? 'wholesale'
+      : 'full_recovery';
+
+    // Generate HMAC-signed token and URL
+    function makeSigningUrl(type: string): string {
+      const expires = Date.now() + 30 * 24 * 60 * 60 * 1000; // 30 days
+      const payload = `${lead.id}:${type}:${expires}`;
+      const hmac = crypto.createHmac('sha256', secret!).update(payload).digest('hex');
+      const token = Buffer.from(`${payload}:${hmac}`).toString('base64url');
+      return `${baseUrl}/sign?token=${token}`;
     }
+
+    let signingLink: string;
+    if (agreementType === 'full_recovery') {
+      signingLink = makeSigningUrl('excess_funds');
+      // Second URL for wholesale will be in follow-up
+    } else {
+      signingLink = makeSigningUrl(agreementType);
+    }
+
+    // Log to agreement_packets
+    let packetId: string | undefined;
+    try {
+      const { data: packet } = await supabase.from('agreement_packets').insert({
+        lead_id: lead.id,
+        selection_code: selection,
+        status: 'sent',
+        signing_link: signingLink,
+        client_name: lead.owner_name,
+        client_phone: normalizedPhone,
+        client_email: lead.email || null,
+        triggered_by: 'sms',
+        sent_at: new Date().toISOString(),
+      }).select('id').single();
+      packetId = packet?.id;
+    } catch {
+      // Non-critical — table may not exist
+    }
+
+    // Update lead status
+    await supabase
+      .from('maxsam_leads')
+      .update({
+        status: 'agreement_sent',
+        agreement_type: agreementType === 'full_recovery' ? 'both' : agreementType,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', lead.id);
 
     // Build response based on selection
     const selectionName =
@@ -185,13 +221,13 @@ export async function processAgreementSelection(
     });
 
     // Notify via Telegram
-    await notifyAgreementCreated(lead, selection, result.packetId!);
+    await notifyAgreementCreated(lead, selection, packetId || lead.id);
 
     return {
       handled: true,
-      response: `Perfect, ${firstName}! Your ${selectionName} Agreement is ready. Sign on your phone in 60 seconds: ${result.signingLink}`,
+      response: `Perfect, ${firstName}! Your ${selectionName} Agreement is ready. Sign on your phone in 60 seconds: ${signingLink}`,
       action: `agreement_sent_${selection}`,
-      packetId: result.packetId,
+      packetId,
     };
 
   } catch (error) {
