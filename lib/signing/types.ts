@@ -46,8 +46,8 @@ export enum AgreementEventType {
 }
 
 export enum SigningProvider {
-  GMAIL_LINK = 'gmail_link',  // MVP: Works without external providers!
-  JOTFORM_SIGN = 'jotform_sign',
+  SELF_HOSTED = 'self_hosted',  // Primary: HMAC-signed tokens at /sign
+  GMAIL_LINK = 'gmail_link',
   SIGNWELL = 'signwell',
   DROPBOX_SIGN = 'dropbox_sign',
   DOCUSIGN = 'docusign',

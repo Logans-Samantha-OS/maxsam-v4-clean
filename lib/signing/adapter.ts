@@ -94,7 +94,7 @@ export function getAdapter(provider: SigningProvider): SigningAdapter | null {
 }
 
 export function getPrimaryAdapter(): SigningAdapter | null {
-  const primaryProvider = (process.env.PRIMARY_SIGN_PROVIDER || 'jotform_sign') as SigningProvider;
+  const primaryProvider = (process.env.PRIMARY_SIGN_PROVIDER || 'self_hosted') as SigningProvider;
   return getAdapter(primaryProvider);
 }
 
