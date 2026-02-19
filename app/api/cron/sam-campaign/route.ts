@@ -4,7 +4,7 @@ import { sendSMS, normalizePhone, isTwilioConfigured } from '@/lib/twilio';
 import { sendTelegramMessage } from '@/lib/telegram';
 
 // Check if approval mode is enabled
-async function isApprovalRequired(supabase: ReturnType<typeof createClient>): Promise<boolean> {
+async function isApprovalRequired(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
   const { data } = await supabase
     .from('system_config')
     .select('value')
@@ -15,7 +15,7 @@ async function isApprovalRequired(supabase: ReturnType<typeof createClient>): Pr
 
 // Queue message for approval instead of sending
 async function queueForApproval(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof getSupabase>,
   lead: Lead,
   phone: string,
   message: string,
@@ -27,12 +27,12 @@ async function queueForApproval(
     p_message: message,
     p_template_key: templateKey,
     p_priority: lead.golden_lead || lead.is_golden_lead ? 'high' : 'normal'
-  });
+  } as Record<string, unknown>);
 
   if (error) {
     return { success: false, error: error.message };
   }
-  return { success: true, queueId: data };
+  return { success: true, queueId: data ?? undefined };
 }
 
 /**

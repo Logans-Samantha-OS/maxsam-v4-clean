@@ -43,7 +43,7 @@ export async function GET(req: NextRequest) {
     const leadId = searchParams.get('lead_id')
     const phone = searchParams.get('phone')
     const limit = parseInt(searchParams.get('limit') || '50')
-    const includeMessages = searchParams.get('include_messages') === 'true'
+    const _includeMessages = searchParams.get('include_messages') === 'true'
 
     // If requesting specific conversation
     if (leadId || phone) {
@@ -89,19 +89,30 @@ export async function GET(req: NextRequest) {
       }
 
       // Transform to expected format
-      const conversations: ConversationSummary[] = (data || []).map(conv => ({
-        id: conv.id,
-        lead_id: conv.lead_id,
-        owner_name: conv.contact_name || conv.maxsam_leads?.owner_name || 'Unknown',
-        phone: conv.contact_phone,
-        last_message: conv.last_message_preview || '',
-        last_message_direction: conv.last_message_direction || 'outbound',
-        updated_at: conv.last_message_at || conv.created_at,
-        message_count: 0,
-        unread_count: conv.unread_count || 0,
-        status: conv.maxsam_leads?.status || conv.status || 'unknown',
-        excess_funds_amount: conv.maxsam_leads?.excess_funds_amount || 0
-      }))
+      const conversations: ConversationSummary[] = (data || []).map(conv => {
+        const typedConv = conv as Record<string, unknown>
+        const lead = typedConv.maxsam_leads as {
+          id: string
+          owner_name: string
+          excess_funds_amount: number
+          status: string
+          eleanor_score: number
+        } | null
+
+        return {
+          id: typedConv.id as string,
+          lead_id: typedConv.lead_id as string,
+          owner_name: (typedConv.contact_name as string) || lead?.owner_name || 'Unknown',
+          phone: typedConv.contact_phone as string,
+          last_message: (typedConv.last_message_preview as string) || '',
+          last_message_direction: (typedConv.last_message_direction as string) || 'outbound',
+          updated_at: ((typedConv.last_message_at as string) || (typedConv.created_at as string)),
+          message_count: 0,
+          unread_count: (typedConv.unread_count as number) || 0,
+          status: lead?.status || (typedConv.status as string) || 'unknown',
+          excess_funds_amount: lead?.excess_funds_amount || 0
+        }
+      })
 
       return NextResponse.json({ success: true, conversations, count: conversations.length })
     }
@@ -183,9 +194,11 @@ export async function POST(req: NextRequest) {
       })
       .eq('lead_id', lead_id)
 
+    const smsResult = result as { success: boolean; sid?: string; messageSid?: string; error?: string }
+
     return NextResponse.json({
       success: true,
-      message_sid: result.messageSid,
+      message_sid: smsResult.sid || smsResult.messageSid || null,
       sent_to: targetPhone
     })
 

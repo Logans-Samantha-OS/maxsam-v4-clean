@@ -657,10 +657,11 @@ async function getConversationsList(
   // Build final list
   const conversations = Array.from(conversationMap.values()).map(conv => {
     const lead = leadMap.get(conv.lead_id)
+    const leadRecord = lead as Record<string, unknown> | undefined
     const agreement = agreementMap.get(conv.lead_id)
     return {
       ...conv,
-      lead: lead ? { ...lead, agreement_status: agreement?.status || null, agreement_sent_at: agreement?.created_at || null, agreement_signed_at: agreement?.signed_at || null } : null,
+      lead: leadRecord ? { ...leadRecord, agreement_status: agreement?.status || null, agreement_sent_at: agreement?.created_at || null, agreement_signed_at: agreement?.signed_at || null } : null,
     }
   })
 

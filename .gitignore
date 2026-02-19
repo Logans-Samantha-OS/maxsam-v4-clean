@@ -41,3 +41,13 @@ yarn-error.log*
 next-env.d.ts
 .env*.local
 "maxsam-n8n-mcp/" 
+
+# Archive & ops docs (not part of deployed app)
+_archive/
+ops/
+
+# Memory/data files
+*.jsonl
+
+# Build artifacts
+*.zip
