@@ -54,7 +54,6 @@ export async function GET() {
       contactedRes,
       smsSentTodayRes,
       repliesTodayRes,
-      valueDataRes,
       leadsRes,
       recentSmsRes,
       recentRepliesRes,
@@ -64,16 +63,15 @@ export async function GET() {
       supabase.from('leads').select('*', { count: 'exact', head: true }).eq('status', 'contacted'),
       supabase.from('sms_messages').select('*', { count: 'exact', head: true }).eq('direction', 'outbound').gte('created_at', todayStart.toISOString()),
       supabase.from('sms_messages').select('*', { count: 'exact', head: true }).eq('direction', 'inbound').gte('created_at', todayStart.toISOString()),
-      supabase.from('leads').select('excess_funds_amount'),
       supabase.from('leads').select('id, owner_name, phone, excess_funds_amount, case_number, property_address, eleanor_score, eleanor_grade, status'),
       supabase.from('sms_messages').select('*').eq('direction', 'outbound').order('created_at', { ascending: false }).limit(50),
       supabase.from('sms_messages').select('*').eq('direction', 'inbound').order('created_at', { ascending: false }).limit(50),
     ])
 
-    const anyError = totalLeadsRes.error || withPhoneRes.error || contactedRes.error || smsSentTodayRes.error || repliesTodayRes.error || valueDataRes.error || leadsRes.error || recentSmsRes.error || recentRepliesRes.error
+    const anyError = totalLeadsRes.error || withPhoneRes.error || contactedRes.error || smsSentTodayRes.error || repliesTodayRes.error || leadsRes.error || recentSmsRes.error || recentRepliesRes.error
 
     if (anyError) {
-      const message = totalLeadsRes.error?.message || withPhoneRes.error?.message || contactedRes.error?.message || smsSentTodayRes.error?.message || repliesTodayRes.error?.message || valueDataRes.error?.message || leadsRes.error?.message || recentSmsRes.error?.message || recentRepliesRes.error?.message || 'Failed to fetch ops data'
+      const message = totalLeadsRes.error?.message || withPhoneRes.error?.message || contactedRes.error?.message || smsSentTodayRes.error?.message || repliesTodayRes.error?.message || leadsRes.error?.message || recentSmsRes.error?.message || recentRepliesRes.error?.message || 'Failed to fetch ops data'
       return NextResponse.json({
         pipeline: { total_leads: 0, with_phone: 0, contacted: 0, responded: 0, agreement_sent: 0, signed: 0, golden_leads: 0, pipeline_value: 0, potential_fee: 0 },
         today: { sms_sent: 0, sms_value: 0, responses: 0, agreements_sent: 0, agreements_signed: 0 },
@@ -96,7 +94,10 @@ export async function GET() {
       return leadByPhone.get(phone) || null
     }
 
-    const pipelineValue = (valueDataRes.data || []).reduce((sum, row) => sum + Number((row as { excess_funds_amount?: number | null }).excess_funds_amount || 0), 0)
+    const pipelineValue = leads.reduce((sum, lead) => {
+      const amt = Number(lead.excess_funds_amount || 0)
+      return amt > 0 ? sum + amt : sum
+    }, 0)
 
     const recentSms = (recentSmsRes.data || []).slice(0, 20).map((row) => {
       const sms = row as SmsRow
