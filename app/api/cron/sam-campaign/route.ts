@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendSMS, normalizePhone, isTwilioConfigured } from '@/lib/twilio';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { logExecution } from '@/lib/ops/logExecution';
+import { isPaused } from '@/lib/ops/checkPause';
 
 // Check if approval mode is enabled
 async function isApprovalRequired(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
@@ -136,6 +138,17 @@ export async function GET(request: NextRequest) {
     if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
         return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
+
+    // Check system pause flag
+    if (await isPaused()) {
+        return NextResponse.json({
+            success: false,
+            error: 'System is paused — SAM Campaign skipped.',
+            paused: true,
+        }, { status: 503 });
+    }
+
+    const exec = await logExecution.start('/api/cron/sam-campaign', 'SAM Campaign');
 
     try {
         const supabase = getSupabase();
@@ -293,6 +306,8 @@ Awaiting replies... 📱`;
 
         await sendTelegramMessage(summaryMessage);
 
+        await exec.success({ sent: results.success, failed: results.failed, queued: results.queued });
+
         return NextResponse.json({
             success: true,
             message: approvalRequired
@@ -303,6 +318,7 @@ Awaiting replies... 📱`;
         });
 
     } catch (error: unknown) {
+        await exec.failure(error);
         const message = error instanceof Error ? error.message : 'Campaign failed';
         await sendTelegramMessage(`⚠️ SAM Campaign crashed: ${message}`);
         return NextResponse.json({ error: message }, { status: 500 });

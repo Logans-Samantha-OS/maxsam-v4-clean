@@ -15,6 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendSMS, isTwilioConfigured } from '@/lib/twilio';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { isPaused } from '@/lib/ops/checkPause';
 
 function getSupabase() {
   return createClient(
@@ -100,6 +101,11 @@ export async function GET(request: NextRequest) {
   const authHeader = request.headers.get('authorization');
   if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
     return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+  }
+
+  // System-wide pause check
+  if (await isPaused()) {
+    return NextResponse.json({ success: false, error: 'System is paused', paused: true }, { status: 503 });
   }
 
   try {

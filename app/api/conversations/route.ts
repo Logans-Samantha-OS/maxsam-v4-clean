@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { logExecution } from '@/lib/ops/logExecution'
 
 export const runtime = 'nodejs'
 
@@ -31,6 +32,7 @@ function getMessageText(row: SmsRow): string {
 }
 
 export async function GET(req: NextRequest) {
+  const exec = await logExecution.start('/api/conversations', 'Conversations List')
   try {
     const supabase = createClient()
     const { searchParams } = new URL(req.url)
@@ -106,8 +108,10 @@ export async function GET(req: NextRequest) {
         message_count: conv.message_count,
       }))
 
+    await exec.success({ conversation_count: conversations.length })
     return NextResponse.json({ success: true, conversations })
   } catch (error: unknown) {
+    await exec.failure(error)
     const message = error instanceof Error ? error.message : 'Failed to fetch conversations'
     return NextResponse.json({ success: true, conversations: [], warning: message })
   }
