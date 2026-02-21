@@ -22,6 +22,7 @@ type LeadOption = {
   owner_name: string
   phone: string
   excess_funds_amount: number
+  case_number: string
   status: string
 }
 
@@ -74,6 +75,7 @@ export default function AgreementCenter() {
   const [selectedLeadId, setSelectedLeadId] = useState('')
   const [selectionCode, setSelectionCode] = useState(1)
   const [creating, setCreating] = useState(false)
+  const [leadSearch, setLeadSearch] = useState('')
 
   // Action state
   const [actionLoading, setActionLoading] = useState<string | null>(null)
@@ -102,7 +104,7 @@ export default function AgreementCenter() {
   const loadLeads = async () => {
     setLeadsLoading(true)
     try {
-      const response = await fetch('/api/leads?status=qualified&limit=50')
+      const response = await fetch('/api/leads?minAmount=1&sortBy=excess_funds_amount&sortOrder=desc&limit=50')
       const body = await response.json()
       if (body.leads) {
         setLeads(body.leads.map((l: Record<string, unknown>) => ({
@@ -110,6 +112,7 @@ export default function AgreementCenter() {
           owner_name: String(l.owner_name || 'Unknown'),
           phone: String(l.phone || l.phone_1 || ''),
           excess_funds_amount: Number(l.excess_funds_amount || l.excess_amount || 0),
+          case_number: String(l.case_number || ''),
           status: String(l.status || ''),
         })))
       }
@@ -439,22 +442,41 @@ export default function AgreementCenter() {
                 {leadsLoading ? (
                   <div className="text-xs py-2" style={{ color: '#6b7280' }}>Loading leads...</div>
                 ) : leads.length === 0 ? (
-                  <div className="text-xs py-2" style={{ color: '#6b7280' }}>No qualified leads found</div>
+                  <div className="text-xs py-2" style={{ color: '#6b7280' }}>No leads with excess funds found</div>
                 ) : (
-                  <select
-                    value={selectedLeadId}
-                    onChange={(e) => setSelectedLeadId(e.target.value)}
-                    className="w-full rounded px-3 py-2 text-sm focus:outline-none"
-                    style={{ background: '#0a0c10', border: '1px solid #1a1d28', color: '#e0e0e8' }}
-                  >
-                    <option value="">Choose a lead...</option>
-                    {leads.map((lead) => (
-                      <option key={lead.id} value={lead.id}>
-                        {lead.owner_name} - {formatPhone(lead.phone)}
-                        {lead.excess_funds_amount > 0 ? ` ($${lead.excess_funds_amount.toLocaleString()})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <>
+                    <input
+                      value={leadSearch}
+                      onChange={(e) => setLeadSearch(e.target.value)}
+                      placeholder="Search by name or case number..."
+                      className="w-full rounded px-3 py-2 text-xs mb-2 focus:outline-none"
+                      style={{ background: '#151820', border: '1px solid #1a1d28', color: '#e0e0e8' }}
+                    />
+                    <select
+                      value={selectedLeadId}
+                      onChange={(e) => setSelectedLeadId(e.target.value)}
+                      className="w-full rounded px-3 py-2 text-sm focus:outline-none"
+                      style={{ background: '#0a0c10', border: '1px solid #1a1d28', color: '#e0e0e8' }}
+                      size={6}
+                    >
+                      <option value="">Choose a lead...</option>
+                      {leads
+                        .filter((lead) => {
+                          if (!leadSearch.trim()) return true
+                          const q = leadSearch.toLowerCase()
+                          return (
+                            lead.owner_name.toLowerCase().includes(q) ||
+                            lead.case_number.toLowerCase().includes(q) ||
+                            lead.phone.includes(q)
+                          )
+                        })
+                        .map((lead) => (
+                          <option key={lead.id} value={lead.id}>
+                            {lead.owner_name} — ${lead.excess_funds_amount.toLocaleString()} — Case {lead.case_number || 'N/A'}
+                          </option>
+                        ))}
+                    </select>
+                  </>
                 )}
               </div>
 
