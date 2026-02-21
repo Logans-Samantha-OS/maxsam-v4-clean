@@ -162,6 +162,44 @@ export async function POST(
         });
       }
 
+      case 'update_filing': {
+        // Update filing status on a signed agreement
+        const validStatuses = ['not_filed', 'filed', 'processing', 'approved', 'paid', 'rejected']
+        const newFilingStatus = body.filing_status
+        if (!validStatuses.includes(newFilingStatus)) {
+          return NextResponse.json(
+            { success: false, error: `Invalid filing status: ${newFilingStatus}` },
+            { status: 400 }
+          )
+        }
+
+        const updateData: Record<string, unknown> = {
+          filing_status: newFilingStatus,
+        }
+        if (body.filing_notes) updateData.filing_notes = body.filing_notes
+        if (newFilingStatus === 'filed' && !packet.filed_at) {
+          updateData.filed_at = new Date().toISOString()
+        }
+
+        const { error: updateError } = await supabase
+          .from('agreement_packets')
+          .update(updateData)
+          .eq('id', id)
+
+        if (updateError) {
+          return NextResponse.json(
+            { success: false, error: updateError.message },
+            { status: 500 }
+          )
+        }
+
+        return NextResponse.json({
+          success: true,
+          action: 'update_filing',
+          filing_status: newFilingStatus,
+        })
+      }
+
       default:
         return NextResponse.json(
           { success: false, error: `Unknown action: ${action}` },

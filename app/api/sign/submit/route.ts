@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import crypto from 'crypto'
+import { notifyContractSigned } from '@/lib/telegram'
 
 export const runtime = 'nodejs'
 
@@ -164,6 +165,35 @@ export async function POST(request: NextRequest) {
     fireWebhook(webhookPayload).catch(err => {
       console.error('[Sign Submit] Webhook error:', err)
     })
+
+    // Send Telegram notification (non-blocking)
+    const excessAmount = Number(lead.excess_amount || 0)
+    const feePercent = agreementType === 'wholesale' ? 10 : 25
+    notifyContractSigned({
+      seller_name: lead.owner_name || 'Unknown',
+      property_address: lead.property_address || 'N/A',
+      total_fee: Math.round(excessAmount * (feePercent / 100)),
+      contract_type: agreementType,
+      next_step: agreementType === 'wholesale'
+        ? 'Find buyer & schedule closing with title company'
+        : 'File claim with county for excess funds',
+    }).catch(err => {
+      console.error('[Sign Submit] Telegram error:', err)
+    })
+
+    // Create task: "File county claim for {owner_name}"
+    try {
+      await supabase.from('tasks').insert({
+        title: `File county claim for ${lead.owner_name || 'Unknown'}`,
+        description: `Agreement signed by ${lead.owner_name}. File excess funds claim with ${lead.county || 'Dallas'} County.\nCase: ${lead.case_number || lead.cause_number || 'N/A'}\nProperty: ${lead.property_address || 'N/A'}\nAmount: $${excessAmount.toLocaleString()}`,
+        lead_id: leadId,
+        status: 'pending',
+        priority: 'high',
+        created_at: signedAt,
+      })
+    } catch {
+      console.warn('[Sign Submit] Could not create task (table may not exist)')
+    }
 
     return NextResponse.json({
       success: true,

@@ -96,6 +96,7 @@ export default function MessagingCenter() {
   const [threadLoading, setThreadLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
+  const [syncing, setSyncing] = useState(false)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   const loadConversations = useCallback(async () => {
@@ -272,6 +273,26 @@ export default function MessagingCenter() {
     }
   }
 
+  const syncTwilio = async () => {
+    if (syncing) return
+    setSyncing(true)
+    try {
+      const response = await fetch('/api/sms/sync-twilio', { method: 'POST' })
+      const body = await response.json()
+      if (body.success) {
+        showToast(`Synced ${body.inserted} new messages (${body.skipped} already existed)`, 'success')
+        await loadConversations()
+        if (selectedPhone) await loadThread(selectedPhone)
+      } else {
+        showToast(body.error || 'Sync failed', 'error')
+      }
+    } catch {
+      showToast('Network error during sync', 'error')
+    } finally {
+      setSyncing(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-[calc(100vh-120px)]">
@@ -301,6 +322,14 @@ export default function MessagingCenter() {
       {/* Stats Bar */}
       <div className="flex items-center gap-6 px-5 py-3 border-b" style={{ background: '#10131a', borderColor: '#1a1d28' }}>
         <h1 className="text-lg font-semibold" style={{ color: '#ffd700' }}>Messaging Center</h1>
+        <button
+          onClick={syncTwilio}
+          disabled={syncing}
+          className="text-xs px-3 py-1.5 rounded transition-colors disabled:opacity-50"
+          style={{ background: '#3b82f615', color: '#3b82f6', border: '1px solid #3b82f630' }}
+        >
+          {syncing ? 'Syncing...' : 'Sync Twilio'}
+        </button>
         <div className="flex gap-4 ml-auto text-sm">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ background: '#3b82f6' }} />

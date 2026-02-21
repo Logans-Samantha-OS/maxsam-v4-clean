@@ -15,6 +15,10 @@ type AgreementPacket = {
   sent_at: string | null
   signed_at: string | null
   created_at: string
+  filing_status: string | null
+  filing_notes: string | null
+  filed_at: string | null
+  county_name: string | null
 }
 
 type LeadOption = {
@@ -26,6 +30,21 @@ type LeadOption = {
   status: string
 }
 
+type FilingTemplate = {
+  county_name: string
+  filing_method: string
+  filing_address: string | null
+  filing_phone: string | null
+  filing_url: string | null
+  department_name: string | null
+  required_documents: string[]
+  filing_fee: number
+  fee_notes: string | null
+  estimated_processing_days: number | null
+  processing_notes: string | null
+  notes: string | null
+}
+
 const STATUS_PIPELINE: { key: string; label: string; color: string }[] = [
   { key: 'draft', label: 'Draft', color: '#6b7280' },
   { key: 'sent', label: 'Sent', color: '#3b82f6' },
@@ -33,6 +52,15 @@ const STATUS_PIPELINE: { key: string; label: string; color: string }[] = [
   { key: 'signed', label: 'Signed', color: '#22c55e' },
   { key: 'voided', label: 'Voided', color: '#ef4444' },
 ]
+
+const FILING_STATUS_INFO: Record<string, { label: string; color: string }> = {
+  not_filed: { label: 'Not Filed', color: '#6b7280' },
+  filed: { label: 'Filed', color: '#3b82f6' },
+  processing: { label: 'Processing', color: '#f59e0b' },
+  approved: { label: 'Approved', color: '#22c55e' },
+  paid: { label: 'Paid', color: '#10b981' },
+  rejected: { label: 'Rejected', color: '#ef4444' },
+}
 
 const SELECTION_LABELS: Record<number, string> = {
   1: 'Excess Funds',
@@ -79,9 +107,18 @@ export default function AgreementCenter() {
 
   // Action state
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
 
   // Detail panel
   const [selectedPacket, setSelectedPacket] = useState<AgreementPacket | null>(null)
+
+  // Filing template
+  const [filingTemplate, setFilingTemplate] = useState<FilingTemplate | null>(null)
+
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
 
   const loadPackets = useCallback(async () => {
     try {
@@ -100,6 +137,22 @@ export default function AgreementCenter() {
     const interval = setInterval(loadPackets, 30000)
     return () => clearInterval(interval)
   }, [loadPackets])
+
+  // Load filing template when a signed agreement is selected
+  useEffect(() => {
+    if (selectedPacket?.status === 'signed') {
+      const county = selectedPacket.county_name || 'Dallas County'
+      fetch(`/api/county-filing?county=${encodeURIComponent(county)}`)
+        .then((r) => r.json())
+        .then((body) => {
+          if (body.success) setFilingTemplate(body.template)
+          else setFilingTemplate(null)
+        })
+        .catch(() => setFilingTemplate(null))
+    } else {
+      setFilingTemplate(null)
+    }
+  }, [selectedPacket])
 
   const loadLeads = async () => {
     setLeadsLoading(true)
@@ -165,6 +218,51 @@ export default function AgreementCenter() {
     }
   }
 
+  const updateFilingStatus = async (packetId: string, filingStatus: string) => {
+    setActionLoading(`${packetId}-filing`)
+    try {
+      const response = await fetch(`/api/agreements/${packetId}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'update_filing', filing_status: filingStatus }),
+      })
+      const body = await response.json()
+      if (body.success) {
+        showToast(`Filing status updated to ${FILING_STATUS_INFO[filingStatus]?.label || filingStatus}`, 'success')
+        await loadPackets()
+        // Update the selected packet in place
+        if (selectedPacket?.id === packetId) {
+          setSelectedPacket((prev) => prev ? { ...prev, filing_status: filingStatus } : null)
+        }
+      } else {
+        showToast(body.error || 'Failed to update filing status', 'error')
+      }
+    } finally {
+      setActionLoading(null)
+    }
+  }
+
+  const copyFilingInfo = (packet: AgreementPacket) => {
+    const info = [
+      `Client: ${packet.client_name || 'Unknown'}`,
+      `Phone: ${formatPhone(packet.client_phone || '')}`,
+      `Email: ${packet.client_email || 'N/A'}`,
+      `Type: ${SELECTION_LABELS[packet.selection_code] || 'Unknown'}`,
+      `Status: ${packet.status}`,
+      `Signed: ${packet.signed_at ? new Date(packet.signed_at).toLocaleString() : 'Not signed'}`,
+      `Lead ID: ${packet.lead_id || 'N/A'}`,
+      `County: ${packet.county_name || 'Dallas County'}`,
+      `Filing Status: ${FILING_STATUS_INFO[packet.filing_status || 'not_filed']?.label || 'Not Filed'}`,
+    ]
+    if (packet.signing_link) info.push(`Signing Link: ${packet.signing_link}`)
+
+    navigator.clipboard.writeText(info.join('\n')).then(() => {
+      showToast('Filing info copied to clipboard', 'success')
+    }).catch(() => {
+      showToast('Failed to copy', 'error')
+    })
+  }
+
   const statusCounts = STATUS_PIPELINE.map((stage) => ({
     ...stage,
     count: packets.filter((p) => p.status === stage.key).length,
@@ -193,7 +291,21 @@ export default function AgreementCenter() {
   }
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col rounded-lg overflow-hidden border" style={{ background: '#0d0f14', borderColor: '#1a1d28' }}>
+    <div className="h-[calc(100vh-120px)] flex flex-col rounded-lg overflow-hidden border relative" style={{ background: '#0d0f14', borderColor: '#1a1d28' }}>
+      {/* Toast */}
+      {toast && (
+        <div
+          className="absolute top-3 right-3 z-50 px-4 py-2 rounded-lg text-sm font-medium shadow-lg"
+          style={{
+            background: toast.type === 'success' ? '#065f46' : '#7f1d1d',
+            color: toast.type === 'success' ? '#6ee7b7' : '#fca5a5',
+            border: `1px solid ${toast.type === 'success' ? '#10b981' : '#ef4444'}`,
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
+
       {/* Header */}
       <div className="flex items-center gap-4 px-5 py-3 border-b" style={{ background: '#10131a', borderColor: '#1a1d28' }}>
         <h1 className="text-lg font-semibold" style={{ color: '#ffd700' }}>Agreement Center</h1>
@@ -272,15 +384,16 @@ export default function AgreementCenter() {
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Client</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Type</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Status</th>
+                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Filing</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Sent</th>
                   <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Signed</th>
-                  <th className="text-left px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Source</th>
                   <th className="text-right px-4 py-3 text-xs font-semibold uppercase tracking-wider" style={{ color: '#6b7280' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredPackets.map((packet) => {
                   const statusInfo = STATUS_PIPELINE.find((s) => s.key === packet.status) || { label: packet.status, color: '#6b7280' }
+                  const filingInfo = FILING_STATUS_INFO[packet.filing_status || 'not_filed'] || FILING_STATUS_INFO.not_filed
                   const isActive = selectedPacket?.id === packet.id
                   return (
                     <tr
@@ -307,16 +420,21 @@ export default function AgreementCenter() {
                           <span style={{ color: statusInfo.color }}>{statusInfo.label}</span>
                         </div>
                       </td>
+                      <td className="px-4 py-3">
+                        {packet.status === 'signed' ? (
+                          <div className="flex items-center gap-2">
+                            <span className="w-2 h-2 rounded-full" style={{ background: filingInfo.color }} />
+                            <span className="text-xs" style={{ color: filingInfo.color }}>{filingInfo.label}</span>
+                          </div>
+                        ) : (
+                          <span className="text-xs" style={{ color: '#4a4a5a' }}>&mdash;</span>
+                        )}
+                      </td>
                       <td className="px-4 py-3" style={{ color: '#a0a0b0' }}>
                         {timeAgo(packet.sent_at)}
                       </td>
                       <td className="px-4 py-3" style={{ color: packet.signed_at ? '#22c55e' : '#4a4a5a' }}>
                         {packet.signed_at ? timeAgo(packet.signed_at) : '\u2014'}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span className="text-xs capitalize" style={{ color: '#6b7280' }}>
-                          {packet.triggered_by || 'api'}
-                        </span>
                       </td>
                       <td className="px-4 py-3 text-right">
                         <div className="flex gap-1 justify-end" onClick={(e) => e.stopPropagation()}>
@@ -340,6 +458,15 @@ export default function AgreementCenter() {
                               {actionLoading === `${packet.id}-void` ? '...' : 'Void'}
                             </button>
                           )}
+                          {packet.status === 'signed' && (
+                            <button
+                              onClick={() => copyFilingInfo(packet)}
+                              className="text-[11px] px-2 py-1 rounded transition-colors"
+                              style={{ background: '#8b5cf615', color: '#8b5cf6', border: '1px solid #8b5cf630' }}
+                            >
+                              Copy Info
+                            </button>
+                          )}
                         </div>
                       </td>
                     </tr>
@@ -352,7 +479,7 @@ export default function AgreementCenter() {
 
         {/* Detail Panel */}
         {selectedPacket && (
-          <aside className="border-l overflow-y-auto" style={{ width: '300px', borderColor: '#1a1d28', background: '#10131a' }}>
+          <aside className="border-l overflow-y-auto" style={{ width: '320px', borderColor: '#1a1d28', background: '#10131a' }}>
             <div className="p-4 space-y-4">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-semibold uppercase tracking-wider" style={{ color: '#ffd700' }}>
@@ -386,6 +513,90 @@ export default function AgreementCenter() {
                   valueColor={selectedPacket.signed_at ? '#22c55e' : '#6b7280'}
                 />
               </div>
+
+              {/* Filing Status Section - only for signed agreements */}
+              {selectedPacket.status === 'signed' && (
+                <div className="pt-2 border-t" style={{ borderColor: '#1a1d28' }}>
+                  <h4 className="text-xs font-semibold uppercase tracking-wider mb-3" style={{ color: '#ffd700' }}>
+                    County Filing
+                  </h4>
+                  <DetailRow
+                    label="Filing Status"
+                    value={FILING_STATUS_INFO[selectedPacket.filing_status || 'not_filed']?.label || 'Not Filed'}
+                    valueColor={FILING_STATUS_INFO[selectedPacket.filing_status || 'not_filed']?.color || '#6b7280'}
+                  />
+                  {selectedPacket.filed_at && (
+                    <DetailRow label="Filed At" value={new Date(selectedPacket.filed_at).toLocaleString()} />
+                  )}
+                  {selectedPacket.filing_notes && (
+                    <DetailRow label="Notes" value={selectedPacket.filing_notes} />
+                  )}
+
+                  {/* Filing status update buttons */}
+                  <div className="mt-3 flex flex-wrap gap-1.5">
+                    {Object.entries(FILING_STATUS_INFO).map(([key, info]) => {
+                      const isCurrent = (selectedPacket.filing_status || 'not_filed') === key
+                      return (
+                        <button
+                          key={key}
+                          onClick={() => updateFilingStatus(selectedPacket.id, key)}
+                          disabled={isCurrent || actionLoading === `${selectedPacket.id}-filing`}
+                          className="text-[11px] px-2 py-1 rounded transition-colors disabled:opacity-40"
+                          style={{
+                            background: isCurrent ? info.color + '30' : info.color + '10',
+                            color: info.color,
+                            border: `1px solid ${isCurrent ? info.color + '60' : info.color + '20'}`,
+                            fontWeight: isCurrent ? 600 : 400,
+                          }}
+                        >
+                          {info.label}
+                        </button>
+                      )
+                    })}
+                  </div>
+
+                  {/* Filing checklist from county template */}
+                  {filingTemplate && (
+                    <div className="mt-4 space-y-2">
+                      <h5 className="text-[11px] font-semibold uppercase" style={{ color: '#a0a0b0' }}>
+                        {filingTemplate.county_name} Required Documents
+                      </h5>
+                      <div className="space-y-1">
+                        {filingTemplate.required_documents.map((doc, i) => (
+                          <div key={i} className="flex items-start gap-2 text-xs" style={{ color: '#a0a0b0' }}>
+                            <span style={{ color: '#6b7280' }}>&#9744;</span>
+                            <span>{doc}</span>
+                          </div>
+                        ))}
+                      </div>
+                      {filingTemplate.filing_address && (
+                        <DetailRow label="Mail To" value={filingTemplate.filing_address} />
+                      )}
+                      {filingTemplate.filing_phone && (
+                        <DetailRow label="Phone" value={filingTemplate.filing_phone} />
+                      )}
+                      {filingTemplate.estimated_processing_days && (
+                        <DetailRow label="Est. Processing" value={`${filingTemplate.estimated_processing_days} days`} />
+                      )}
+                      {filingTemplate.notes && (
+                        <div className="mt-2">
+                          <div className="text-[10px] uppercase tracking-wider mb-0.5" style={{ color: '#6b7280' }}>Notes</div>
+                          <div className="text-xs" style={{ color: '#a0a0b0' }}>{filingTemplate.notes}</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Copy filing info button */}
+                  <button
+                    onClick={() => copyFilingInfo(selectedPacket)}
+                    className="mt-3 w-full text-xs py-2 rounded transition-colors"
+                    style={{ background: '#8b5cf615', color: '#8b5cf6', border: '1px solid #8b5cf630' }}
+                  >
+                    Copy Filing Info to Clipboard
+                  </button>
+                </div>
+              )}
 
               {selectedPacket.signing_link && (
                 <div>

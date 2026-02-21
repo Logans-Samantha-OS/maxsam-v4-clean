@@ -1,14 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processInboundSMS } from '@/lib/sam-outreach';
-import { createClient } from '@supabase/supabase-js';
+import { createClient } from '@/lib/supabase/server';
 import { sendTelegramMessage } from '@/lib/telegram';
-
-function getSupabase() {
-  return createClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
-}
 
 /**
  * POST /api/twilio/inbound-sms - Handle incoming SMS from Twilio
@@ -31,7 +24,7 @@ export async function POST(request: NextRequest) {
 
     console.log(`Inbound SMS from ${from}: ${body}`);
 
-    const supabase = getSupabase();
+    const supabase = createClient();
 
     // Normalize phone number
     const digits = from.replace(/\D/g, '');
@@ -41,7 +34,7 @@ export async function POST(request: NextRequest) {
 
     // Find the lead by phone number
     const { data: lead } = await supabase
-      .from('maxsam_leads')
+      .from('leads')
       .select('id, owner_name, status')
       .or(`phone.eq.${formattedPhone},phone_1.eq.${formattedPhone},phone_2.eq.${formattedPhone}`)
       .single();
@@ -51,18 +44,17 @@ export async function POST(request: NextRequest) {
       await supabase.from('sms_messages').insert({
         lead_id: lead.id,
         direction: 'inbound',
-        body: body,
+        message: body,
         from_number: formattedPhone,
-        to_number: process.env.TWILIO_PHONE_NUMBER,
+        to_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
         status: 'received',
-        message_sid: messageSid,
-        received_at: new Date().toISOString(),
+        twilio_sid: messageSid,
         created_at: new Date().toISOString()
       });
 
       // Get lead details for notification
       const { data: leadDetails } = await supabase
-        .from('maxsam_leads')
+        .from('leads')
         .select('owner_name, property_address, excess_funds_amount, is_golden_lead, golden_lead, eleanor_score')
         .eq('id', lead.id)
         .single();
@@ -108,7 +100,7 @@ ${formattedPhone}`
           agent_name: result.action === 'qualified' ? 'SAM' :
                       result.action === 'opted_out' ? 'SYSTEM' : null
         })
-        .eq('message_sid', messageSid);
+        .eq('twilio_sid', messageSid);
     }
 
     // Return TwiML response
