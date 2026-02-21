@@ -1,13 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST(request: NextRequest) {
   try {
+    const supabase = createClient();
     const { lead_id, message, template } = await request.json();
-    
+
     // Get lead
     const { data: lead, error: leadError } = await supabase
-      .from('maxsam_leads')
+      .from('leads')
       .select('*')
       .eq('id', lead_id)
       .single();
@@ -54,7 +55,7 @@ export async function POST(request: NextRequest) {
     
     // Update lead contact info
     await supabase
-      .from('maxsam_leads')
+      .from('leads')
       .update({
         contact_count: (lead.contact_count || 0) + 1,
         last_contacted_at: new Date().toISOString(),

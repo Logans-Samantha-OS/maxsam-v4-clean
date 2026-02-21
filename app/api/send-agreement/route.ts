@@ -162,7 +162,25 @@ export async function POST(request: NextRequest) {
         const { sendSMS } = await import('@/lib/twilio')
         const firstName = (lead.owner_name || 'there').split(/[,\s]+/)[0]
         const msg = `${firstName}, your agreement is ready to review and sign: ${pdfUrl}\n\nNo upfront cost. -Sam, MaxSam Recovery`
-        await sendSMS(phone, msg, lead_id)
+        const smsResult = await sendSMS(phone, msg, lead_id)
+
+        // Log to sms_messages so Messaging Center sees this
+        if (smsResult.success) {
+          try {
+            await supabase.from('sms_messages').insert({
+              lead_id,
+              direction: 'outbound',
+              message: msg,
+              to_number: phone,
+              from_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
+              status: 'sent',
+              created_at: new Date().toISOString(),
+              twilio_sid: (smsResult as Record<string, unknown>).sid || (smsResult as Record<string, unknown>).messageSid || null,
+            })
+          } catch {
+            console.warn('[SendAgreement] Could not log SMS to sms_messages')
+          }
+        }
       }
     }
 

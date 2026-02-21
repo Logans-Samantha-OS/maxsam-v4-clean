@@ -136,12 +136,12 @@ export async function POST(request: NextRequest) {
       })
       .eq('id', leadId)
 
-    // Also update agreement_packets if any exist
+    // Also update agreement_packets if any exist (match both upper and lowercase)
     await supabase
       .from('agreement_packets')
-      .update({ status: 'SIGNED', signed_at: signedAt })
+      .update({ status: 'signed', signed_at: signedAt })
       .eq('lead_id', leadId)
-      .in('status', ['DRAFT', 'READY_TO_SEND', 'SENT', 'VIEWED', 'PARTIALLY_SIGNED'])
+      .in('status', ['draft', 'ready_to_send', 'sent', 'viewed', 'partially_signed', 'DRAFT', 'READY_TO_SEND', 'SENT', 'VIEWED', 'PARTIALLY_SIGNED'])
 
     // Fire N8N webhook (async, don't block response)
     const webhookPayload = {
