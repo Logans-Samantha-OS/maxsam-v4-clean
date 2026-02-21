@@ -23,6 +23,7 @@ const NAV_ITEMS = [
   
   // Communication
   { label: '💬 Messages', href: '/dashboard/messages' },
+  { label: '📄 Agreements', href: '/dashboard/agreements' },
   
   // Data & Import
   { label: '📤 Smart Import', href: '/dashboard/upload' },
