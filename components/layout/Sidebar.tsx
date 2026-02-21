@@ -22,6 +22,7 @@ const NAV_ITEMS = [
   { label: '📈 Pipeline', href: '/dashboard/pipeline' },
   
   // Communication
+  { label: '📨 Inbox', href: '/inbox' },
   { label: '💬 Messages', href: '/dashboard/messages' },
   
   // Data & Import
