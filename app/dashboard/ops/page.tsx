@@ -133,9 +133,9 @@ export default function OpsDashboardPage() {
             <Funnel label="Closed" value={data.pipeline.signed} max={data.pipeline.total_leads} />
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-            <StatusCard name="ALEX" status="active" />
-            <StatusCard name="ELEANOR" status="active" />
-            <StatusCard name="SAM" status="active" />
+            {data.workflows.map((w) => (
+              <StatusCard key={w.name} name={w.name} status={w.active ? 'active' : 'inactive'} />
+            ))}
           </div>
         </div>
       )}

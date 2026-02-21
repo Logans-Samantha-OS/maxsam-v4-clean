@@ -1,5 +1,5 @@
 import { NextResponse } from 'next/server'
-import { getSupabase } from '@/lib/supabase'
+import { createClient } from '@/lib/supabase/server'
 
 export const runtime = 'nodejs'
 
@@ -44,7 +44,7 @@ function getSmsText(sms: SmsRow): string {
 
 export async function GET() {
   try {
-    const supabase = getSupabase()
+    const supabase = createClient()
     const todayStart = new Date()
     todayStart.setHours(0, 0, 0, 0)
 
@@ -135,9 +135,9 @@ export async function GET() {
         total_leads: totalLeadsRes.count || 0,
         with_phone: withPhoneRes.count || 0,
         contacted: contactedRes.count || 0,
-        responded: leads.filter((lead) => lead.status === 'responded' || lead.status === 'engaged').length,
-        agreement_sent: leads.filter((lead) => lead.status === 'agreement_sent').length,
-        signed: leads.filter((lead) => lead.status === 'signed').length,
+        responded: leads.filter((lead) => lead.status === 'responded' || lead.status === 'responding' || lead.status === 'engaged').length,
+        agreement_sent: leads.filter((lead) => lead.status === 'agreement_sent' || lead.status === 'contract_sent').length,
+        signed: leads.filter((lead) => lead.status === 'signed' || lead.status === 'agreement_signed').length,
         golden_leads: leads.filter((lead) => String(lead.status || '').toLowerCase().includes('golden')).length,
         pipeline_value: pipelineValue,
         potential_fee: pipelineValue * 0.25,

@@ -95,6 +95,7 @@ export default function MessagingCenter() {
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
   const loadConversations = useCallback(async () => {
@@ -172,25 +173,55 @@ export default function MessagingCenter() {
     return { total, inbound, needsReply }
   }, [conversations])
 
+  const showToast = (message: string, type: 'success' | 'error') => {
+    setToast({ message, type })
+    setTimeout(() => setToast(null), 3000)
+  }
+
   const sendMessage = async () => {
     if (!selectedConversation || !draftMessage.trim() || sending) return
     setSending(true)
+    const msgText = draftMessage.trim()
+
+    // Optimistic update: show message immediately
+    const optimisticMsg: Message = {
+      id: `temp-${Date.now()}`,
+      lead_id: selectedConversation.lead_id,
+      message: msgText,
+      direction: 'outbound',
+      from_number: '+18449632549',
+      to_number: selectedConversation.phone,
+      status: 'sending',
+      created_at: new Date().toISOString(),
+    }
+    setMessages((prev) => [...prev, optimisticMsg])
+    setDraftMessage('')
+
     try {
       const response = await fetch('/api/messages', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           to_number: selectedConversation.phone,
-          message: draftMessage.trim(),
+          message: msgText,
           lead_id: selectedConversation.lead_id,
         }),
       })
       const body = await response.json()
       if (body.success) {
-        setDraftMessage('')
+        showToast('SMS sent', 'success')
         await loadThread(selectedConversation.phone)
         await loadConversations()
+      } else {
+        showToast(body.error || 'Failed to send', 'error')
+        // Remove optimistic message on failure
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id))
+        setDraftMessage(msgText)
       }
+    } catch {
+      showToast('Network error sending SMS', 'error')
+      setMessages((prev) => prev.filter((m) => m.id !== optimisticMsg.id))
+      setDraftMessage(msgText)
     } finally {
       setSending(false)
     }
@@ -253,7 +284,20 @@ export default function MessagingCenter() {
   }
 
   return (
-    <div className="h-[calc(100vh-120px)] flex flex-col rounded-lg overflow-hidden border" style={{ background: '#0d0f14', borderColor: '#1a1d28' }}>
+    <div className="h-[calc(100vh-120px)] flex flex-col rounded-lg overflow-hidden border relative" style={{ background: '#0d0f14', borderColor: '#1a1d28' }}>
+      {/* Toast */}
+      {toast && (
+        <div
+          className="absolute top-3 right-3 z-50 px-4 py-2 rounded-lg text-sm font-medium shadow-lg animate-in fade-in"
+          style={{
+            background: toast.type === 'success' ? '#065f46' : '#7f1d1d',
+            color: toast.type === 'success' ? '#6ee7b7' : '#fca5a5',
+            border: `1px solid ${toast.type === 'success' ? '#10b981' : '#ef4444'}`,
+          }}
+        >
+          {toast.message}
+        </div>
+      )}
       {/* Stats Bar */}
       <div className="flex items-center gap-6 px-5 py-3 border-b" style={{ background: '#10131a', borderColor: '#1a1d28' }}>
         <h1 className="text-lg font-semibold" style={{ color: '#ffd700' }}>Messaging Center</h1>

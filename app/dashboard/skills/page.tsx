@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { supabase } from '@/lib/supabase/client'
 
 interface Skill {
@@ -22,36 +22,78 @@ const STATUS_COLORS: Record<string, string> = {
   disabled:   'bg-red-500/20 text-red-400',
 }
 
+const AGENT_COLORS: Record<string, string> = {
+  ALEX: '#3b82f6',
+  ELEANOR: '#a855f7',
+  SAM: '#10b981',
+  SYSTEM: '#ffd700',
+}
+
 export default function SkillsPage() {
   const [skills, setSkills] = useState<Skill[]>([])
   const [loading, setLoading] = useState(true)
+  const [seeding, setSeeding] = useState(false)
+
+  const loadSkills = useCallback(async () => {
+    const { data } = await supabase
+      .from('skills_registry')
+      .select('id, slug, name, description, version, status, agent_owner, n8n_workflow_id, updated_at')
+      .order('agent_owner', { ascending: true })
+    setSkills(data || [])
+    setLoading(false)
+  }, [])
 
   useEffect(() => {
-    async function load() {
-      const { data } = await supabase
-        .from('skills_registry')
-        .select('id, slug, name, description, version, status, agent_owner, n8n_workflow_id, updated_at')
-        .order('updated_at', { ascending: false })
-      setSkills(data || [])
-      setLoading(false)
+    loadSkills()
+  }, [loadSkills])
+
+  const seedSkills = async () => {
+    setSeeding(true)
+    try {
+      const response = await fetch('/api/skills/seed', { method: 'POST' })
+      const body = await response.json()
+      if (body.success) {
+        await loadSkills()
+      }
+    } finally {
+      setSeeding(false)
     }
-    load()
-  }, [])
+  }
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-white">Skills Registry</h1>
-        <p className="text-gray-400 text-sm mt-1">
-          Registered agent skills — versioned, auditable capabilities.
-        </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-bold text-white">Skills Registry</h1>
+          <p className="text-gray-400 text-sm mt-1">
+            Registered agent skills — versioned, auditable capabilities.
+          </p>
+        </div>
+        {skills.length === 0 && !loading && (
+          <button
+            onClick={seedSkills}
+            disabled={seeding}
+            className="px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+            style={{ background: '#ffd700', color: '#0a0c10' }}
+          >
+            {seeding ? 'Seeding...' : 'Seed Default Skills'}
+          </button>
+        )}
       </div>
 
       {loading ? (
         <div className="text-zinc-500 text-sm">Loading skills...</div>
       ) : skills.length === 0 ? (
-        <div className="pharaoh-card-mini text-zinc-400 text-sm">
-          No skills registered yet. Run the seed SQL from <code>ops/skills/</code> to populate.
+        <div className="rounded border border-zinc-800 bg-zinc-900/50 p-6 text-center">
+          <p className="text-zinc-400 text-sm mb-3">No skills registered yet.</p>
+          <button
+            onClick={seedSkills}
+            disabled={seeding}
+            className="px-4 py-2 rounded text-sm font-medium disabled:opacity-50"
+            style={{ background: '#ffd700', color: '#0a0c10' }}
+          >
+            {seeding ? 'Seeding...' : 'Seed Default Skills'}
+          </button>
         </div>
       ) : (
         <div className="overflow-x-auto">
@@ -73,7 +115,7 @@ export default function SkillsPage() {
                   <td className="py-3 px-4">
                     <div className="font-medium text-zinc-100">{skill.name}</div>
                     {skill.description && (
-                      <div className="text-zinc-500 text-xs mt-0.5 max-w-[300px] truncate">{skill.description}</div>
+                      <div className="text-zinc-500 text-xs mt-0.5 max-w-[300px]">{skill.description}</div>
                     )}
                   </td>
                   <td className="py-3 px-4 font-mono text-xs text-zinc-400">{skill.slug}</td>
@@ -83,8 +125,18 @@ export default function SkillsPage() {
                       {skill.status}
                     </span>
                   </td>
-                  <td className="py-3 px-4 text-xs text-zinc-400">{skill.agent_owner || '—'}</td>
-                  <td className="py-3 px-4 font-mono text-xs text-zinc-500">{skill.n8n_workflow_id || '—'}</td>
+                  <td className="py-3 px-4">
+                    <span
+                      className="text-xs px-2 py-0.5 rounded"
+                      style={{
+                        background: (AGENT_COLORS[skill.agent_owner || ''] || '#6b7280') + '20',
+                        color: AGENT_COLORS[skill.agent_owner || ''] || '#6b7280',
+                      }}
+                    >
+                      {skill.agent_owner || '\u2014'}
+                    </span>
+                  </td>
+                  <td className="py-3 px-4 font-mono text-xs text-zinc-500">{skill.n8n_workflow_id || '\u2014'}</td>
                   <td className="py-3 px-4 text-xs text-zinc-500">
                     {new Date(skill.updated_at).toLocaleDateString()}
                   </td>
