@@ -159,7 +159,23 @@ export async function POST(request: NextRequest) {
     if (send_immediately !== false) {
       const smsResult = await sendSMS(phone, smsMessage, lead_id);
       smsSent = smsResult.success;
-      if (!smsResult.success) {
+      if (smsResult.success) {
+        // Log to sms_messages so Messaging Center sees this
+        try {
+          await supabase.from('sms_messages').insert({
+            lead_id,
+            direction: 'outbound',
+            message: smsMessage,
+            to_number: phone,
+            from_number: process.env.TWILIO_PHONE_NUMBER || '+18449632549',
+            status: 'sent',
+            created_at: new Date().toISOString(),
+            twilio_sid: (smsResult as Record<string, unknown>).sid || (smsResult as Record<string, unknown>).messageSid || null,
+          });
+        } catch {
+          console.warn('[Agreements] Could not log SMS to sms_messages');
+        }
+      } else {
         console.error('[Agreements] SMS send failed:', smsResult.error);
       }
     }

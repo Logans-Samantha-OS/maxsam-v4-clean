@@ -1,19 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { supabase } from '@/lib/supabase';
+import { createClient } from '@/lib/supabase/server';
 
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const supabase = createClient();
     const { id } = await params;
 
     // Increment contact count and update last_contacted_at
     const { data, error } = await supabase
-      .from('maxsam_leads')
+      .from('leads')
       .update({
         last_contacted_at: new Date().toISOString(),
-        contact_count: supabase.rpc('increment_contact_count', { lead_id: id })
       })
       .eq('id', id)
       .select()
