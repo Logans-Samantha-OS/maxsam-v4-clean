@@ -114,8 +114,9 @@ export async function DELETE(request: NextRequest) {
     if (error) throw error;
 
     return NextResponse.json({ success: true, message: 'Rule deactivated' });
-  } catch (error: any) {
+  } catch (error: unknown) {
     console.error('Auto-Route Rules DELETE error:', error);
-    return NextResponse.json({ error: error.message }, { status: 500 });
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    return NextResponse.json({ error: message }, { status: 500 });
   }
 }
