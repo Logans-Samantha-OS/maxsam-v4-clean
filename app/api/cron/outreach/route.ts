@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server';
 import { runOutreachBatch } from '@/lib/sam-outreach';
 import { isTwilioConfigured } from '@/lib/twilio';
 import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware';
+import { isPaused } from '@/lib/ops/checkPause';
 
 /**
  * POST /api/cron/outreach - Run Sam AI outreach batch
@@ -11,6 +12,11 @@ import { enforceGates, createBlockedResponse } from '@/lib/governance/middleware
  * Or can be triggered manually
  */
 export async function POST() {
+  // System-wide pause check
+  if (await isPaused()) {
+    return NextResponse.json({ success: false, error: 'System is paused', paused: true }, { status: 503 });
+  }
+
   // GATE ENFORCEMENT - SAM OUTREACH (via cron)
   const blocked = await enforceGates({ agent: 'sam', gate: 'gate_sam_outreach' });
   if (blocked) {

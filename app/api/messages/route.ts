@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { resolveLeadId } from '@/lib/ops/resolveLeadId'
 
 export const runtime = 'nodejs'
 
@@ -67,13 +68,16 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'message and to_number are required' }, { status: 400 })
     }
 
+    // Resolve lead_id: use payload value, or match by phone
+    const resolvedLeadId = await resolveLeadId(lead_id, toNumber)
+
     const { sendSMS } = await import('@/lib/twilio')
-    const twilioResult = await sendSMS(toNumber, String(message), lead_id || undefined)
+    const twilioResult = await sendSMS(toNumber, String(message), resolvedLeadId || undefined)
     if (!twilioResult.success) return NextResponse.json({ error: twilioResult.error || 'Failed to send SMS' }, { status: 400 })
 
     const now = new Date().toISOString()
     await supabase.from('sms_messages').insert({
-      lead_id: lead_id || null,
+      lead_id: resolvedLeadId,
       direction: 'outbound',
       message: String(message),
       to_number: toNumber,

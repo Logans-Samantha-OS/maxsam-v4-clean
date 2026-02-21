@@ -24,11 +24,16 @@ const NAV_ITEMS = [
   // Communication
   { label: '📨 Inbox', href: '/inbox' },
   { label: '💬 Messages', href: '/dashboard/messages' },
+  { label: '📄 Agreements', href: '/dashboard/agreements' },
   
   // Data & Import
   { label: '📤 Smart Import', href: '/dashboard/upload' },
   { label: '📉 Stats', href: '/dashboard/stats' },
   
+  // Agent Swarm
+  { label: '🧩 Skills', href: '/dashboard/skills' },
+  { label: '📝 Tasks', href: '/dashboard/tasks' },
+
   // System
   { label: '⚙️ Governance', href: '/dashboard/governance' },
 ]

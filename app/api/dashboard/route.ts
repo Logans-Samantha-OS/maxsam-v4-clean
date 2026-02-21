@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
+import { logExecution } from '@/lib/ops/logExecution'
 
 async function getLeads(supabase: ReturnType<typeof createClient>) {
   const fromLeads = await supabase.from('leads').select('id, excess_funds_amount')
@@ -9,6 +10,7 @@ async function getLeads(supabase: ReturnType<typeof createClient>) {
 }
 
 export async function GET() {
+  const exec = await logExecution.start('/api/dashboard', 'Dashboard Stats')
   try {
     const supabase = createClient()
     const leads = await getLeads(supabase)
@@ -33,6 +35,8 @@ export async function GET() {
       .select('*', { count: 'exact', head: true })
       .in('status', ['sent', 'viewed', 'pending'])
 
+    await exec.success({ total_leads: leads.length, pipeline_value: pipelineValue })
+
     return NextResponse.json({
       total_leads: leads.length,
       pipeline_value: pipelineValue,
@@ -49,6 +53,7 @@ export async function GET() {
       alerts: [],
     })
   } catch (error: unknown) {
+    await exec.failure(error)
     const message = error instanceof Error ? error.message : 'Failed to load dashboard stats'
     return NextResponse.json({ error: message }, { status: 500 })
   }

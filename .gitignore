@@ -45,7 +45,10 @@ next-env.d.ts
 # Archive & ops docs (not part of deployed app)
 _archive/
 ops/
+!ops/skills/
 !app/dashboard/ops/
+!app/api/ops/
+!lib/ops/
 
 # Memory/data files
 *.jsonl
