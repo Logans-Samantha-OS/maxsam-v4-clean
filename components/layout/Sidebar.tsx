@@ -6,6 +6,7 @@ import { usePathname } from 'next/navigation'
 const NAV_ITEMS = [
   // Core Operations
   { label: '📊 Dashboard', href: '/dashboard' },
+  { label: '🖥️ Live Ops', href: '/dashboard/ops' },
   { label: '🎯 CEO Control', href: '/Executive' },
   { label: '🎮 Command Center', href: '/dashboard/command-center' },
   

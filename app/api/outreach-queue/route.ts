@@ -168,6 +168,7 @@ export async function PATCH(request: NextRequest) {
           // Send the SMS
           const messageToSend = queueItem.customized_message || queueItem.message_preview;
           const smsResult = await sendSMS(queueItem.phone, messageToSend, queueItem.lead_id);
+          const sentSid = (smsResult as { sid?: string; messageSid?: string }).sid || (smsResult as { sid?: string; messageSid?: string }).messageSid || null;
 
           if (smsResult.success) {
             // Update queue item as sent
@@ -176,7 +177,7 @@ export async function PATCH(request: NextRequest) {
               .update({
                 status: 'sent',
                 sent_at: new Date().toISOString(),
-                message_sid: smsResult.messageSid
+                message_sid: sentSid
               })
               .eq('id', queueId);
 
@@ -218,6 +219,7 @@ export async function PATCH(request: NextRequest) {
         for (const msg of approvedMessages || []) {
           const messageToSend = msg.customized_message || msg.message_preview;
           const smsResult = await sendSMS(msg.phone, messageToSend, msg.lead_id);
+          const sentSid = (smsResult as { sid?: string; messageSid?: string }).sid || (smsResult as { sid?: string; messageSid?: string }).messageSid || null;
 
           if (smsResult.success) {
             await supabase
@@ -225,7 +227,7 @@ export async function PATCH(request: NextRequest) {
               .update({
                 status: 'sent',
                 sent_at: new Date().toISOString(),
-                message_sid: smsResult.messageSid
+                message_sid: sentSid
               })
               .eq('id', msg.id);
 
