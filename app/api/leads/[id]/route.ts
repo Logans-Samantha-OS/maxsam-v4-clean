@@ -86,7 +86,7 @@ export async function POST(
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
                 chat_id: chatId,
-                text: `📄 <b>Contract Sent!</b>\n\n<b>Lead:</b> ${lead.owner_name}\n<b>Property:</b> ${lead.property_address}\n<b>Amount:</b> $${(lead.excess_funds_amount || 0).toLocaleString()}\n<b>Type:</b> ${contractType}\n\nEnvelope ID: ${result.envelopeId}`,
+                text: `📄 <b>Contract Sent!</b>\n\n<b>Lead:</b> ${lead.owner_name}\n<b>Property:</b> ${lead.property_address}\n<b>Amount:</b> $${(lead.excess_funds_amount || 0).toLocaleString()}\n<b>Type:</b> ${contractType}\n\nAgreement ID: ${result.agreementId || 'N/A'}`,
                 parse_mode: 'HTML'
               })
             });
@@ -97,9 +97,9 @@ export async function POST(
 
         return NextResponse.json({
           success: true,
-          contractId: result.contractId,
-          envelopeId: result.envelopeId,
-          message: 'Contract generated and sent via DocuSign'
+          agreementId: result.agreementId,
+          pdfUrl: result.pdfUrl,
+          message: 'Agreement PDF generated and stored'
         });
       }
 
