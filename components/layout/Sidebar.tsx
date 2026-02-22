@@ -35,6 +35,7 @@ const NAV_ITEMS = [
   { label: '📝 Tasks', href: '/dashboard/tasks' },
 
   // System
+  { label: '🔬 Diagnostics', href: '/dashboard/diagnostics' },
   { label: '⚙️ Governance', href: '/dashboard/governance' },
 ]
 
