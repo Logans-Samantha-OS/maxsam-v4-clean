@@ -9,6 +9,8 @@ type LeadRow = {
   id: string
   owner_name: string | null
   phone: string | null
+  phone_1?: string | null
+  phone_2?: string | null
   excess_funds_amount: number | null
   case_number: string | null
   property_address: string | null
@@ -38,26 +40,49 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url)
     const limit = Number(searchParams.get('limit') || 100)
 
+    // Query sms_messages (primary) with fallback to sms_log_enhanced
+    let allSmsRows: SmsRow[] = []
+
     const { data: smsRows, error: smsError } = await supabase
       .from('sms_messages')
       .select('*')
       .order('created_at', { ascending: false })
       .limit(1000)
 
-    if (smsError) {
-      return NextResponse.json({ success: true, conversations: [], warning: smsError.message })
+    if (!smsError && smsRows && smsRows.length > 0) {
+      allSmsRows = smsRows as SmsRow[]
+    } else {
+      // Fallback to sms_log_enhanced
+      const { data: fallbackRows } = await supabase
+        .from('sms_log_enhanced')
+        .select('*')
+        .order('created_at', { ascending: false })
+        .limit(1000)
+
+      if (fallbackRows && fallbackRows.length > 0) {
+        allSmsRows = fallbackRows as SmsRow[]
+      }
     }
 
+    if (allSmsRows.length === 0) {
+      await exec.success({ conversation_count: 0 })
+      return NextResponse.json({ success: true, conversations: [], warning: smsError?.message })
+    }
+
+    // Query leads from maxsam_leads (primary table)
     const { data: leadsRows, error: leadsError } = await supabase
-      .from('leads')
-      .select('id, owner_name, phone, excess_funds_amount, case_number, property_address, eleanor_score, eleanor_grade, status')
+      .from('maxsam_leads')
+      .select('id, owner_name, phone, phone_1, phone_2, excess_funds_amount, case_number, property_address, eleanor_score, eleanor_grade, status')
 
     const leads = leadsError ? [] : ((leadsRows || []) as LeadRow[])
     const leadById = new Map(leads.map((lead) => [lead.id, lead]))
     const leadByPhone = new Map<string, LeadRow>()
     for (const lead of leads) {
-      const phone = normalizePhone(lead.phone)
-      if (phone) leadByPhone.set(phone, lead)
+      // Index by all phone fields for robust matching
+      for (const ph of [lead.phone, lead.phone_1, lead.phone_2]) {
+        const normalized = normalizePhone(ph)
+        if (normalized && normalized.length >= 10) leadByPhone.set(normalized, lead)
+      }
     }
 
     const conversationMap = new Map<string, {
@@ -69,7 +94,7 @@ export async function GET(req: NextRequest) {
       message_count: number
     }>()
 
-    for (const row of (smsRows || []) as SmsRow[]) {
+    for (const row of allSmsRows) {
       const phone = getSmsPhone(row)
       if (!phone) continue
 

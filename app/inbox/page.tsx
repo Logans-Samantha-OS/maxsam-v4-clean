@@ -121,31 +121,41 @@ export default function InboxPage() {
   const fetchData = useCallback(async () => {
     setLoading(true)
 
-    // 1. Leads with SMS-relevant statuses
+    // 1. Leads with SMS-relevant statuses from maxsam_leads
     const { data: leadsData } = await supabase
-      .from('leads')
+      .from('maxsam_leads')
       .select('id, owner_name, phone, status, county, excess_funds_amount, case_number, property_address, expiry_date, eleanor_score, eleanor_grade, is_golden_lead, last_sms_sent, last_sms_at, sms_sent_count, sms_opt_out')
       .in('status', ACTIVE_STATUSES)
       .order('last_sms_sent', { ascending: false, nullsFirst: false })
 
-    // 2. Messages — try `messages` table first, fall back to `sms_log_enhanced`
+    // 2. Messages — try `sms_messages` first, then `messages`, then `sms_log_enhanced`
     let messagesResult: Message[] = []
 
-    const { data: msgData, error: msgError } = await supabase
-      .from('messages')
-      .select('lead_id, direction, content, from_number, to_number, status, created_at')
-      .eq('message_type', 'sms')
+    const { data: smsData, error: smsError } = await supabase
+      .from('sms_messages')
+      .select('lead_id, direction, message, from_number, to_number, status, created_at')
       .order('created_at', { ascending: true })
       .limit(5000)
 
-    if (msgError || !msgData || msgData.length === 0) {
+    if (!smsError && smsData && smsData.length > 0) {
+      messagesResult = smsData.map((m: any) => ({
+        lead_id: m.lead_id,
+        direction: m.direction,
+        content: m.message || m.body || '',
+        from_number: m.from_number,
+        to_number: m.to_number,
+        status: m.status,
+        created_at: m.created_at,
+      }))
+    } else {
+      // Fallback to sms_log_enhanced
       const { data: fallbackData } = await supabase
         .from('sms_log_enhanced')
         .select('lead_id, direction, message_body, phone_from, phone_to, twilio_status, created_at')
         .order('created_at', { ascending: true })
         .limit(5000)
 
-      if (fallbackData) {
+      if (fallbackData && fallbackData.length > 0) {
         messagesResult = fallbackData.map((m: any) => ({
           lead_id: m.lead_id,
           direction: m.direction,
@@ -156,8 +166,6 @@ export default function InboxPage() {
           created_at: m.created_at,
         }))
       }
-    } else {
-      messagesResult = msgData
     }
 
     setLeads(leadsData || [])
@@ -246,14 +254,21 @@ export default function InboxPage() {
     if (!selectedLead) return
     setActionLoading(type)
     try {
-      const url = type === 'agreement'
-        ? 'https://skooki.app.n8n.cloud/webhook/send-agreement'
-        : 'https://skooki.app.n8n.cloud/webhook/sam-initial-outreach'
-      await fetch(url, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ lead_id: selectedLead.id, name: selectedLead.owner_name }),
-      })
+      if (type === 'agreement') {
+        // POST to /api/send-agreement with lead_id
+        await fetch('/api/send-agreement', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: selectedLead.id, action: 'generate_and_send' }),
+        })
+      } else {
+        // Follow Up: POST to n8n webhook with lead_id
+        await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ lead_id: selectedLead.id, name: selectedLead.owner_name }),
+        })
+      }
     } catch (err) {
       console.error(`${type} action error:`, err)
     }

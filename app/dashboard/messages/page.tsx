@@ -95,6 +95,7 @@ export default function MessagingCenter() {
   const [loading, setLoading] = useState(true)
   const [threadLoading, setThreadLoading] = useState(false)
   const [actionLoading, setActionLoading] = useState<string | null>(null)
+  const [syncLoading, setSyncLoading] = useState(false)
   const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null)
   const chatEndRef = useRef<HTMLDivElement>(null)
 
@@ -232,36 +233,60 @@ export default function MessagingCenter() {
     setActionLoading(action)
     try {
       if (action === 'send_agreement') {
-        await fetch('/api/agreements', {
+        // POST to /api/send-agreement with lead_id
+        await fetch('/api/send-agreement', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             lead_id: selectedConversation.lead_id,
-            selection_code: 1,
-            triggered_by: 'ui',
+            action: 'generate_and_send',
           }),
         })
+        showToast('Agreement sent', 'success')
+      } else if (action === 'follow_up') {
+        // POST to n8n webhook for follow-up outreach
+        await fetch('https://skooki.app.n8n.cloud/webhook/sam-initial-outreach', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            lead_id: selectedConversation.lead_id,
+            name: selectedConversation.owner_name,
+          }),
+        })
+        showToast('Follow-up triggered', 'success')
       } else if (action === 'opt_out') {
         await fetch('/api/messages/opt-out', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ phone: selectedConversation.phone }),
         })
-      } else if (action === 'needs_follow_up' || action === 'verify_records') {
-        if (selectedConversation.lead_id) {
-          await fetch('/api/leads/set-status', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              lead_id: selectedConversation.lead_id,
-              status: action,
-            }),
-          })
-        }
+        showToast('Opted out', 'success')
       }
       await loadConversations()
+    } catch {
+      showToast('Action failed', 'error')
     } finally {
       setActionLoading(null)
+    }
+  }
+
+  const syncTwilio = async () => {
+    if (syncLoading) return
+    setSyncLoading(true)
+    try {
+      const response = await fetch('/api/sms/sync-twilio', { method: 'POST' })
+      const body = await response.json()
+      if (body.success) {
+        showToast(`Synced ${body.synced} new, updated ${body.updated} statuses`, 'success')
+        await loadConversations()
+        if (selectedPhone) await loadThread(selectedPhone)
+      } else {
+        showToast(body.error || 'Sync failed', 'error')
+      }
+    } catch {
+      showToast('Failed to sync Twilio', 'error')
+    } finally {
+      setSyncLoading(false)
     }
   }
 
@@ -301,7 +326,7 @@ export default function MessagingCenter() {
       {/* Stats Bar */}
       <div className="flex items-center gap-6 px-5 py-3 border-b" style={{ background: '#10131a', borderColor: '#1a1d28' }}>
         <h1 className="text-lg font-semibold" style={{ color: '#ffd700' }}>Messaging Center</h1>
-        <div className="flex gap-4 ml-auto text-sm">
+        <div className="flex gap-4 ml-auto text-sm items-center">
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full" style={{ background: '#3b82f6' }} />
             <span style={{ color: '#a0a0b0' }}>{stats.total} conversations</span>
@@ -314,6 +339,21 @@ export default function MessagingCenter() {
             <span className="w-2 h-2 rounded-full" style={{ background: '#ffd700' }} />
             <span style={{ color: '#a0a0b0' }}>{stats.needsReply} needs reply</span>
           </div>
+          <button
+            onClick={syncTwilio}
+            disabled={syncLoading}
+            className="text-xs px-3 py-1.5 rounded transition-colors disabled:opacity-50 flex items-center gap-1.5"
+            style={{ background: '#3b82f615', color: '#3b82f6', border: '1px solid #3b82f630' }}
+          >
+            {syncLoading ? (
+              <>
+                <span className="w-3 h-3 border border-t-transparent rounded-full animate-spin" style={{ borderColor: '#3b82f6', borderTopColor: 'transparent' }} />
+                Syncing...
+              </>
+            ) : (
+              'Sync Twilio'
+            )}
+          </button>
         </div>
       </div>
 
@@ -421,15 +461,15 @@ export default function MessagingCenter() {
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  {(['send_agreement', 'needs_follow_up', 'opt_out'] as const).map((action) => {
+                  {(['send_agreement', 'follow_up', 'opt_out'] as const).map((action) => {
                     const labels: Record<string, string> = {
                       send_agreement: 'Send Agreement',
-                      needs_follow_up: 'Follow Up',
+                      follow_up: 'Follow Up',
                       opt_out: 'Opt Out',
                     }
                     const colors: Record<string, string> = {
                       send_agreement: '#ffd700',
-                      needs_follow_up: '#f59e0b',
+                      follow_up: '#f59e0b',
                       opt_out: '#ef4444',
                     }
                     return (
