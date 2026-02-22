@@ -55,3 +55,7 @@ ops/
 
 # Build artifacts
 *.zip
+
+# Python
+__pycache__/
+*.pyc
