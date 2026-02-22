@@ -32,7 +32,7 @@ function getSupabaseClient() {
 // GET - CEO DASHBOARD DATA (READ-ONLY)
 // ============================================================================
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const supabase = getSupabaseClient();
 

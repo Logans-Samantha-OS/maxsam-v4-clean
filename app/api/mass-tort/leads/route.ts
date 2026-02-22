@@ -111,19 +111,28 @@ export async function POST(request: NextRequest) {
 
     // Increment campaign lead count
     if (campaign_id) {
-      await supabase.rpc('increment', { 
+      const { error: incrementError } = await supabase.rpc('increment', {
         table_name: 'mass_tort_campaigns',
         column_name: 'leads_generated',
         row_id: campaign_id
-      }).catch(() => {
+      })
+
+      if (incrementError) {
         // Fallback if RPC doesn't exist
-        supabase
+        const { data: campaign } = await supabase
           .from('mass_tort_campaigns')
-          .update({ 
-            leads_generated: supabase.rpc('coalesce', ['leads_generated', 0]) + 1 
+          .select('leads_generated')
+          .eq('id', campaign_id)
+          .single()
+
+        const currentLeadsGenerated = Number(campaign?.leads_generated ?? 0)
+        await supabase
+          .from('mass_tort_campaigns')
+          .update({
+            leads_generated: currentLeadsGenerated + 1
           })
-          .eq('id', campaign_id);
-      });
+          .eq('id', campaign_id)
+      }
     }
 
     return NextResponse.json({ success: true, tortLead: data });

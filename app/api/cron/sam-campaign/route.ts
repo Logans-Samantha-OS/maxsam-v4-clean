@@ -2,9 +2,11 @@ import { NextRequest, NextResponse } from 'next/server';
 import { createClient } from '@supabase/supabase-js';
 import { sendSMS, normalizePhone, isTwilioConfigured } from '@/lib/twilio';
 import { sendTelegramMessage } from '@/lib/telegram';
+import { logExecution } from '@/lib/ops/logExecution'
+import { isSystemPaused } from '@/lib/ops/pause'
 
 // Check if approval mode is enabled
-async function isApprovalRequired(supabase: ReturnType<typeof createClient>): Promise<boolean> {
+async function isApprovalRequired(supabase: ReturnType<typeof getSupabase>): Promise<boolean> {
   const { data } = await supabase
     .from('system_config')
     .select('value')
@@ -15,7 +17,7 @@ async function isApprovalRequired(supabase: ReturnType<typeof createClient>): Pr
 
 // Queue message for approval instead of sending
 async function queueForApproval(
-  supabase: ReturnType<typeof createClient>,
+  supabase: ReturnType<typeof getSupabase>,
   lead: Lead,
   phone: string,
   message: string,
@@ -27,12 +29,12 @@ async function queueForApproval(
     p_message: message,
     p_template_key: templateKey,
     p_priority: lead.golden_lead || lead.is_golden_lead ? 'high' : 'normal'
-  });
+  } as Record<string, unknown>);
 
   if (error) {
     return { success: false, error: error.message };
   }
-  return { success: true, queueId: data };
+  return { success: true, queueId: data ?? undefined };
 }
 
 /**
@@ -131,6 +133,12 @@ function getLeadPhone(lead: Lead): string | null {
 }
 
 export async function GET(request: NextRequest) {
+    const executionId = await logExecution({
+        status: 'received',
+        workflowName: 'sam_campaign_cron',
+        webhookPath: '/api/cron/sam-campaign',
+    })
+
     // Verify cron secret if configured (Vercel cron protection)
     const authHeader = request.headers.get('authorization');
     if (process.env.CRON_SECRET && authHeader !== `Bearer ${process.env.CRON_SECRET}`) {
@@ -138,7 +146,19 @@ export async function GET(request: NextRequest) {
     }
 
     try {
+        await logExecution({
+            id: executionId || undefined,
+            status: 'running',
+            workflowName: 'sam_campaign_cron',
+            webhookPath: '/api/cron/sam-campaign',
+        })
+
         const supabase = getSupabase();
+
+        if (await isSystemPaused()) {
+            await sendTelegramMessage('⏸️ SAM Campaign skipped: system pause_all is active');
+            return NextResponse.json({ success: false, error: 'System paused' }, { status: 423 });
+        }
 
         // Check if Twilio is configured
         if (!isTwilioConfigured()) {
@@ -293,6 +313,18 @@ Awaiting replies... 📱`;
 
         await sendTelegramMessage(summaryMessage);
 
+        await logExecution({
+            id: executionId || undefined,
+            status: 'success',
+            workflowName: 'sam_campaign_cron',
+            webhookPath: '/api/cron/sam-campaign',
+            artifacts: {
+                sent: results.success,
+                failed: results.failed,
+                queued: results.queued,
+            }
+        })
+
         return NextResponse.json({
             success: true,
             message: approvalRequired
@@ -304,6 +336,13 @@ Awaiting replies... 📱`;
 
     } catch (error: unknown) {
         const message = error instanceof Error ? error.message : 'Campaign failed';
+        await logExecution({
+            id: executionId || undefined,
+            status: 'failure',
+            workflowName: 'sam_campaign_cron',
+            webhookPath: '/api/cron/sam-campaign',
+            errorText: message,
+        })
         await sendTelegramMessage(`⚠️ SAM Campaign crashed: ${message}`);
         return NextResponse.json({ error: message }, { status: 500 });
     }
