@@ -4,39 +4,13 @@ import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
 const NAV_ITEMS = [
-  // Core Operations
   { label: '📊 Dashboard', href: '/dashboard' },
-  { label: '🖥️ Live Ops', href: '/dashboard/ops' },
-  { label: '🎯 CEO Control', href: '/Executive' },
-  { label: '🎮 Command Center', href: '/dashboard/command-center' },
-  
-  // Lead Management
   { label: '📋 All Leads', href: '/dashboard/leads' },
-  { label: '🩺 Lead Health', href: '/dashboard/lead-health' },
   { label: '⭐ Golden Leads', href: '/dashboard/golden-leads' },
-  { label: '🏦 Lead Bank', href: '/lead-bank' },
-  
-  // Revenue Generation
-  { label: '💰 Marketplace', href: '/marketplace' },
-  { label: '👥 Buyers', href: '/buyers' },
-  { label: '📈 Pipeline', href: '/dashboard/pipeline' },
-  
-  // Communication
-  { label: '📨 Inbox', href: '/inbox' },
   { label: '💬 Messages', href: '/dashboard/messages' },
   { label: '📄 Agreements', href: '/dashboard/agreements' },
-  
-  // Data & Import
-  { label: '📤 Smart Import', href: '/dashboard/upload' },
-  { label: '📉 Stats', href: '/dashboard/stats' },
-  
-  // Agent Swarm
-  { label: '🧩 Skills', href: '/dashboard/skills' },
+  { label: '📨 Inbox', href: '/inbox' },
   { label: '📝 Tasks', href: '/dashboard/tasks' },
-
-  // System
-  { label: '🔬 Diagnostics', href: '/dashboard/diagnostics' },
-  { label: '⚙️ Governance', href: '/dashboard/governance' },
 ]
 
 export default function Sidebar() {
